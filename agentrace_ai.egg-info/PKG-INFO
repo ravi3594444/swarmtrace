@@ -1,0 +1,46 @@
+Metadata-Version: 2.4
+Name: agentrace-ai
+Version: 0.1.0
+Summary: pytest for AI agents — trace, debug and catch regressions in LLM swarms
+Author: Ravi
+Requires-Python: >=3.8
+Description-Content-Type: text/markdown
+Requires-Dist: litai
+Requires-Dist: click
+Requires-Dist: rich
+Dynamic: author
+Dynamic: description
+Dynamic: description-content-type
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary
+
+# Tracely
+> Open-source AI observability framework. Trace, debug and detect regressions in LLM apps with one decorator.
+
+## Install
+pip install tracely
+
+## Usage
+from tracely import observe
+
+@observe
+def my_agent(question):
+    return llm.chat(question)
+
+## Features
+- One decorator, zero config
+- Latency tracking
+- Error capture
+- AI-powered regression detection
+- CLI: tracely view
+- Works with any LLM
+
+## Why Not LangSmith?
+| | LangSmith | Tracely |
+|---|---|---|
+| Open Source | No | Yes |
+| Any Framework | No | Yes |
+| Self-hosted | No | Yes |
+| Regression Detection | No | Yes |
+| Setup | Complex | One decorator |

@@ -1,0 +1,13 @@
+Metadata-Version: 2.4
+Name: tracely
+Version: 0.1.0
+Summary: AI Observability Framework — trace, debug and detect regressions in your LLM apps
+Author: Ravikumar
+Requires-Python: >=3.8
+Requires-Dist: litai
+Requires-Dist: click
+Requires-Dist: rich
+Dynamic: author
+Dynamic: requires-dist
+Dynamic: requires-python
+Dynamic: summary

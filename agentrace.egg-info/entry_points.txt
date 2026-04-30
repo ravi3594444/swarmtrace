@@ -1,0 +1,2 @@
+[console_scripts]
+agentrace = tracely.cli:view

@@ -1,0 +1,15 @@
+README.md
+pyproject.toml
+setup.py
+agentrace.egg-info/PKG-INFO
+agentrace.egg-info/SOURCES.txt
+agentrace.egg-info/dependency_links.txt
+agentrace.egg-info/entry_points.txt
+agentrace.egg-info/requires.txt
+agentrace.egg-info/top_level.txt
+tracely/__init__.py
+tracely/cli.py
+tracely/regression.py
+tracely/replay.py
+tracely/storage.py
+tracely/tracer.py
