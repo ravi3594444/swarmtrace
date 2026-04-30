@@ -1,2 +1,0 @@
-[console_scripts]
-swarmtrace = tracely.cli:view
