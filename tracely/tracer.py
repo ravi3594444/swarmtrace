@@ -88,8 +88,7 @@ def observe(func=None, model="default"):
             async def async_wrapper(*args, **kwargs):
                 trace_id = str(uuid.uuid4())[:8]
                 parent_id = _get_parent_id()
-                prev = parent_id
-                _set_parent_id(trace_id)
+                prev_token = _set_parent_id(trace_id)
                 start = time.time()
                 error = None
                 result = None
