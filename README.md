@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" width="300" alt="swarmtrace logo"/>
+</p>
+
 # Tracely
 > Open-source AI observability framework. Trace, debug and detect regressions in LLM apps with one decorator.
 
