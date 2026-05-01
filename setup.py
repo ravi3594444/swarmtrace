@@ -11,7 +11,8 @@ setup(
     install_requires=["litai", "click", "rich"],
     entry_points={"console_scripts": [
         "swarmtrace=tracely.cli:view",
-        "swarmtrace-export=tracely.export:main"
+        "swarmtrace-export=tracely.export:main",
+        "swarmtrace-replay=tracely.cli:main_replay"
     ]},
     python_requires=">=3.8",
 )
