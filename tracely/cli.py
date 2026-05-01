@@ -51,3 +51,11 @@ def view():
 
 if __name__ == "__main__":
     view()
+
+
+def export(fmt="json"):
+    from tracely.export import export_json, export_csv
+    if fmt == "csv":
+        export_csv()
+    else:
+        export_json()
