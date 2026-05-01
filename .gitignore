@@ -7,3 +7,4 @@ build/
 *.db
 .env
 *.pyo
+swarmtrace_export.*
