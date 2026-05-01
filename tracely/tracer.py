@@ -23,20 +23,40 @@ def get_cost(model, input_tokens, output_tokens):
         (output_tokens * price["output"] / 1_000_000), 8
     )
 
+def count_tokens_accurately(text: str) -> int:
+    """Use tiktoken for accurate token counting when available."""
+    try:
+        import tiktoken
+        enc = tiktoken.get_encoding("cl100k_base")  # works for GPT-4, Claude approx
+        return len(enc.encode(str(text)))
+    except ImportError:
+        return max(1, len(str(text)) // 4)
+
 def extract_real_tokens(result):
     """Try to extract real token counts from LLM response objects."""
-    # Anthropic SDK response
-    if hasattr(result, "usage"):
-        usage = result.usage
-        return getattr(usage, "input_tokens", 0), getattr(usage, "output_tokens", 0)
-    # OpenAI SDK response
-    if hasattr(result, "usage") and hasattr(result.usage, "prompt_tokens"):
-        return result.usage.prompt_tokens, result.usage.completion_tokens
-    # Dict response
-    if isinstance(result, dict) and "usage" in result:
-        u = result["usage"]
-        return u.get("input_tokens") or u.get("prompt_tokens", 0),                u.get("output_tokens") or u.get("completion_tokens", 0)
-    return None, None
+    try:
+        # Anthropic SDK response object
+        if hasattr(result, "usage"):
+            usage = result.usage
+            # Anthropic style
+            if hasattr(usage, "input_tokens"):
+                return usage.input_tokens, usage.output_tokens
+            # OpenAI style
+            if hasattr(usage, "prompt_tokens"):
+                return usage.prompt_tokens, usage.completion_tokens
+
+        # OpenAI ChatCompletion dict
+        if isinstance(result, dict):
+            u = result.get("usage", {})
+            if u:
+                inp = u.get("input_tokens") or u.get("prompt_tokens", 0)
+                out = u.get("output_tokens") or u.get("completion_tokens", 0)
+                return inp, out
+
+        # LitAI / plain string — no token data available
+        return None, None
+    except:
+        return None, None
 
 def _get_parent_id():
     return _current_trace_id.get()
