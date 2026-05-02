@@ -156,3 +156,19 @@ Result: 3/3 regressions detected
 ---
 
 <p align="center">Built with ❤️ at AMD Hackathon 2026 by <a href="https://github.com/ravi3594444">Ravi</a></p>
+
+
+## Benchmarks — AMD MI300X (192GB)
+
+Tested on AMD Instinct MI300X GPU via DigitalOcean AMD Developer Cloud.
+
+| Metric | Value |
+|---|---|
+| Hardware | AMD MI300X 192GB |
+| Swarms | 5 orchestrators |
+| Total agent calls | 20 |
+| Avg orchestrator latency | 6.1s |
+| Avg researcher latency | 1.8s |
+| Trace overhead | <1ms per call |
+
+<img src="assets/benchmark.png" alt="AMD MI300X Benchmark"/>
