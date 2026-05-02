@@ -1,76 +1,76 @@
-import sqlite3
-import os
 import sys
+from tracely.storage import get_traces, DB_PATH
+import sqlite3
 
-DB_PATH = os.path.expanduser("~/.tracely.db")
 
-def get_traces():
-    conn = sqlite3.connect(DB_PATH)
-    rows = conn.execute("SELECT * FROM traces ORDER BY timestamp DESC LIMIT 20").fetchall()
-    conn.close()
-    return rows
+# ---------- helpers ----------
 
-def print_tree(traces, parent_id=None, indent=0):
+def _print_tree(traces, parent_id=None, indent=0):
     children = [t for t in traces if t[1] == parent_id]
     for t in children:
         id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost = t
         status = "ERROR" if error else "OK"
         prefix = "    " * indent + ("└── " if indent > 0 else "")
         print(f"{prefix}{func}() [{id_}] {latency}s | {in_tok}in/{out_tok}out | ${cost} | {status}")
-        print_tree(traces, id_, indent + 1)
+        _print_tree(traces, id_, indent + 1)
+
+
+# ---------- view ----------
 
 def view():
     try:
         traces = get_traces()
-    except:
+    except Exception:
         traces = []
 
     if not traces:
         print("No traces found. Run your agent with @observe first.")
         return
 
-    total_cost = sum(t[10] for t in traces if t[10])
+    total_cost   = sum(t[10] for t in traces if t[10])
     total_tokens = sum((t[8] or 0) + (t[9] or 0) for t in traces)
 
-    # Rich colored output
     try:
         from rich.console import Console
         from rich.table import Table
         from rich.tree import Tree
-        from rich import print as rprint
 
         console = Console()
 
-        # Flat table
         table = Table(title="swarmtrace — Trace View", border_style="cyan")
-        table.add_column("ID", style="cyan", width=10)
-        table.add_column("Function", style="green", width=20)
-        table.add_column("Latency", style="yellow", width=10)
-        table.add_column("Tokens", style="blue", width=15)
-        table.add_column("Cost", style="magenta", width=12)
-        table.add_column("Status", width=8)
+        table.add_column("ID",       style="cyan",    width=10)
+        table.add_column("Function", style="green",   width=20)
+        table.add_column("Latency",  style="yellow",  width=10)
+        table.add_column("Tokens",   style="blue",    width=15)
+        table.add_column("Cost",     style="magenta", width=12)
+        table.add_column("Status",   width=8)
 
         for t in traces:
             id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost = t
-            status = "[red]ERROR[/red]" if error else "[green]OK[/green]"
+            status     = "[red]ERROR[/red]" if error else "[green]OK[/green]"
             tokens_str = f"{in_tok or 0}in/{out_tok or 0}out"
             table.add_row(id_, func, f"{latency}s", tokens_str, f"${cost or 0}", status)
 
         console.print(table)
 
-        # Tree view
         console.print("\n[bold cyan]=== Agent Tree ===[/bold cyan]")
         roots = [t for t in traces if t[1] is None]
         for root in roots:
             id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost = root
-            tree = Tree(f"[green]{func}()[/green] [{id_}] [yellow]{latency}s[/yellow] [magenta]${cost}[/magenta]")
-            def add_children(tree_node, parent_id):
-                children = [t for t in traces if t[1] == parent_id]
-                for child in children:
-                    cid, cpar, cfunc, cargs, coutput, clatency, cerror, cts, cin, cout, ccost = child
+            tree = Tree(
+                f"[green]{func}()[/green] [{id_}] [yellow]{latency}s[/yellow] [magenta]${cost}[/magenta]"
+            )
+
+            def add_children(tree_node, pid):
+                for child in [t for t in traces if t[1] == pid]:
+                    cid, _, cfunc, _, _, clatency, cerror, _, _, _, ccost = child
                     status = "[red]ERROR[/red]" if cerror else "[green]OK[/green]"
-                    branch = tree_node.add(f"[blue]{cfunc}()[/blue] [{cid}] [yellow]{clatency}s[/yellow] [magenta]${ccost}[/magenta] {status}")
+                    branch = tree_node.add(
+                        f"[blue]{cfunc}()[/blue] [{cid}] [yellow]{clatency}s[/yellow]"
+                        f" [magenta]${ccost}[/magenta] {status}"
+                    )
                     add_children(branch, cid)
+
             add_children(tree, id_)
             console.print(tree)
 
@@ -79,21 +79,23 @@ def view():
         console.print(f"[bold]Total cost:[/bold] [magenta]${round(total_cost, 6)}[/magenta]")
 
     except ImportError:
-        # Fallback plain output
-        print("\n=== Tracely Trace View ===")
+        print("\n=== swarmtrace Trace View ===")
         for t in traces:
             id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost = t
             status = "ERROR" if error else "OK"
             print(f"{id_:<10} {func:<20} {str(latency)+'s':<10} ${cost or 0} {status}")
-        print_tree(traces)
+        _print_tree(traces)
         print(f"Total: {len(traces)} traces | ${round(total_cost, 6)}")
+
+
+# ---------- replay ----------
 
 def replay(trace_id):
     try:
-        conn = sqlite3.connect(DB_PATH)
+        conn  = sqlite3.connect(DB_PATH)
         trace = conn.execute("SELECT * FROM traces WHERE id = ?", (trace_id,)).fetchone()
         conn.close()
-    except:
+    except Exception:
         trace = None
 
     if not trace:
@@ -131,15 +133,16 @@ def replay(trace_id):
         print(f"Error     : {error if error else 'None'}")
         print(f"Parent    : {parent_id if parent_id else 'root'}")
 
+
 def main_replay():
     if len(sys.argv) < 2:
         print("Usage: swarmtrace-replay <trace_id>")
         print("\nRecent traces:")
-        traces = get_traces()
-        for t in traces[:5]:
+        for t in get_traces(limit=5):
             print(f"  {t[0]} — {t[2]}() — {t[7]}")
         return
     replay(sys.argv[1])
+
 
 if __name__ == "__main__":
     view()
