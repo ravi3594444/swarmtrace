@@ -3,10 +3,9 @@ import os
 
 DB_PATH = os.path.expanduser("~/.tracely.db")
 
-# ---------- schema bootstrap ----------
-
 def _init_db():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute("""
         CREATE TABLE IF NOT EXISTS traces (
             id          TEXT PRIMARY KEY,
@@ -27,16 +26,13 @@ def _init_db():
 
 _init_db()
 
-# ---------- write ----------
-
 def save_trace(id_, parent_id, function, args, output,
                latency_sec, error, timestamp,
                input_tokens, output_tokens, cost_usd):
-    """Insert one trace row into the DB."""
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(
-        """INSERT OR REPLACE INTO traces VALUES
-           (?,?,?,?,?,?,?,?,?,?,?)""",
+        "INSERT OR REPLACE INTO traces VALUES (?,?,?,?,?,?,?,?,?,?,?)",
         (id_, parent_id, function, args, output,
          latency_sec, error, timestamp,
          input_tokens, output_tokens, cost_usd)
@@ -44,12 +40,10 @@ def save_trace(id_, parent_id, function, args, output,
     conn.commit()
     conn.close()
 
-# ---------- read ----------
-
 def get_traces(limit=20):
-    """Return the most-recent *limit* traces (used by CLI)."""
     try:
         conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA journal_mode=WAL")
         rows = conn.execute(
             "SELECT * FROM traces ORDER BY timestamp DESC LIMIT ?", (limit,)
         ).fetchall()
@@ -59,9 +53,9 @@ def get_traces(limit=20):
         return []
 
 def get_all_traces():
-    """Return every trace (used by export)."""
     try:
         conn = sqlite3.connect(DB_PATH)
+        conn.execute("PRAGMA journal_mode=WAL")
         rows = conn.execute(
             "SELECT * FROM traces ORDER BY timestamp DESC"
         ).fetchall()
