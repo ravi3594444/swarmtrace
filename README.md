@@ -252,6 +252,3 @@ Tested on AMD Instinct MI300X GPU via DigitalOcean AMD Developer Cloud.
 <p align="center">Built with love at AMD Hackathon 2026 by <a href="https://github.com/ravi3594444">Ravi</a></p>
 '''
 
-with open("/teamspace/studios/this_studio/tracely/README.md", "w") as f:
-    f.write(readme)
-print("README fixed!")
