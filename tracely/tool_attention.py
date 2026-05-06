@@ -1,4 +1,3 @@
-import os
 import json
 import numpy as np
 from tracely.storage import save_trace
@@ -54,8 +53,6 @@ class ToolAttention:
         """
         if self._index is None:
             return self.tools[:k]
-
-        import faiss
 
         start = time.time()
 
