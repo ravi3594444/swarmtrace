@@ -1,7 +1,7 @@
 
 import json
 import numpy as np
-from tracely storage import save_trace
+from tracely.storage import save_trace
 import uuid
 from datetime import datetime
 
