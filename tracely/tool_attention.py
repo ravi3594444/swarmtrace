@@ -1,5 +1,6 @@
 
 import json
+import time
 import numpy as np
 from tracely.storage import save_trace
 import uuid
