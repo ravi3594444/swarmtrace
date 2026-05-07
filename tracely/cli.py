@@ -1,6 +1,6 @@
 import sys
-from tracely.storage import get_traces, DB_PATH
-import sqlite3
+from tracely.storage import get_traces, get_by_id
+
 
 
 # ---------- helpers ----------
@@ -91,12 +91,7 @@ def view():
 # ---------- replay ----------
 
 def replay(trace_id):
-    try:
-        conn  = sqlite3.connect(DB_PATH)
-        trace = conn.execute("SELECT * FROM traces WHERE id = ?", (trace_id,)).fetchone()
-        conn.close()
-    except Exception:
-        trace = None
+    trace = get_by_id(trace_id)
 
     if not trace:
         print(f"Trace {trace_id} not found.")

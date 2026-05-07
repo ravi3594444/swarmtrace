@@ -26,7 +26,7 @@ def scrape(url: str, verbose=True):
 
     try:
         from scrapling.fetchers import Fetcher
-        page = Fetcher().get(url)
+        page = Fetcher().get(url, timeout=30)
         result = page.get_all_text(ignore_tags=("script", "style"))
         bytes_scraped = len(result.encode("utf-8"))
     except Exception as e:

@@ -1,7 +1,5 @@
-import sys
-sys.path.insert(0, "/teamspace/studios/this_studio/tracely")
-
 from tracely.storage import get_by_id, get_traces
+
 
 def replay(trace_id: str):
     trace = get_by_id(trace_id)
@@ -21,6 +19,7 @@ def replay(trace_id: str):
     print("Cost      : $" + str(cost))
     print("Error     : " + str(error if error else "None"))
     print("Parent    : " + str(parent_id if parent_id else "root"))
+
 
 def show_failures():
     traces = get_traces(limit=50)
