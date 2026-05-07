@@ -1,13 +1,14 @@
 import functools
 import asyncio
 import threading
+from typing import Optional
 
 # Session-level token tracker — thread-safe with lock
 _session_tokens: dict = {}
 _lock = threading.Lock()
 
 
-def reset(func_name: str | None = None):
+def reset(func_name: Optional[str] = None):
     """
     Reset token budget counters.
     - reset()            → clears all agents
