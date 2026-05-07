@@ -1,9 +1,11 @@
+
 import json
+import time
 import numpy as np
 from tracely.storage import save_trace
 import uuid
 from datetime import datetime
-import time
+
 
 class ToolAttention:
     """
@@ -53,6 +55,8 @@ class ToolAttention:
         """
         if self._index is None:
             return self.tools[:k]
+
+        import faiss
 
         start = time.time()
 
