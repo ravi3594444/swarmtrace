@@ -1,19 +1,28 @@
 import sqlite3
 import os
 import threading
-
+from typing import Optional
 
 DB_PATH = os.path.expanduser("~/.tracely.db")
 
 # Persistent connection with thread lock — avoids per-call connection overhead
 _lock = threading.Lock()
-_conn: sqlite3.Connection | None = None
+_conn: Optional[sqlite3.Connection] = None
 
-MAX_ROWS = 10_000  # auto-purge oldest rows beyond this limit
+MAX_ROWS = 10_000      # auto-purge oldest rows beyond this limit
+_write_count = 0       # throttle purge — only check every N writes
+PURGE_EVERY  = 100     # check row count every 100 writes
 
 
 def _get_conn() -> sqlite3.Connection:
     global _conn
+    # Reconnect if connection was lost or never opened
+    try:
+        if _conn is not None:
+            _conn.execute("SELECT 1")   # health check
+    except Exception:
+        _conn = None                    # force reconnect
+
     if _conn is None:
         _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
         _conn.execute("PRAGMA journal_mode=WAL")
@@ -42,7 +51,8 @@ def _get_conn() -> sqlite3.Connection:
 
 
 def _purge_old_rows(conn: sqlite3.Connection):
-    """Keep DB from growing unboundedly — delete oldest rows beyond MAX_ROWS."""
+    """Keep DB from growing unboundedly — delete oldest rows beyond MAX_ROWS.
+    Only called every PURGE_EVERY writes to avoid COUNT(*) on every insert."""
     row_count = conn.execute("SELECT COUNT(*) FROM traces").fetchone()[0]
     if row_count > MAX_ROWS:
         excess = row_count - MAX_ROWS
@@ -56,6 +66,7 @@ def _purge_old_rows(conn: sqlite3.Connection):
 def save_trace(id_, parent_id, function, args, output,
                latency_sec, error, timestamp,
                input_tokens, output_tokens, cost_usd):
+    global _write_count
     with _lock:
         conn = _get_conn()
         conn.execute(
@@ -64,7 +75,9 @@ def save_trace(id_, parent_id, function, args, output,
              latency_sec, error, timestamp,
              input_tokens, output_tokens, cost_usd)
         )
-        _purge_old_rows(conn)
+        _write_count += 1
+        if _write_count % PURGE_EVERY == 0:
+            _purge_old_rows(conn)
         conn.commit()
 
 

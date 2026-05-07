@@ -4,14 +4,15 @@ import uuid
 import asyncio
 import contextvars
 from datetime import datetime, timezone
+from typing import Optional
 
 from tracely.storage import save_trace
 
 # Thread-safe & async-safe parent tracking via contextvars (both sync + async)
-_parent_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("parent_ctx", default=None)
+_parent_ctx: contextvars.ContextVar = contextvars.ContextVar("parent_ctx", default=None)
 
 
-def _current_parent() -> str | None:
+def _current_parent() -> Optional[str]:
     return _parent_ctx.get()
 
 
@@ -71,7 +72,6 @@ def observe(func):
             trace_id  = uuid.uuid4().hex[:8]
             parent_id = _current_parent()
             timestamp = datetime.now(timezone.utc).isoformat()
-            # Use contextvars for sync too — fully thread-safe
             token = _parent_ctx.set(trace_id)
 
             start   = time.perf_counter()
