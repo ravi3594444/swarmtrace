@@ -14,6 +14,12 @@ readme = '''<p align="center">
 
 ---
 
+## Demo
+
+Watch the live demo: https://www.loom.com/share/a0bb4d18816c4991a2de9a02c3cfe597
+
+---
+
 ## Install
 
 ```bash
