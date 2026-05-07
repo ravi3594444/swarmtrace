@@ -2,14 +2,14 @@ import functools
 import time
 import uuid
 import asyncio
+import contextvars
 from datetime import datetime, timezone
 
 from tracely.storage import save_trace
 
-# Thread-safe async-safe parent tracking via contextvars
-import contextvars
+# Thread-safe & async-safe parent tracking via contextvars (both sync + async)
 _parent_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar("parent_ctx", default=None)
-_parent_stack = []  # kept for backward compat with scraper.py
+
 
 def _current_parent() -> str | None:
     return _parent_ctx.get()
@@ -71,7 +71,8 @@ def observe(func):
             trace_id  = uuid.uuid4().hex[:8]
             parent_id = _current_parent()
             timestamp = datetime.now(timezone.utc).isoformat()
-            _parent_stack.append(trace_id)
+            # Use contextvars for sync too — fully thread-safe
+            token = _parent_ctx.set(trace_id)
 
             start   = time.perf_counter()
             output  = None
@@ -99,6 +100,6 @@ def observe(func):
                     output, latency, error,
                     timestamp, in_tok, out_tok, cost
                 )
-                _parent_stack.pop()
+                _parent_ctx.reset(token)
 
         return sync_wrapper

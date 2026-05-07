@@ -1,9 +1,24 @@
 import functools
 import asyncio
+import threading
 
-
-# Session-level token tracker
+# Session-level token tracker — thread-safe with lock
 _session_tokens: dict = {}
+_lock = threading.Lock()
+
+
+def reset(func_name: str | None = None):
+    """
+    Reset token budget counters.
+    - reset()            → clears all agents
+    - reset("my_agent")  → clears only that agent
+    """
+    with _lock:
+        if func_name is None:
+            _session_tokens.clear()
+        else:
+            _session_tokens.pop(func_name, None)
+
 
 def budget(max_tokens: int = 10000, warn_at: float = 0.8, hard_stop: bool = False):
     """
@@ -14,6 +29,10 @@ def budget(max_tokens: int = 10000, warn_at: float = 0.8, hard_stop: bool = Fals
         @budget(max_tokens=10000, warn_at=0.8)
         def my_agent(q):
             return llm.chat(q)
+
+        # Reset between runs:
+        from tracely.budget import reset
+        reset("my_agent")
     """
     def decorator(func):
         if asyncio.iscoroutinefunction(func):
@@ -32,23 +51,24 @@ def budget(max_tokens: int = 10000, warn_at: float = 0.8, hard_stop: bool = Fals
         return sync_wrapper
     return decorator
 
+
 def _track(func_name, args, result, max_tokens, warn_at, hard_stop):
     try:
         import tiktoken
         enc = tiktoken.get_encoding("cl100k_base")
-        in_tok = len(enc.encode(str(args)))
+        in_tok  = len(enc.encode(str(args)))
         out_tok = len(enc.encode(str(result))) if result else 0
-    except:
-        in_tok = len(str(args)) // 4
+    except Exception:
+        in_tok  = len(str(args)) // 4
         out_tok = len(str(result)) // 4 if result else 0
 
-    key = func_name
-    _session_tokens[key] = _session_tokens.get(key, 0) + in_tok + out_tok
-    total = _session_tokens[key]
-    pct = total / max_tokens
+    with _lock:
+        _session_tokens[func_name] = _session_tokens.get(func_name, 0) + in_tok + out_tok
+        total = _session_tokens[func_name]
 
+    pct = total / max_tokens
     bar_filled = int(pct * 20)
-    bar = "█" * bar_filled + "░" * (20 - bar_filled)
+    bar = "█" * min(bar_filled, 20) + "░" * max(0, 20 - bar_filled)
 
     if pct >= 1.0:
         msg = f"[swarmtrace] 🛑 OVER BUDGET: {func_name} [{bar}] {total:,}/{max_tokens:,} tokens"

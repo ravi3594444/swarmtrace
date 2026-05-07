@@ -1,10 +1,9 @@
-
 import json
-import time
 import numpy as np
 from tracely.storage import save_trace
 import uuid
-from datetime import datetime
+from datetime import datetime, timezone
+import time
 
 
 class ToolAttention:
@@ -48,6 +47,11 @@ class ToolAttention:
             print("[ToolAttention] Run: pip install sentence-transformers faiss-cpu")
             self._index = None
 
+    def add_tools(self, new_tools: list):
+        """Dynamically add tools and rebuild the index."""
+        self.tools.extend(new_tools)
+        self._build_index()
+
     def select(self, query: str, k: int = 3) -> list:
         """
         ISO Scoring — select top-k tools by intent-schema overlap.
@@ -55,8 +59,6 @@ class ToolAttention:
         """
         if self._index is None:
             return self.tools[:k]
-
-        import faiss
 
         start = time.time()
 
@@ -70,10 +72,10 @@ class ToolAttention:
         selected = [self.tools[i] for i in indices[0]]
 
         # Calculate token savings
-        full_tokens = sum(len(json.dumps(t.get("schema", {}))) // 4 for t in self.tools)
+        full_tokens   = sum(len(json.dumps(t.get("schema", {}))) // 4 for t in self.tools)
         active_tokens = sum(len(json.dumps(t.get("schema", {}))) // 4 for t in selected)
-        savings_pct = round((1 - active_tokens / max(full_tokens, 1)) * 100, 1)
-        latency = round(time.time() - start, 4)
+        savings_pct   = round((1 - active_tokens / max(full_tokens, 1)) * 100, 1)
+        latency       = round(time.time() - start, 4)
 
         if self.verbose:
             print(f"[ToolAttention] Query: {query[:50]}")
@@ -84,17 +86,17 @@ class ToolAttention:
 
         # Save to swarmtrace
         save_trace(
-            str(uuid.uuid4())[:8],  # id_
-            None,                    # parent_id
-            "tool_attention.select", # function
-            query[:200],             # args
-            str([t["name"] for t in selected]),  # output
-            latency,                 # latency_sec
-            None,                    # error
-            datetime.utcnow().isoformat(),  # timestamp
-            full_tokens,             # input_tokens
-            active_tokens,           # output_tokens
-            round((full_tokens - active_tokens) * 0.80 / 1_000_000, 8)  # cost_usd
+            str(uuid.uuid4())[:8],
+            None,
+            "tool_attention.select",
+            query[:200],
+            str([t["name"] for t in selected]),
+            latency,
+            None,
+            datetime.now(timezone.utc).isoformat(),  # fixed: was deprecated utcnow()
+            full_tokens,
+            active_tokens,
+            round((full_tokens - active_tokens) * 0.80 / 1_000_000, 8)
         )
 
         return selected
