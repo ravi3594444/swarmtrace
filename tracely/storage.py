@@ -104,3 +104,16 @@ def purge_all():
         conn = _get_conn()
         conn.execute("DELETE FROM traces")
         conn.commit()
+
+
+def get_by_id(trace_id: str):
+    """Fetch a single trace by ID."""
+    try:
+        with _lock:
+            conn = _get_conn()
+            row = conn.execute(
+                "SELECT * FROM traces WHERE id = ?", (trace_id,)
+            ).fetchone()
+        return row
+    except Exception:
+        return None
