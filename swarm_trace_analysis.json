@@ -1,0 +1,156 @@
+{
+  "analysis_timestamp": 1780667717.4422026,
+  "trace_count": 15,
+  "results": [
+    {
+      "trace_index": 0,
+      "timestamp": 1780667717.441479,
+      "agent_count": 6,
+      "metrics": {
+        "average_distance": 59.81283245894806,
+        "max_distance": 117.79956482469889,
+        "cluster_score": 0.016690915100453552
+      }
+    },
+    {
+      "trace_index": 1,
+      "timestamp": 1780667717.4414837,
+      "agent_count": 12,
+      "metrics": {
+        "average_distance": 42.369057217431354,
+        "max_distance": 81.17810041192011,
+        "cluster_score": 0.02354655519853527
+      }
+    },
+    {
+      "trace_index": 2,
+      "timestamp": 1780667717.4414845,
+      "agent_count": 14,
+      "metrics": {
+        "average_distance": 53.3401636632548,
+        "max_distance": 116.9866380116317,
+        "cluster_score": 0.01871251754207473
+      }
+    },
+    {
+      "trace_index": 3,
+      "timestamp": 1780667717.4414852,
+      "agent_count": 6,
+      "metrics": {
+        "average_distance": 65.82116835078234,
+        "max_distance": 127.3118543681532,
+        "cluster_score": 0.015169634049547793
+      }
+    },
+    {
+      "trace_index": 4,
+      "timestamp": 1780667717.4414856,
+      "agent_count": 12,
+      "metrics": {
+        "average_distance": 54.55010389328905,
+        "max_distance": 125.15537452715553,
+        "cluster_score": 0.018298226878994066
+      }
+    },
+    {
+      "trace_index": 5,
+      "timestamp": 1780667717.4414945,
+      "agent_count": 7,
+      "metrics": {
+        "average_distance": 33.222519932476644,
+        "max_distance": 56.676941165288255,
+        "cluster_score": 0.03000973521889575
+      }
+    },
+    {
+      "trace_index": 6,
+      "timestamp": 1780667717.441495,
+      "agent_count": 15,
+      "metrics": {
+        "average_distance": 51.214629372938944,
+        "max_distance": 100.01248456710779,
+        "cluster_score": 0.019487620045587926
+      }
+    },
+    {
+      "trace_index": 7,
+      "timestamp": 1780667717.4414952,
+      "agent_count": 13,
+      "metrics": {
+        "average_distance": 52.6034600913939,
+        "max_distance": 98.46456454676397,
+        "cluster_score": 0.018974086298430583
+      }
+    },
+    {
+      "trace_index": 8,
+      "timestamp": 1780667717.441496,
+      "agent_count": 13,
+      "metrics": {
+        "average_distance": 48.21739560586249,
+        "max_distance": 98.6789574848028,
+        "cluster_score": 0.020696479755598976
+      }
+    },
+    {
+      "trace_index": 9,
+      "timestamp": 1780667717.4414964,
+      "agent_count": 10,
+      "metrics": {
+        "average_distance": 52.45757672922576,
+        "max_distance": 101.67998471315619,
+        "cluster_score": 0.019026752415773552
+      }
+    },
+    {
+      "trace_index": 10,
+      "timestamp": 1780667717.4414966,
+      "agent_count": 10,
+      "metrics": {
+        "average_distance": 65.81035480909541,
+        "max_distance": 118.38225363319197,
+        "cluster_score": 0.015172122846196593
+      }
+    },
+    {
+      "trace_index": 11,
+      "timestamp": 1780667717.441497,
+      "agent_count": 8,
+      "metrics": {
+        "average_distance": 57.39715556722888,
+        "max_distance": 101.29564303400822,
+        "cluster_score": 0.017392164710317612
+      }
+    },
+    {
+      "trace_index": 12,
+      "timestamp": 1780667717.4414976,
+      "agent_count": 11,
+      "metrics": {
+        "average_distance": 52.113399043001415,
+        "max_distance": 108.27112900834958,
+        "cluster_score": 0.019152172015777586
+      }
+    },
+    {
+      "trace_index": 13,
+      "timestamp": 1780667717.4414997,
+      "agent_count": 12,
+      "metrics": {
+        "average_distance": 55.44209937178002,
+        "max_distance": 102.51571140401799,
+        "cluster_score": 0.018004360859792828
+      }
+    },
+    {
+      "trace_index": 14,
+      "timestamp": 1780667717.4415,
+      "agent_count": 13,
+      "metrics": {
+        "average_distance": 54.19917681472503,
+        "max_distance": 116.45475569125765,
+        "cluster_score": 0.018416485454505395
+      }
+    }
+  ]
+}
