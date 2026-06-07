@@ -30,7 +30,23 @@ function Failures() {
   useEffect(() => {
     fetch(`${import.meta.env.VITE_API_BASE_URL}/traces`)
       .then((r) => r.json())
-      .then((json) => setAllTraces((json.traces ?? json) as Trace[]))
+      .then((json) => {
+        const raw = (json.traces ?? json) as any[];
+        const mapped: Trace[] = raw.map((t: any) => ({
+          id: t.id,
+          parent_id: t.parent_id ?? null,
+          function: t.function,
+          args: t.args,
+          output: t.output ?? "",
+          latency_sec: typeof t.duration === "number" ? t.duration / 1000 : (t.latency_sec ?? 0),
+          error: t.error ?? null,
+          timestamp: t.timestamp,
+          input_tokens: t.tokens_in ?? t.input_tokens ?? 0,
+          output_tokens: t.tokens_out ?? t.output_tokens ?? 0,
+          cost_usd: t.cost ?? t.cost_usd ?? 0,
+        }));
+        setAllTraces(mapped);
+      })
       .catch(() => {});
   }, []);
 

@@ -3,6 +3,7 @@ FastAPI backend for SwarmTrace application.
 Provides API endpoints for the frontend to consume trace data.
 """
 
+import asyncio
 import json
 import random
 import secrets
@@ -136,11 +137,13 @@ def generate_trace_data(count: int = 20) -> List[Trace]:
 # ---------------------------------------------------------------------------
 
 _trace_store: List[Trace] = []
+_trace_store_lock = asyncio.Lock()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _trace_store
+    global _trace_store_lock
     _trace_store = generate_trace_data()
     yield
     _trace_store.clear()
@@ -165,8 +168,10 @@ app.add_middleware(
 async def get_traces():
     """Return all traces wrapped in { traces: [...] } for the frontend."""
     global _trace_store
-    if random.random() < 0.3:
-        _trace_store = generate_trace_data(len(_trace_store))
+    async with _trace_store_lock:
+        if random.random() < 0.3:
+            _trace_store = generate_trace_data(len(_trace_store))
+        store_snapshot = list(_trace_store)
 
     return {
         "traces": [
@@ -184,7 +189,7 @@ async def get_traces():
                 "tokens_out": t.output_tokens,
                 "cost": t.cost_usd,
             }
-            for t in _trace_store
+            for t in store_snapshot
         ]
     }
 
@@ -235,14 +240,21 @@ _api_keys: dict = {}
 @app.get("/overview")
 async def get_overview():
     """Aggregated system overview for the Overview page."""
+    async with _trace_store_lock:
+        store_snapshot = list(_trace_store)
+
+    active_agents = len(store_snapshot)
+    total_throughput = sum(t.input_tokens + t.output_tokens for t in store_snapshot)
+    avg_latency_ms = round(
+        sum(t.latency_sec for t in store_snapshot) / max(len(store_snapshot), 1) * 1000,
+        1,
+    )
+
     return {
         "system_health": 99.9,
-        "active_agents": len(_trace_store),
-        "total_throughput": sum(t.input_tokens + t.output_tokens for t in _trace_store),
-        "avg_latency_ms": round(
-            sum(t.latency_sec for t in _trace_store) / max(len(_trace_store), 1) * 1000,
-            1,
-        ),
+        "active_agents": active_agents,
+        "total_throughput": total_throughput,
+        "avg_latency_ms": avg_latency_ms,
         "activity": [
             {"time": f"{i:02d}:00", "value": random.randint(1000, 8000)}
             for i in range(0, 24, 2)
@@ -254,7 +266,7 @@ async def get_overview():
                 "score": round(random.uniform(90, 99), 1),
                 "status": "ACTIVE" if not t.error else "ERROR",
             }
-            for t in _trace_store[:3]
+            for t in store_snapshot[:3]
         ],
         "events": [
             {
@@ -262,7 +274,7 @@ async def get_overview():
                 "type": "ERROR" if t.error else "INFO",
                 "message": t.error or f"{t.function} completed in {t.latency_sec}s",
             }
-            for t in _trace_store[:5]
+            for t in store_snapshot[:5]
         ],
     }
 
@@ -327,16 +339,18 @@ async def get_metrics():
 
 @app.get("/settings/api-keys")
 async def list_api_keys():
-    return [
-        {
-            "id": k,
-            "name": v["name"],
-            "created": v["created"],
-            "last_used": v["last_used"],
-            "prefix": k[:8] + "...",
-        }
-        for k, v in _api_keys.items()
-    ]
+    return {
+        "keys": [
+            {
+                "id": k,
+                "name": v["name"],
+                "created": v["created"],
+                "last_used": v["last_used"],
+                "prefix": k[:8] + "...",
+            }
+            for k, v in _api_keys.items()
+        ]
+    }
 
 
 @app.post("/settings/api-keys")
@@ -387,33 +401,40 @@ async def get_team():
 
 @app.get("/settings/integrations")
 async def get_integrations():
-    return [
-        {
-            "name": "tracely @observe",
-            "status": "connected",
-            "description": "Auto-traces all decorated functions",
-        },
-        {
-            "name": "Token Budget",
-            "status": "connected",
-            "description": "Monitors token limits per agent",
-        },
-        {
-            "name": "Tool Attention",
-            "status": "disconnected",
-            "description": "Requires sentence-transformers + faiss",
-        },
-        {
-            "name": "Scrapling",
-            "status": "disconnected",
-            "description": "Web scraping traces",
-        },
-        {
-            "name": "Regression Detector",
-            "status": "disconnected",
-            "description": "Requires LIGHTNING_API_KEY",
-        },
-    ]
+    return {
+        "integrations": [
+            {
+                "id": "tracely-observe",
+                "name": "tracely @observe",
+                "connected": True,
+                "description": "Auto-traces all decorated functions",
+            },
+            {
+                "id": "token-budget",
+                "name": "Token Budget",
+                "connected": True,
+                "description": "Monitors token limits per agent",
+            },
+            {
+                "id": "tool-attention",
+                "name": "Tool Attention",
+                "connected": False,
+                "description": "Requires sentence-transformers + faiss",
+            },
+            {
+                "id": "scrapling",
+                "name": "Scrapling",
+                "connected": False,
+                "description": "Web scraping traces",
+            },
+            {
+                "id": "regression-detector",
+                "name": "Regression Detector",
+                "connected": False,
+                "description": "Requires LIGHTNING_API_KEY",
+            },
+        ]
+    }
 
 
 # ---------------------------------------------------------------------------

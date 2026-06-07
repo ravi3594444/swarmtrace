@@ -31,4 +31,18 @@ class SwarmTraceRecord:
         }
 
 def time_execution(func, *args, **kwargs) -> tuple:
+    """Execute a function and measure its execution time.
+
+    Args:
+        func: The function to execute
+        *args: Positional arguments to pass to the function
+        **kwargs: Keyword arguments to pass to the function
+
+    Returns:
+        tuple: A tuple containing (result, execution_time_ms)
     """
+    start_time = time.time()
+    result = func(*args, **kwargs)
+    end_time = time.time()
+    execution_time_ms = (end_time - start_time) * 1000
+    return result, execution_time_ms
