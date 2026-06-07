@@ -36,7 +36,8 @@ export function useApiLiveTraces(enabled: boolean) {
 
         if (!res.ok) throw new Error(String(res.status));
 
-        const apiTraces = await res.json() as Trace[];
+        const json = await res.json()
+        const apiTraces = (json.traces ?? json) as Trace[];
 
         if (cancelled) return;
 

@@ -161,13 +161,32 @@ app.add_middleware(
 # Routes
 # ---------------------------------------------------------------------------
 
-@app.get("/traces", response_model=List[Trace])
+@app.get("/traces")
 async def get_traces():
-    """Return all swarm traces, occasionally refreshing the dataset."""
+    """Return all traces wrapped in { traces: [...] } for the frontend."""
     global _trace_store
     if random.random() < 0.3:
         _trace_store = generate_trace_data(len(_trace_store))
-    return _trace_store
+
+    return {
+        "traces": [
+            {
+                "id": t.id,
+                "parent_id": t.parent_id,
+                "function": t.function,
+                "args": t.args,
+                "output": t.output or "{}",
+                "duration": int(t.latency_sec * 1000),
+                "status": "ERROR" if t.error else "SUCCESS",
+                "error": t.error,
+                "timestamp": t.timestamp,
+                "tokens_in": t.input_tokens,
+                "tokens_out": t.output_tokens,
+                "cost": t.cost_usd,
+            }
+            for t in _trace_store
+        ]
+    }
 
 
 @app.get("/trace-analysis")
@@ -177,7 +196,6 @@ async def get_trace_analysis():
         try:
             return json.loads(ANALYSIS_FILE.read_text())
         except json.JSONDecodeError:
-            # Fall through to generated data
             pass
 
     now = int(time.time())
@@ -207,7 +225,7 @@ async def health():
 
 
 # ---------------------------------------------------------------------------
-# New Dashboard Endpoints (Overview, Agents, Metrics, Settings)
+# Dashboard Endpoints (Overview, Agents, Metrics, Settings)
 # ---------------------------------------------------------------------------
 
 # In-memory API keys store (for hackathon demo)
@@ -240,8 +258,8 @@ async def get_overview():
         ],
         "events": [
             {
-                "time": t.timestamp[-8:-3],
-                "level": "ERROR" if t.error else "INFO",
+                "timestamp": t.timestamp,
+                "type": "ERROR" if t.error else "INFO",
                 "message": t.error or f"{t.function} completed in {t.latency_sec}s",
             }
             for t in _trace_store[:5]
@@ -256,15 +274,17 @@ async def get_agents():
     for t in _trace_store:
         if t.function not in seen:
             seen[t.function] = {
+                "id": t.id,
                 "name": t.function,
-                "model": "claude-haiku",
-                "status": "Error" if t.error else "Running",
-                "current_task": t.args[:40],
-                "token_usage_1hr": t.input_tokens + t.output_tokens,
+                "status": "RUNNING" if not t.error else "ERROR",
+                "tasks": random.randint(1, 20),
+                "tokens": f"{(t.input_tokens + t.output_tokens) // 1000}K",
+                "lastActive": "just now",
                 "uptime": f"{random.randint(1, 30)}d {random.randint(0, 23)}h",
-                "success_rate": round(random.uniform(95, 99.9), 1),
+                "success_rate": f"{round(random.uniform(95, 99.9), 1)}%",
+                "current_task": t.args[:50] if t.args else "Idle",
             }
-    return list(seen.values())
+    return {"agents": list(seen.values())}
 
 
 @app.get("/metrics")
@@ -292,12 +312,13 @@ async def get_metrics():
         },
         "latency_heatmap": [
             {
-                "agent": t.function,
-                "hour": i,
-                "latency_ms": round(t.latency_sec * 1000 * random.uniform(0.5, 1.5)),
+                "time": f"{i}:00",
+                "Retrieval_v2": round(t.latency_sec * 1000 * random.uniform(0.6, 1.2)),
+                "Synthesis_v1": round(t.latency_sec * 1000 * random.uniform(0.5, 1.0)),
+                "Router_fast": round(t.latency_sec * 1000 * random.uniform(0.3, 0.8)),
             }
             for t in _trace_store[:3]
-            for i in range(0, 24, 2)
+            for i in range(0, 24, 4)
         ],
     }
 

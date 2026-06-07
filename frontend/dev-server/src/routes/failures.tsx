@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Fragment, useState } from "react";
+import { Fragment, useState, useEffect } from "react";
 import { DEMO_TRACES, type Trace } from "@/lib/traces-data";
 import { SwarmLayout } from "@/components/swarm/Layout";
 import { DetailDrawer } from "@/components/swarm/DetailDrawer";
@@ -24,8 +24,17 @@ function formatTime(iso: string) {
 }
 
 function Failures() {
-  const failed = DEMO_TRACES.filter((t) => t.error);
+  const [allTraces, setAllTraces] = useState<Trace[]>(DEMO_TRACES);
   const [selected, setSelected] = useState<Trace | null>(null);
+
+  useEffect(() => {
+    fetch(`${import.meta.env.VITE_API_BASE_URL}/traces`)
+      .then((r) => r.json())
+      .then((json) => setAllTraces((json.traces ?? json) as Trace[]))
+      .catch(() => {});
+  }, []);
+
+  const failed = allTraces.filter((t) => t.error);
 
   return (
     <SwarmLayout>
@@ -97,7 +106,7 @@ function Failures() {
                           </span>
                           <CallChainCrumbs
                             trace={t}
-                            allTraces={DEMO_TRACES}
+                            allTraces={allTraces}
                             onJump={setSelected}
                           />
                         </div>
@@ -112,7 +121,7 @@ function Failures() {
       </div>
       <DetailDrawer
         trace={selected}
-        allTraces={DEMO_TRACES}
+        allTraces={allTraces}
         onClose={() => setSelected(null)}
         onJump={(t) => setSelected(t)}
       />
