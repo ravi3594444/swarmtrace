@@ -24,7 +24,7 @@ export const Route = createFileRoute("/")({
 
 function Dashboard() {
   const [live, setLive] = useState(false);
-  const { traces, newIds, lastPoll } = useLiveTraces(live);
+  const { traces, newIds, lastPoll, error } = useLiveTraces(live);
   const [selected, setSelected] = useState<Trace | null>(null);
   const [view, setView] = useState<"tree" | "waterfall">("tree");
 
@@ -43,6 +43,13 @@ function Dashboard() {
             {traces.length} traces captured in last session
           </p>
         </div>
+
+        {error && live && (
+          <div className="flex items-center gap-2 border border-destructive/30 bg-destructive/10 px-4 py-3 font-mono text-xs text-destructive">
+            <span className="text-[10px] font-bold uppercase tracking-[0.16em]">⚠</span>
+            <span>API unavailable — showing demo data</span>
+          </div>
+        )}
 
         <StatBar traces={traces} />
         <TokenChart traces={traces} />

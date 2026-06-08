@@ -28,7 +28,7 @@ function Failures() {
   const [selected, setSelected] = useState<Trace | null>(null);
 
   useEffect(() => {
-    fetch(`${import.meta.env.VITE_API_BASE_URL}/traces`)
+    fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/traces`)
       .then((r) => r.json())
       .then((json) => {
         const raw = (json.traces ?? json) as any[];

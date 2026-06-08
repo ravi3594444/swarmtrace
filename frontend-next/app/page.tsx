@@ -205,7 +205,7 @@ export default function OverviewPage() {
                 <XAxis dataKey="time" stroke="#8e9192" />
                 <YAxis stroke="#8e9192" />
                 <Tooltip contentStyle={{ backgroundColor: '#121212', border: '1px solid #333333', color: '#e5e2e1' }} />
-                <Area type="monotone" dataKey="value" stroke="#ffffff" fillOpacity={1} fill="url(#colorRequests)" isAnimationActive={false} />
+                <Area type="monotone" dataKey="requests" stroke="#ffffff" fillOpacity={1} fill="url(#colorRequests)" isAnimationActive={false} />
               </AreaChart>
             </ResponsiveContainer>
             )}

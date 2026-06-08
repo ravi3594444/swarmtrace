@@ -22,6 +22,7 @@ export function useApiLiveTraces(enabled: boolean) {
   const [traces, setTraces] = useState<Trace[]>(DEMO_TRACES);
   const [newIds, setNewIds] = useState<Map<string, number>>(new Map());
   const [lastPoll, setLastPoll] = useState<number | null>(null);
+  const [error, setError] = useState<boolean>(false);
 
   useEffect(() => {
     if (!enabled) return;
@@ -30,7 +31,7 @@ export function useApiLiveTraces(enabled: boolean) {
     const poll = async () => {
       try {
         // Fetch directly from the API endpoint
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/traces`, {
+        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/traces`, {
           cache: "no-store"
         });
 
@@ -43,6 +44,7 @@ export function useApiLiveTraces(enabled: boolean) {
 
         // Update traces with data from API
         setTraces(apiTraces);
+        setError(false);
 
         // Mark all new traces as "new"
         if (apiTraces.length > 0) {
@@ -55,11 +57,12 @@ export function useApiLiveTraces(enabled: boolean) {
         }
 
         setLastPoll(Date.now());
-      } catch (error) {
-        console.error("Error fetching traces from API:", error);
+      } catch (err) {
+        console.error("Error fetching traces from API:", err);
         // Fall back to demo data if there's an error
         if (cancelled) return;
         setTraces(DEMO_TRACES);
+        setError(true);
         setLastPoll(Date.now());
       }
     };
@@ -92,5 +95,5 @@ export function useApiLiveTraces(enabled: boolean) {
     return () => clearInterval(id);
   }, [newIds.size]);
 
-  return { traces, newIds, lastPoll };
+  return { traces, newIds, lastPoll, error };
 }
