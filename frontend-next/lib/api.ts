@@ -1,8 +1,9 @@
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+// Calls native Next.js API Routes (Route Handlers) deployed on Vercel.
+// Uses relative paths, completely eliminating the need for process.env.NEXT_PUBLIC_API_URL on the client.
 
 export async function fetchOverview() {
   try {
-    const res = await fetch(`${API_URL}/overview`, { next: { revalidate: 30 } })
+    const res = await fetch(`/api/overview`, { next: { revalidate: 30 } })
     return res.ok ? res.json() : null
   } catch {
     return null
@@ -11,7 +12,7 @@ export async function fetchOverview() {
 
 export async function fetchAgents() {
   try {
-    const res = await fetch(`${API_URL}/agents`, { next: { revalidate: 30 } })
+    const res = await fetch(`/api/agents`, { next: { revalidate: 30 } })
     return res.ok ? res.json() : null
   } catch {
     return null
@@ -20,7 +21,7 @@ export async function fetchAgents() {
 
 export async function fetchTraces() {
   try {
-    const res = await fetch(`${API_URL}/traces`, { next: { revalidate: 5 } })
+    const res = await fetch(`/api/traces`, { next: { revalidate: 5 } })
     return res.ok ? res.json() : null
   } catch {
     return null
@@ -29,7 +30,7 @@ export async function fetchTraces() {
 
 export async function fetchMetrics() {
   try {
-    const res = await fetch(`${API_URL}/metrics`, { next: { revalidate: 30 } })
+    const res = await fetch(`/api/metrics`, { next: { revalidate: 30 } })
     return res.ok ? res.json() : null
   } catch {
     return null
@@ -38,7 +39,7 @@ export async function fetchMetrics() {
 
 export async function fetchApiKeys() {
   try {
-    const res = await fetch(`${API_URL}/settings/api-keys`)
+    const res = await fetch(`/api/settings/api-keys`)
     return res.ok ? res.json() : null
   } catch {
     return null
@@ -47,7 +48,7 @@ export async function fetchApiKeys() {
 
 export async function createApiKey(name: string) {
   try {
-    const res = await fetch(`${API_URL}/settings/api-keys`, {
+    const res = await fetch(`/api/settings/api-keys`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
@@ -60,7 +61,7 @@ export async function createApiKey(name: string) {
 
 export async function revokeApiKey(id: string) {
   try {
-    const res = await fetch(`${API_URL}/settings/api-keys/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/settings/api-keys/${id}`, { method: 'DELETE' })
     return res.ok
   } catch {
     return false
@@ -69,7 +70,7 @@ export async function revokeApiKey(id: string) {
 
 export async function fetchBillingInfo() {
   try {
-    const res = await fetch(`${API_URL}/settings/billing`)
+    const res = await fetch(`/api/settings/billing`)
     return res.ok ? res.json() : null
   } catch {
     return null
@@ -78,7 +79,7 @@ export async function fetchBillingInfo() {
 
 export async function fetchIntegrations() {
   try {
-    const res = await fetch(`${API_URL}/settings/integrations`)
+    const res = await fetch(`/api/settings/integrations`)
     return res.ok ? res.json() : null
   } catch {
     return null

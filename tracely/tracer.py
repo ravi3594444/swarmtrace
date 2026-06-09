@@ -17,12 +17,30 @@ Usage::
 import asyncio
 import contextvars
 import functools
+import json
+import os
+import sys
+import threading
 import time
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
+from urllib.request import Request, urlopen
 
 from tracely.storage import save_trace
+
+_REMOTE_KEY: str = os.environ.get("SWARMTRACE_API_KEY", "")
+_REMOTE_URL: str = os.environ.get("SWARMTRACE_ENDPOINT", "").rstrip("/")
+
+def _send_remote(payload: dict) -> None:
+    try:
+        body = json.dumps(payload).encode()
+        req = Request(f"{_REMOTE_URL}/ingest", data=body,
+            headers={"Content-Type": "application/json", "X-API-Key": _REMOTE_KEY},
+            method="POST")
+        urlopen(req, timeout=5)
+    except Exception as exc:
+        print(f"[swarmtrace] remote ingest warning: {exc}", file=sys.stderr)
 
 # Thread-safe & async-safe parent tracking
 _parent_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
@@ -76,6 +94,14 @@ def _flush(
         args_repr, output, latency, error,
         timestamp, in_tok, out_tok, cost,
     )
+
+    if _REMOTE_KEY and _REMOTE_URL:
+        threading.Thread(target=_send_remote, args=({
+            "id": trace_id, "parent_id": parent_id, "function": func_name,
+            "args": args_repr, "output": output or "", "latency_sec": latency,
+            "error": error, "timestamp": timestamp,
+            "input_tokens": in_tok, "output_tokens": out_tok, "cost_usd": cost,
+        },), daemon=True).start()
 
 
 # ---------------------------------------------------------------------------

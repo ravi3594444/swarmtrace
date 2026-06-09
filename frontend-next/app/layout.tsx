@@ -1,3 +1,4 @@
+import { ClerkProvider } from '@clerk/nextjs'
 import { Analytics } from '@vercel/analytics/next'
 import type { Metadata } from 'next'
 import { JetBrains_Mono } from 'next/font/google'
@@ -34,11 +35,13 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en" className={jetbrainsMono.variable}>
-      <body className="font-mono antialiased bg-surface text-on-surface">
-        {children}
-        {process.env.NODE_ENV === 'production' && <Analytics />}
-      </body>
-    </html>
+    <ClerkProvider>
+      <html lang="en" className={jetbrainsMono.variable}>
+        <body className="font-mono antialiased bg-surface text-on-surface">
+          {children}
+          {process.env.NODE_ENV === 'production' && <Analytics />}
+        </body>
+      </html>
+    </ClerkProvider>
   )
 }
