@@ -13,7 +13,7 @@ def _get_llm():
         )
     from litai import LLM
     return LLM(
-        model="anthropic/claude-haiku-4-5-20251001",
+        model=os.environ.get("TRACELY_REGRESSION_MODEL", "anthropic/claude-haiku-4-5-20251001"),
         api_key=api_key,
     )
 

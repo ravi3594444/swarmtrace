@@ -9,7 +9,9 @@
     "build:dev": "vite build --mode development",
     "preview": "vite preview",
     "lint": "eslint .",
-    "format": "prettier --write ."
+    "format": "prettier --write .",
+    "prebuild": "tanstack-router generate",
+    "predev": "tanstack-router generate"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",

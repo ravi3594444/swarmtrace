@@ -10,6 +10,9 @@ def scrape(url: str, verbose=True):
     Usage:
         from tracely.scraper import scrape
         result = scrape("https://news.ycombinator.com")
+
+    Raises the underlying exception on failure (after saving the trace)
+    so callers are not silently handed a None.
     """
     trace_id = uuid.uuid4().hex[:8]
     parent_id = _current_parent()
@@ -23,6 +26,7 @@ def scrape(url: str, verbose=True):
     error = None
     result = None
     bytes_scraped = 0
+    _exc = None
 
     try:
         from scrapling.fetchers import Fetcher
@@ -31,6 +35,7 @@ def scrape(url: str, verbose=True):
         bytes_scraped = len(result.encode("utf-8"))
     except Exception as e:
         error = str(e)
+        _exc = e
     finally:
         latency = round(time.perf_counter() - start, 3)
         output_tokens = bytes_scraped // 4
@@ -47,7 +52,6 @@ def scrape(url: str, verbose=True):
         )
         _parent_ctx.reset(token)
 
-    if error:
-        print(f"[swarmtrace] Scrape Error: {error}")
-        return None
+    if _exc is not None:
+        raise _exc
     return result

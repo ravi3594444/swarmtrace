@@ -6,6 +6,7 @@ build/
 .pypirc
 *.db
 .env
+.env.local
 *.pyo
 swarmtrace_export.*
 *.zip
