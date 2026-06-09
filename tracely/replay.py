@@ -1,24 +1,7 @@
-from tracely.storage import get_by_id, get_traces
+from tracely.storage import get_traces
 
-
-def replay(trace_id: str):
-    trace = get_by_id(trace_id)
-    if not trace:
-        print(f"Trace {trace_id} not found.")
-        return
-
-    id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost = trace
-
-    print("\n=== Tracely Replay: " + trace_id + " ===")
-    print("Function  : " + str(func))
-    print("Timestamp : " + str(timestamp))
-    print("Args      : " + str(args))
-    print("Output    : " + str(output))
-    print("Latency   : " + str(latency) + "s")
-    print("Tokens    : " + str(in_tok) + " in / " + str(out_tok) + " out")
-    print("Cost      : $" + str(cost))
-    print("Error     : " + str(error if error else "None"))
-    print("Parent    : " + str(parent_id if parent_id else "root"))
+# replay() lives in tracely.cli — import from there to avoid duplication.
+from tracely.cli import replay  # noqa: F401  (re-exported for backwards compat)
 
 
 def show_failures():

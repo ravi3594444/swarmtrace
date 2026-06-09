@@ -207,7 +207,7 @@ class MetricsCollector:
 
         return report
 
-def generate_sample_metrics(session_id: str, count: int = 10) -> List[Dict[str, Any]]:
+def generate_sample_metrics(session_id: str, count: int = 10):
     """
     Generate sample metrics for testing.
 
@@ -216,7 +216,8 @@ def generate_sample_metrics(session_id: str, count: int = 10) -> List[Dict[str, 
         count: Number of metrics to generate
 
     Returns:
-        List of metric dictionaries
+        Tuple of (MetricsCollector, List[Dict]) so the caller can call
+        collector.export_session() or collector.generate_session_report().
     """
     collector = MetricsCollector()
     collector.start_session(session_id)
@@ -236,7 +237,7 @@ def generate_sample_metrics(session_id: str, count: int = 10) -> List[Dict[str, 
         time.sleep(0.05)  # Small delay to simulate real collection
 
     collector.end_session(session_id)
-    return metrics
+    return collector, metrics
 
 if __name__ == "__main__":
     print("Collecting sample swarm metrics...")

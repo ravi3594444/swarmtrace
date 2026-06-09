@@ -8,12 +8,13 @@ setup(
     long_description_content_type="text/markdown",
     author="Ravi",
     packages=find_packages(),
+    package_data={"tracely": ["py.typed"]},
     install_requires=["litai", "click", "rich"],
     entry_points={"console_scripts": [
         "swarmtrace=tracely.cli:view",
         "swarmtrace-export=tracely.export:main",
         "swarmtrace-replay=tracely.cli:main_replay"
     ]},
-    python_requires=">=3.8",
+    python_requires=">=3.10",
 )
  

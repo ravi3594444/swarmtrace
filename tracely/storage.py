@@ -11,6 +11,7 @@ Design notes:
 
 import os
 import sqlite3
+import sys
 import threading
 from typing import List, Optional, Tuple
 
@@ -26,7 +27,6 @@ TraceRow = Tuple  # (id, parent_id, function, args, output,
 _lock = threading.Lock()
 _conn: Optional[sqlite3.Connection] = None
 _write_count: int = 0
-
 
 # ---------------------------------------------------------------------------
 # Internal helpers
@@ -67,7 +67,6 @@ def _get_conn() -> sqlite3.Connection:
 
     return _conn
 
-
 def _purge_old_rows(conn: sqlite3.Connection) -> None:
     """Delete the oldest rows beyond MAX_ROWS."""
     row_count: int = conn.execute("SELECT COUNT(*) FROM traces").fetchone()[0]
@@ -78,7 +77,6 @@ def _purge_old_rows(conn: sqlite3.Connection) -> None:
             "(SELECT id FROM traces ORDER BY timestamp ASC LIMIT ?)",
             (excess,),
         )
-
 
 # ---------------------------------------------------------------------------
 # Public API
@@ -98,19 +96,22 @@ def save_trace(
     cost_usd: float = 0.0,
 ) -> None:
     global _write_count
-    with _lock:
-        conn = _get_conn()
-        conn.execute(
-            "INSERT OR REPLACE INTO traces VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-            (id_, parent_id, function, args, output,
-             latency_sec, error, timestamp,
-             input_tokens, output_tokens, cost_usd),
-        )
-        _write_count += 1
-        if _write_count % PURGE_EVERY == 0:
-            _purge_old_rows(conn)
-        conn.commit()
-
+    try:
+        with _lock:
+            conn = _get_conn()
+            conn.execute(
+                "INSERT OR REPLACE INTO traces VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+                (id_, parent_id, function, args, output,
+                 latency_sec, error, timestamp,
+                 input_tokens, output_tokens, cost_usd),
+            )
+            _write_count += 1
+            if _write_count % PURGE_EVERY == 0:
+                _purge_old_rows(conn)
+            conn.commit()
+    except Exception as exc:
+        # Never crash the agent being traced — log to stderr and continue.
+        print(f"[swarmtrace] storage warning: {exc}", file=sys.stderr)
 
 def get_traces(limit: int = 20) -> List[TraceRow]:
     """Return the *limit* most recent traces, newest first."""
@@ -122,7 +123,6 @@ def get_traces(limit: int = 20) -> List[TraceRow]:
             ).fetchall()
     except Exception:
         return []
-
 
 def get_all_traces(limit: Optional[int] = 500) -> List[TraceRow]:
     """Return up to *limit* most recent traces.  Pass ``None`` for all (use with care)."""
@@ -139,7 +139,6 @@ def get_all_traces(limit: Optional[int] = 500) -> List[TraceRow]:
     except Exception:
         return []
 
-
 def get_by_id(trace_id: str) -> Optional[TraceRow]:
     """Fetch a single trace by its short hex ID."""
     try:
@@ -150,7 +149,6 @@ def get_by_id(trace_id: str) -> Optional[TraceRow]:
             ).fetchone()
     except Exception:
         return None
-
 
 def purge_all() -> None:
     """Wipe every trace row (useful in tests)."""

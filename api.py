@@ -5,6 +5,7 @@ Provides API endpoints for the frontend to consume trace data.
 
 import asyncio
 import json
+import os
 import random
 import secrets
 import time
@@ -18,15 +19,24 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
+from tracely.storage import get_all_traces as _db_get_all_traces
+
 # ---------------------------------------------------------------------------
 # Config
 # ---------------------------------------------------------------------------
 
 ANALYSIS_FILE = Path("swarm_trace_analysis.json")
 
+# Comma-separated list of allowed origins.
+# Set ALLOWED_ORIGINS env var for cloud deployments (Lightning AI, Codespaces, etc.)
+# Example: ALLOWED_ORIGINS="https://myapp.lightning.ai,https://abc123.github.dev"
 ALLOWED_ORIGINS: List[str] = [
-    "http://localhost:5173",
-    "http://localhost:3000",
+    o.strip()
+    for o in os.environ.get(
+        "ALLOWED_ORIGINS",
+        "http://localhost:5173,http://localhost:3000"
+    ).split(",")
+    if o.strip()
 ]
 
 FUNCTIONS = [
@@ -59,9 +69,8 @@ class Trace(BaseModel):
     output_tokens: int
     cost_usd: float = Field(ge=0)
 
-
 # ---------------------------------------------------------------------------
-# Trace generation
+# Trace generation (demo fallback only)
 # ---------------------------------------------------------------------------
 
 _FUNCTION_TEMPLATES: dict = {
@@ -81,7 +90,6 @@ _FUNCTION_TEMPLATES: dict = {
         (1.0, 3.0), (200, 500), (100, 300),
     ),
 }
-
 
 def _make_trace(parent_ids: List[Optional[str]]) -> Trace:
     parent_id = random.choice(parent_ids) if random.random() < 0.7 else None
@@ -117,9 +125,8 @@ def _make_trace(parent_ids: List[Optional[str]]) -> Trace:
         cost_usd=cost,
     )
 
-
 def generate_trace_data(count: int = 20) -> List[Trace]:
-    """Generate realistic trace data with parent–child hierarchy."""
+    """Generate realistic demo trace data with parent-child hierarchy."""
     traces: List[Trace] = []
     parent_ids: List[Optional[str]] = [None]
 
@@ -131,7 +138,6 @@ def generate_trace_data(count: int = 20) -> List[Trace]:
 
     return traces
 
-
 # ---------------------------------------------------------------------------
 # App lifecycle
 # ---------------------------------------------------------------------------
@@ -139,15 +145,12 @@ def generate_trace_data(count: int = 20) -> List[Trace]:
 _trace_store: List[Trace] = []
 _trace_store_lock = asyncio.Lock()
 
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _trace_store
-    global _trace_store_lock
     _trace_store = generate_trace_data()
     yield
     _trace_store.clear()
-
 
 app = FastAPI(title="SwarmTrace API", lifespan=lifespan)
 
@@ -159,18 +162,42 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-
 # ---------------------------------------------------------------------------
 # Routes
 # ---------------------------------------------------------------------------
 
 @app.get("/traces")
 async def get_traces():
-    """Return all traces wrapped in { traces: [...] } for the frontend."""
-    global _trace_store
+    """
+    Return all traces wrapped in { traces: [...] } for the frontend.
+    Reads from the tracely SQLite DB when traces exist; falls back to
+    demo data when the DB is empty (e.g. first launch with no agents run yet).
+    """
+    rows = _db_get_all_traces(limit=500)
+
+    if rows:
+        return {
+            "traces": [
+                {
+                    "id": r[0],
+                    "parent_id": r[1],
+                    "function": r[2],
+                    "args": r[3] or "",
+                    "output": r[4] or "{}",
+                    "duration": int((r[5] or 0) * 1000),
+                    "status": "ERROR" if r[6] else "SUCCESS",
+                    "error": r[6],
+                    "timestamp": r[7],
+                    "tokens_in": r[8] or 0,
+                    "tokens_out": r[9] or 0,
+                    "cost": r[10] or 0.0,
+                }
+                for r in rows
+            ]
+        }
+
+    # DB empty — serve demo data so the UI is not blank on first launch
     async with _trace_store_lock:
-        if random.random() < 0.3:
-            _trace_store = generate_trace_data(len(_trace_store))
         store_snapshot = list(_trace_store)
 
     return {
@@ -193,7 +220,6 @@ async def get_traces():
         ]
     }
 
-
 @app.get("/trace-analysis")
 async def get_trace_analysis():
     """Return trace analysis, reading from file when available."""
@@ -203,9 +229,12 @@ async def get_trace_analysis():
         except json.JSONDecodeError:
             pass
 
+    async with _trace_store_lock:
+        store_snapshot = list(_trace_store)
+
     now = int(time.time())
     results = []
-    for i, trace in enumerate(_trace_store[:10]):
+    for i, trace in enumerate(store_snapshot[:10]):
         results.append({
             "trace_index": i,
             "timestamp": now - (10 - i) * 60,
@@ -219,15 +248,15 @@ async def get_trace_analysis():
 
     return {
         "analysis_timestamp": now,
-        "trace_count": len(_trace_store),
+        "trace_count": len(store_snapshot),
         "results": results,
     }
 
-
 @app.get("/health")
 async def health():
-    return {"status": "ok", "trace_count": len(_trace_store)}
-
+    async with _trace_store_lock:
+        count = len(_trace_store)
+    return {"status": "ok", "trace_count": count}
 
 # ---------------------------------------------------------------------------
 # Dashboard Endpoints (Overview, Agents, Metrics, Settings)
@@ -235,7 +264,6 @@ async def health():
 
 # In-memory API keys store (for hackathon demo)
 _api_keys: dict = {}
-
 
 @app.get("/overview")
 async def get_overview():
@@ -278,12 +306,14 @@ async def get_overview():
         ],
     }
 
-
 @app.get("/agents")
 async def get_agents():
     """Aggregated agent status for the Agents page."""
+    async with _trace_store_lock:
+        store_snapshot = list(_trace_store)
+
     seen = {}
-    for t in _trace_store:
+    for t in store_snapshot:
         if t.function not in seen:
             seen[t.function] = {
                 "id": t.id,
@@ -298,13 +328,15 @@ async def get_agents():
             }
     return {"agents": list(seen.values())}
 
-
 @app.get("/metrics")
 async def get_metrics():
     """Aggregated metrics for the Metrics page."""
-    total_cost = sum(t.cost_usd for t in _trace_store)
-    total_in = sum(t.input_tokens for t in _trace_store)
-    total_out = sum(t.output_tokens for t in _trace_store)
+    async with _trace_store_lock:
+        store_snapshot = list(_trace_store)
+
+    total_cost = sum(t.cost_usd for t in store_snapshot)
+    total_in = sum(t.input_tokens for t in store_snapshot)
+    total_out = sum(t.output_tokens for t in store_snapshot)
     return {
         "daily_burn_rate": round(total_cost * 24, 2),
         "projected_monthly": round(total_cost * 24 * 30, 2),
@@ -329,11 +361,10 @@ async def get_metrics():
                 "Synthesis_v1": round(t.latency_sec * 1000 * random.uniform(0.5, 1.0)),
                 "Router_fast": round(t.latency_sec * 1000 * random.uniform(0.3, 0.8)),
             }
-            for t in _trace_store[:3]
+            for t in store_snapshot[:3]
             for i in range(0, 24, 4)
         ],
     }
-
 
 # --- Settings: API Keys ---
 
@@ -352,7 +383,6 @@ async def list_api_keys():
         ]
     }
 
-
 @app.post("/settings/api-keys")
 async def create_api_key(body: dict):
     key = "st_" + secrets.token_hex(24)
@@ -363,25 +393,25 @@ async def create_api_key(body: dict):
     }
     return {"key": key}
 
-
 @app.delete("/settings/api-keys/{key_id}")
 async def revoke_api_key(key_id: str):
     _api_keys.pop(key_id, None)
     return {"status": "revoked"}
 
-
 # --- Settings: Billing ---
 
 @app.get("/settings/billing")
 async def get_billing():
+    async with _trace_store_lock:
+        count = len(_trace_store)
+        cost = sum(t.cost_usd for t in _trace_store)
     return {
         "plan": "Pro",
-        "traces_used": len(_trace_store),
+        "traces_used": count,
         "traces_limit": 100_000,
-        "cost_this_month": round(sum(t.cost_usd for t in _trace_store), 4),
+        "cost_this_month": round(cost, 4),
         "next_billing": "2026-07-01",
     }
-
 
 # --- Settings: Team ---
 
@@ -395,7 +425,6 @@ async def get_team():
             "joined": "2026-01-01",
         }
     ]
-
 
 # --- Settings: Integrations ---
 
@@ -436,7 +465,6 @@ async def get_integrations():
         ]
     }
 
-
 # ---------------------------------------------------------------------------
 # Dev entry point
 # ---------------------------------------------------------------------------
@@ -444,4 +472,3 @@ async def get_integrations():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
-    

@@ -43,9 +43,11 @@ class ToolAttention:
                 print(f"[ToolAttention] Indexed {len(self.tools)} tools | Full schema: ~{total_tokens} tokens")
 
         except ImportError as e:
-            print(f"[ToolAttention] Missing dependency: {e}")
-            print("[ToolAttention] Run: pip install sentence-transformers faiss-cpu")
-            self._index = None
+            raise ImportError(
+                f"[ToolAttention] Missing dependency: {e}\n"
+                "Install required packages before using ToolAttention:\n"
+                "  pip install sentence-transformers faiss-cpu"
+            ) from e
 
     def add_tools(self, new_tools: list):
         """Dynamically add tools and rebuild the index."""
@@ -58,7 +60,10 @@ class ToolAttention:
         Returns only the relevant tools with full schemas.
         """
         if self._index is None:
-            return self.tools[:k]
+            raise RuntimeError(
+                "[ToolAttention] Index not built. "
+                "Ensure sentence-transformers and faiss-cpu are installed."
+            )
 
         start = time.time()
 
