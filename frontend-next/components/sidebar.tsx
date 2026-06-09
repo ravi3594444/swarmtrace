@@ -3,8 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { LayoutGrid, Users, ActivitySquare, BarChart3, Settings } from 'lucide-react'
-import { useEffect, useState } from 'react'
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000'
+import { UserButton, useUser } from '@clerk/nextjs'
 
 const navItems = [
   { href: '/', label: 'Overview', icon: LayoutGrid },
@@ -16,25 +15,7 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname()
-  const [apiReachable, setApiReachable] = useState(false)
-
-  useEffect(() => {
-    let isMounted = true
-    const checkApi = async () => {
-      try {
-        const res = await fetch(`${API_URL}/health`, { method: 'HEAD', signal: AbortSignal.timeout(5000) })
-        if (isMounted) setApiReachable(res.ok)
-      } catch {
-        if (isMounted) setApiReachable(false)
-      }
-    }
-    checkApi()
-    const interval = setInterval(checkApi, 30000)
-    return () => {
-      isMounted = false
-      clearInterval(interval)
-    }
-  }, [])
+  const { user } = useUser()
 
   return (
     <aside className="w-56 bg-sidebar border-r border-sidebar-border flex flex-col h-screen sticky top-0">
@@ -45,10 +26,7 @@ export function Sidebar() {
             <div className="w-6 h-6 rounded-full border-2 border-sidebar" />
           </div>
           <div>
-            <div className="flex items-center gap-2">
-              <h1 className="font-bold text-primary text-sm">SwarmTrace</h1>
-              <div className={`w-2 h-2 rounded-full ${apiReachable ? 'bg-green-500 animate-pulse' : 'bg-outline-variant'}`} />
-            </div>
+            <h1 className="font-bold text-primary text-sm">SwarmTrace</h1>
             <p className="text-xs text-muted-foreground">AI Monitoring</p>
           </div>
         </div>
@@ -83,14 +61,14 @@ export function Sidebar() {
         </button>
       </div>
 
-      {/* User info */}
-      <div className="px-6 pb-6 border-t border-sidebar-border">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 rounded-full bg-secondary" />
-          <div>
-            <p className="text-xs font-semibold text-foreground">Admin User</p>
-            <p className="text-xs text-muted-foreground">Pro Tier</p>
-          </div>
+      {/* Auth Profile Section */}
+      <div className="px-6 pb-6 pt-4 border-t border-sidebar-border flex items-center gap-3">
+        <UserButton afterSignOutUrl="/sign-in" />
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-foreground truncate">
+            {user?.fullName || user?.primaryEmailAddress?.emailAddress || 'Admin User'}
+          </p>
+          <p className="text-[10px] text-muted-foreground">Pro Tier</p>
         </div>
       </div>
     </aside>
