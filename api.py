@@ -377,7 +377,7 @@ async def list_api_keys():
                 "name": v["name"],
                 "created": v["created"],
                 "last_used": v["last_used"],
-                "prefix": k[:8] + "...",
+                "prefix": v["key"][:8] + "...",
             }
             for k, v in _api_keys.items()
         ]
@@ -385,13 +385,15 @@ async def list_api_keys():
 
 @app.post("/settings/api-keys")
 async def create_api_key(body: dict):
-    key = "st_" + secrets.token_hex(24)
-    _api_keys[key] = {
+    key_id = str(uuid.uuid4())
+    key_value = "st_" + secrets.token_hex(24)
+    _api_keys[key_id] = {
+        "key": key_value,
         "name": body.get("name", "New Key"),
         "created": datetime.now(timezone.utc).isoformat(),
         "last_used": None,
     }
-    return {"key": key}
+    return {"id": key_id, "key": key_value}
 
 @app.delete("/settings/api-keys/{key_id}")
 async def revoke_api_key(key_id: str):
