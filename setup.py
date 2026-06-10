@@ -9,7 +9,7 @@ setup(
     author="Ravi",
     packages=find_packages(),
     package_data={"tracely": ["py.typed"]},
-    install_requires=["litai", "click", "rich"],
+    install_requires=["click", "rich"],
     entry_points={"console_scripts": [
         "swarmtrace=tracely.cli:view",
         "swarmtrace-export=tracely.export:main",

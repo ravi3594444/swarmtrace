@@ -15,7 +15,8 @@ export async function GET() {
         name: k.name,
         created: k.created_at,
         last_used: k.last_used,
-        prefix: k.id.substring(0, 8) + '...',
+        // Show stored prefix — never reconstruct from the hash
+        prefix: k.key_prefix + '...',
       }))
     })
   } catch (error: any) {
@@ -30,12 +31,19 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
     const name = body.name || 'New Key'
-    const newKey = 'st_' + crypto.randomBytes(24).toString('hex')
+
+    // id and key are separate: id is a UUID used for DB lookups/deletion,
+    // key is the secret shown once, stored only as a SHA-256 hash.
+    const keyId = crypto.randomUUID()
+    const rawKey = 'st_' + crypto.randomBytes(24).toString('hex')
+    const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex')
+    const keyPrefix = rawKey.substring(0, 10) // e.g. "st_a1b2c3d4"
     const now = new Date().toISOString()
 
     const payload = {
-      id: newKey,
-      key: newKey,
+      id: keyId,
+      key_hash: keyHash,
+      key_prefix: keyPrefix,
       user_id: userId,
       name,
       created_at: now,
@@ -48,7 +56,8 @@ export async function POST(req: Request) {
       body: JSON.stringify(payload),
     })
 
-    return NextResponse.json({ key: newKey })
+    // Return the raw key ONCE — it is never retrievable again
+    return NextResponse.json({ key: rawKey })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useMemo } from 'react'
+import React from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { Plus, Search, AlertCircle } from 'lucide-react'
 import { fetchAgents } from '@/lib/api'
@@ -165,7 +166,7 @@ export default function AgentsPage() {
                 </tr>
               ) : (
                 filtered.map((agent, idx) => (
-                  <tbody key={agent.id}>
+                  <React.Fragment key={agent.id}>
                     <tr
                       onClick={() => setExpanded(expanded === agent.id ? null : agent.id)}
                       className={`cursor-pointer hover:bg-surface-container-high transition-colors ${idx !== filtered.length - 1 && !expanded ? 'border-b border-outline' : ''}`}
@@ -223,7 +224,7 @@ export default function AgentsPage() {
                         </td>
                       </tr>
                     )}
-                  </tbody>
+                  </React.Fragment>
                 ))
               )}
             </tbody>
