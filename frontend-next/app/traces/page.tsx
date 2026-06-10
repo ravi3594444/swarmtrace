@@ -278,7 +278,13 @@ export default function TracesPage() {
                 <div>
                   <p className="text-xs text-on-surface-variant mb-2">ARGUMENTS</p>
                   <pre className="bg-surface-container-low border border-outline rounded p-3 text-xs text-on-surface overflow-auto max-h-40 font-mono">
-                    {JSON.stringify(JSON.parse(selectedTrace.args), null, 2)}
+                    {(() => {
+                      try {
+                        return JSON.stringify(JSON.parse(selectedTrace.args), null, 2)
+                      } catch {
+                        return selectedTrace.args
+                      }
+                    })()}
                   </pre>
                 </div>
 

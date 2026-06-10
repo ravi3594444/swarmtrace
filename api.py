@@ -4,6 +4,7 @@ Provides API endpoints for the frontend to consume trace data.
 """
 
 import asyncio
+import hashlib
 import json
 import os
 import random
@@ -15,7 +16,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -265,7 +266,71 @@ async def health():
 # In-memory API keys store (for hackathon demo)
 _api_keys: dict = {}
 
-@app.get("/overview")
+# ---------------------------------------------------------------------------
+# Ingest endpoint — accepts traces from the tracely Python library
+# ---------------------------------------------------------------------------
+
+class IngestTrace(BaseModel):
+    id: Optional[str] = None
+    parent_id: Optional[str] = None
+    function: str
+    args: str = "{}"
+    output: str = ""
+    latency_sec: float = 0.0
+    error: Optional[str] = None
+    timestamp: Optional[str] = None
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+
+class IngestPayload(BaseModel):
+    traces: List[IngestTrace]
+
+def _verify_api_key(api_key: str) -> bool:
+    """Check the provided key against stored key hashes."""
+    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
+    for entry in _api_keys.values():
+        if entry.get("key_hash") == key_hash:
+            entry["last_used"] = datetime.now(timezone.utc).isoformat()
+            return True
+    return False
+
+@app.post("/ingest")
+async def ingest_traces(payload: IngestPayload, request: Request):
+    """
+    Remote ingest endpoint consumed by tracely when SWARMTRACE_ENDPOINT is set.
+    Requires a valid API key in the Authorization header: 'Bearer st_...'
+    """
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
+    api_key = auth_header.removeprefix("Bearer ").strip()
+    if not _verify_api_key(api_key):
+        raise HTTPException(status_code=401, detail="Invalid API key")
+
+    now = datetime.now(timezone.utc).isoformat()
+    ingested: List[Trace] = []
+    for t in payload.traces:
+        ingested.append(Trace(
+            id=t.id or uuid.uuid4().hex[:8],
+            parent_id=t.parent_id,
+            function=t.function,
+            args=t.args,
+            output=t.output,
+            latency_sec=t.latency_sec,
+            error=t.error,
+            timestamp=t.timestamp or now,
+            input_tokens=t.input_tokens,
+            output_tokens=t.output_tokens,
+            cost_usd=t.cost_usd,
+        ))
+
+    async with _trace_store_lock:
+        _trace_store.extend(ingested)
+
+    return {"accepted": len(ingested)}
+
+
 async def get_overview():
     """Aggregated system overview for the Overview page."""
     async with _trace_store_lock:
@@ -377,7 +442,7 @@ async def list_api_keys():
                 "name": v["name"],
                 "created": v["created"],
                 "last_used": v["last_used"],
-                "prefix": v["key"][:8] + "...",
+                "prefix": v["key_prefix"] + "...",
             }
             for k, v in _api_keys.items()
         ]
@@ -386,14 +451,17 @@ async def list_api_keys():
 @app.post("/settings/api-keys")
 async def create_api_key(body: dict):
     key_id = str(uuid.uuid4())
-    key_value = "st_" + secrets.token_hex(24)
+    raw_key = "st_" + secrets.token_hex(24)
+    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
     _api_keys[key_id] = {
-        "key": key_value,
+        "key_hash": key_hash,
+        "key_prefix": raw_key[:10],
         "name": body.get("name", "New Key"),
         "created": datetime.now(timezone.utc).isoformat(),
         "last_used": None,
     }
-    return {"id": key_id, "key": key_value}
+    # Return the raw key ONCE — it is never retrievable again
+    return {"id": key_id, "key": raw_key}
 
 @app.delete("/settings/api-keys/{key_id}")
 async def revoke_api_key(key_id: str):
