@@ -38,6 +38,14 @@
   --sidebar-accent-foreground: oklch(0.25 0.02 120);
   --sidebar-border: oklch(0.92 0.01 120);
   --sidebar-ring: oklch(0.42 0.15 155);
+  /* Font stacks — defined here instead of next/font/google so builds work in
+     any environment without needing Google Fonts network access.
+     Vercel and modern browsers will pick up the web-safe fallbacks. */
+  --font-geist: 'Geist', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-geist-mono: 'Geist Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
+  --font-instrument: 'Geist', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-instrument-serif: 'Playfair Display', 'Georgia', 'Times New Roman', serif;
+  --font-jetbrains: 'IBM Plex Mono', 'Fira Code', 'Cascadia Code', 'Courier New', monospace;
   --font-sans: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
   --font-mono: var(--font-jetbrains), 'JetBrains Mono', monospace;
   --font-display: var(--font-instrument-serif), 'Instrument Serif', Georgia, serif;
