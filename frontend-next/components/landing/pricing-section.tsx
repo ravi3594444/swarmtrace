@@ -1,141 +1,97 @@
-"use client";
+"use client"
 
-import { useState } from "react";
-import { ArrowRight, Check } from "lucide-react";
-
-const plans = [
-  {
-    name: "Free",
-    description: "Get started with SwarmTrace",
-    price: { monthly: 0, annual: 0 },
-    features: [
-      "10,000 traces/month",
-      "1 project",
-      "Community support",
-    ],
-    cta: "Get Started",
-    popular: false,
-  },
-  {
-    name: "Pro",
-    description: "For production AI systems",
-    price: { monthly: 29, annual: 29 },
-    features: [
-      "Unlimited traces",
-      "Unlimited projects",
-      "Priority support",
-      "Team members",
-      "Advanced analytics",
-      "Custom integrations",
-    ],
-    cta: "Start Free Trial",
-    popular: true,
-  },
-];
+import { Button } from "@/components/ui/button"
+import { Card } from "@/components/ui/card"
 
 export function PricingSection() {
-  const [isAnnual, setIsAnnual] = useState(true);
+  const plans = [
+    {
+      name: "Free",
+      price: "$0",
+      description: "Perfect for small projects and getting started",
+      features: [
+        "Up to 1,000 traces/month",
+        "Basic metrics & dashboards",
+        "Community support",
+        "1 team member"
+      ],
+      cta: "Get Started"
+    },
+    {
+      name: "Pro",
+      price: "$49",
+      description: "For growing teams and production workloads",
+      features: [
+        "Up to 50,000 traces/month",
+        "Advanced analytics",
+        "Priority support",
+        "5 team members",
+        "Custom dashboards"
+      ],
+      cta: "Start Free Trial",
+      featured: true
+    },
+    {
+      name: "Enterprise",
+      price: "Custom",
+      description: "For large-scale deployments and mission-critical applications",
+      features: [
+        "Unlimited traces",
+        "Dedicated support",
+        "SSO & SAML",
+        "Custom integrations",
+        "On-premise options"
+      ],
+      cta: "Contact Sales"
+    }
+  ]
 
   return (
-    <section id="pricing" className="relative py-32 lg:py-40 border-t border-foreground/10">
-      <div className="max-w-7xl mx-auto px-6 lg:px-12">
-        {/* Header */}
-        <div className="max-w-3xl mb-20">
-          <span className="font-mono text-xs tracking-widest text-muted-foreground uppercase block mb-6">
-            Pricing
-          </span>
-          <h2 className="font-display text-5xl md:text-6xl lg:text-7xl tracking-tight text-foreground mb-6">
-            Simple, transparent
-            <br />
-            <span className="text-stroke">pricing</span>
-          </h2>
-          <p className="text-lg text-muted-foreground max-w-xl">
-            Start free and scale as you grow. No hidden fees, no surprises.
+    <section className="py-24">
+      <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
+        <div className="text-center mb-16">
+          <h2 className="text-4xl lg:text-5xl font-display mb-6">Simple, Transparent Pricing</h2>
+          <p className="text-xl text-muted-foreground max-w-3xl mx-auto">
+            No hidden fees. No surprises. Just powerful observability for your AI agents.
           </p>
         </div>
 
-        {/* Billing Toggle */}
-        <div className="flex items-center gap-4 mb-16">
-          <span
-            className={`text-sm transition-colors ${
-              !isAnnual ? "text-foreground" : "text-muted-foreground"
-            }`}
-          >
-            Monthly
-          </span>
-        </div>
-
-        {/* Pricing Cards */}
-        <div className="grid md:grid-cols-3 gap-px bg-foreground/10">
-          {plans.map((plan, idx) => (
-            <div
-              key={plan.name}
-              className={`relative p-8 lg:p-12 bg-background ${
-                plan.popular ? "md:-my-4 md:py-12 lg:py-16 border-2 border-foreground" : ""
-              }`}
+        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-8 max-w-6xl mx-auto">
+          {plans.map((plan, index) => (
+            <Card
+              key={index}
+              className={`p-8 ${plan.featured ? 'border-primary/50 ring-2 ring-primary' : ''}`}
             >
-              {plan.popular && (
-                <span className="absolute -top-3 left-8 px-3 py-1 bg-foreground text-primary-foreground text-xs font-mono uppercase tracking-widest">
-                  Most Popular
-                </span>
-              )}
+              <h3 className="text-2xl font-semibold mb-2">{plan.name}</h3>
+              <p className="text-muted-foreground mb-6">{plan.description}</p>
 
-              {/* Plan Header */}
               <div className="mb-8">
-                <span className="font-mono text-xs text-muted-foreground">
-                  {String(idx + 1).padStart(2, "0")}
-                </span>
-                <h3 className="font-display text-3xl text-foreground mt-2">{plan.name}</h3>
-                <p className="text-sm text-muted-foreground mt-2">{plan.description}</p>
+                <span className="text-4xl font-bold">{plan.price}</span>
+                {plan.price !== "Custom" && <span className="text-muted-foreground">/month</span>}
               </div>
 
-              {/* Price */}
-              <div className="mb-8 pb-8 border-b border-foreground/10">
-                {plan.price.monthly !== null ? (
-                  <div className="flex items-baseline gap-2">
-                    <span className="font-display text-5xl lg:text-6xl text-foreground">
-                      ${plan.price.monthly}
-                    </span>
-                    <span className="text-muted-foreground">/month</span>
-                  </div>
-                ) : (
-                  <span className="font-display text-4xl text-foreground">Custom</span>
-                )}
-              </div>
-
-              {/* Features */}
-              <ul className="space-y-4 mb-10">
-                {plan.features.map((feature) => (
-                  <li key={feature} className="flex items-start gap-3">
-                    <Check className="w-4 h-4 text-foreground mt-0.5 shrink-0" />
-                    <span className="text-sm text-muted-foreground">{feature}</span>
+              <ul className="space-y-3 mb-8">
+                {plan.features.map((feature, i) => (
+                  <li key={i} className="flex items-center gap-3">
+                    <span className="text-green-500">✓</span>
+                    <span className="text-sm">{feature}</span>
                   </li>
                 ))}
               </ul>
 
-              {/* CTA */}
-              <button
-                className={`w-full py-4 flex items-center justify-center gap-2 text-sm font-medium transition-all group ${
-                  plan.popular
-                    ? "bg-foreground text-primary-foreground hover:bg-foreground/90"
-                    : "border border-foreground/20 text-foreground hover:border-foreground hover:bg-foreground/5"
-                }`}
+              <Button
+                className="w-full"
+                variant={plan.featured ? "default" : "outline"}
+                asChild
               >
-                {plan.cta}
-                <ArrowRight className="w-4 h-4 transition-transform group-hover:translate-x-1" />
-              </button>
-            </div>
+                <a href={plan.name === "Enterprise" ? "/contact" : "/sign-up"}>
+                  {plan.cta}
+                </a>
+              </Button>
+            </Card>
           ))}
         </div>
-
-        {/* Bottom Note */}
-        <p className="mt-12 text-center text-sm text-muted-foreground">
-          All plans include automatic updates, version control, and 24/7 availability.{" "}
-          <a href="#" className="underline underline-offset-4 hover:text-foreground transition-colors">
-            Compare all features
-          </a>
-        </p>
       </div>
     </section>
-  );
+  )
 }
