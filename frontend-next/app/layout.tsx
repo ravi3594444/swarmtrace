@@ -1,36 +1,10 @@
 import type React from "react"
 import type { Metadata } from "next"
-import { Geist, Geist_Mono } from "next/font/google"
-import { Playfair_Display, IBM_Plex_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 import { ClerkProvider } from "@clerk/nextjs"
 import { ThemeProvider } from "@/components/theme-provider"
 import "./globals.css"
 
-const _geist = Geist({ subsets: ["latin"], variable: "--font-geist" })
-const _geistMono = Geist_Mono({ subsets: ["latin"], variable: "--font-geist-mono" })
-
-// --font-instrument-serif is referenced in globals.css as the value of --font-display
-// DO NOT rename this to --font-display — that would create a circular CSS var reference
-const _playfairDisplay = Playfair_Display({
-  subsets: ["latin"],
-  display: "swap",
-  variable: "--font-instrument",
-})
-const _playfairSerif = Playfair_Display({
-  subsets: ["latin"],
-  weight: "400",
-  display: "swap",
-  variable: "--font-instrument-serif",
-})
-// --font-jetbrains is referenced in globals.css as the value of --font-mono
-// DO NOT rename to --font-mono-display — same circular ref risk
-const _ibmPlexMono = IBM_Plex_Mono({
-  subsets: ["latin"],
-  weight: "400",
-  display: "swap",
-  variable: "--font-jetbrains",
-})
 
 export const metadata: Metadata = {
   title: "SwarmTrace - AI Agent Monitoring",
@@ -70,7 +44,6 @@ export default function RootLayout({
       <html
         lang="en"
         suppressHydrationWarning
-        className={`${_playfairDisplay.variable} ${_playfairSerif.variable} ${_ibmPlexMono.variable} ${_geist.variable} ${_geistMono.variable}`}
       >
         <body className="font-sans antialiased">
           {/*
