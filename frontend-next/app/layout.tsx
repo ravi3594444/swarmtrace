@@ -1,5 +1,7 @@
 import type React from "react"
 import type { Metadata } from "next"
+import { GeistSans } from "geist/font/sans"
+import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import { ClerkProvider } from "@clerk/nextjs"
 import { ThemeProvider } from "@/components/theme-provider"
@@ -44,6 +46,7 @@ export default function RootLayout({
       <html
         lang="en"
         suppressHydrationWarning
+        className={`${GeistSans.variable} ${GeistMono.variable}`}
       >
         <body className="font-sans antialiased">
           {/*
