@@ -166,6 +166,30 @@ app.add_middleware(
 # Routes
 # ---------------------------------------------------------------------------
 
+@app.post("/ingest", status_code=204)
+async def ingest_trace(trace: Trace):
+    """
+    Ingest a new trace from the @observe decorator.
+    Saves to the local SQLite DB.
+    """
+    from tracely.storage import save_trace as _db_save_trace
+
+    _db_save_trace(
+        trace.id,
+        trace.parent_id,
+        trace.function,
+        trace.args,
+        trace.output,
+        trace.latency_sec,
+        trace.error,
+        trace.timestamp,
+        trace.input_tokens,
+        trace.output_tokens,
+        trace.cost_usd,
+    )
+    return
+
+
 @app.get("/traces")
 async def get_traces():
     """

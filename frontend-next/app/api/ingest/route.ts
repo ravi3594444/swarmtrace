@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { supaRequest } from '../../../lib/supabase'
+import crypto from 'crypto'
 
 export async function POST(req: Request) {
   const apiKey = req.headers.get('X-API-Key')
@@ -8,8 +9,9 @@ export async function POST(req: Request) {
   }
 
   try {
+    const hashedKey = crypto.createHash('sha256').update(apiKey).digest('hex')
     // 1. Resolve API key and map it to user_id
-    const keys = await supaRequest(`api_keys?key=eq.${apiKey}&revoked=eq.false&limit=1`)
+    const keys = await supaRequest(`api_keys?key=eq.${hashedKey}&revoked=eq.false&limit=1`)
     if (!keys || keys.length === 0) {
       return NextResponse.json({ error: 'Invalid or revoked API key' }, { status: 401 })
     }
@@ -40,7 +42,7 @@ export async function POST(req: Request) {
 
     // 3. Keep last_used updated
     try {
-      await supaRequest(`api_keys?key=eq.${apiKey}`, {
+      await supaRequest(`api_keys?id=eq.${keys[0].id}`, {
         method: 'PATCH',
         body: JSON.stringify({ last_used: new Date().toISOString() }),
       })

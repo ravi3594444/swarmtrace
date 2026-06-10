@@ -15,7 +15,7 @@ export async function GET() {
         name: k.name,
         created: k.created_at,
         last_used: k.last_used,
-        prefix: k.id.substring(0, 8) + '...',
+        prefix: k.prefix + '...',
       }))
     })
   } catch (error: any) {
@@ -30,12 +30,16 @@ export async function POST(req: Request) {
   try {
     const body = await req.json()
     const name = body.name || 'New Key'
-    const newKey = 'st_' + crypto.randomBytes(24).toString('hex')
+    const secret = 'st_' + crypto.randomBytes(24).toString('hex')
+    const hashedKey = crypto.createHash('sha256').update(secret).digest('hex')
+    const keyId = crypto.randomUUID()
+    const prefix = secret.substring(0, 8)
     const now = new Date().toISOString()
 
     const payload = {
-      id: newKey,
-      key: newKey,
+      id: keyId,
+      key: hashedKey,
+      prefix: prefix,
       user_id: userId,
       name,
       created_at: now,
@@ -48,7 +52,7 @@ export async function POST(req: Request) {
       body: JSON.stringify(payload),
     })
 
-    return NextResponse.json({ key: newKey })
+    return NextResponse.json({ key: secret })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
