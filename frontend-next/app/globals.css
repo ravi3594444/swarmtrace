@@ -1,134 +1,122 @@
-@import 'tailwindcss';
-@import 'tw-animate-css';
-@import 'shadcn/tailwind.css';
+@import "tailwindcss";
+@import "tw-animate-css";
 
 @custom-variant dark (&:is(.dark *));
 
-@theme inline {
-  --font-heading: var(--font-mono);
-  --font-sans: var(--font-mono);
-  --font-mono: var(--font-mono), 'JetBrains Mono Fallback';
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
-  --color-foreground: var(--foreground);
-  --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
-  --radius-lg: var(--radius);
-  --radius-xl: calc(var(--radius) * 1.4);
-  --radius-2xl: calc(var(--radius) * 1.8);
-  --radius-3xl: calc(var(--radius) * 2.2);
-  --radius-4xl: calc(var(--radius) * 2.6);
-}
-
 :root {
-  --background: #0a0a0a;
-  --foreground: #e5e2e1;
-  --card: #121212;
-  --card-foreground: #e5e2e1;
-  --popover: #1a1a1a;
-  --popover-foreground: #e5e2e1;
-  --primary: #ffffff;
-  --primary-foreground: #2f3131;
-  --secondary: #c8c6c6;
-  --secondary-foreground: #303030;
-  --muted: #2a2a2a;
-  --muted-foreground: #8e9192;
-  --accent: #c6c6c7;
-  --accent-foreground: #2f3131;
-  --destructive: #ffb4ab;
-  --border: #333333;
-  --input: #121212;
-  --ring: #ffffff;
-  --chart-1: #ffffff;
-  --chart-2: #c8c6c6;
-  --chart-3: #8e9192;
-  --chart-4: #444748;
-  --chart-5: #2a2a2a;
+  /* SwarmTrace AI Monitoring - Green theme for light mode */
+  --background: oklch(0.98 0.005 120);
+  --foreground: oklch(0.25 0.02 120);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.25 0.02 120);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.25 0.02 120);
+  --primary: oklch(0.42 0.15 155);
+  --primary-foreground: oklch(0.98 0.01 155);
+  --secondary: oklch(0.96 0.01 120);
+  --secondary-foreground: oklch(0.25 0.02 120);
+  --muted: oklch(0.96 0.01 120);
+  --muted-foreground: oklch(0.55 0.02 120);
+  --accent: oklch(0.55 0.18 155);
+  --accent-foreground: oklch(0.98 0.01 155);
+  --destructive: oklch(0.577 0.245 27.325);
+  --destructive-foreground: oklch(0.98 0.01 0);
+  --border: oklch(0.92 0.01 120);
+  --input: oklch(0.92 0.01 120);
+  --ring: oklch(0.42 0.15 155);
+  --chart-1: oklch(0.42 0.15 155);
+  --chart-2: oklch(0.55 0.18 155);
+  --chart-3: oklch(0.65 0.12 155);
+  --chart-4: oklch(0.75 0.08 155);
+  --chart-5: oklch(0.85 0.04 155);
   --radius: 1rem;
-  --sidebar: #0a0a0a;
-  --sidebar-foreground: #e5e2e1;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #2f3131;
-  --sidebar-accent: #1a1a1a;
-  --sidebar-accent-foreground: #e5e2e1;
-  --sidebar-border: #333333;
-  --sidebar-ring: #ffffff;
-  --on-surface: #e5e2e1;
-  --on-surface-variant: #8e9192;
-  --surface-container: #121212;
-  --surface-container-low: #0f0f0f;
-  --surface-container-high: #1a1a1a;
-  --outline: #333333;
-  --outline-variant: #444748;
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.25 0.02 120);
+  --sidebar-primary: oklch(0.42 0.15 155);
+  --sidebar-primary-foreground: oklch(0.98 0.01 155);
+  --sidebar-accent: oklch(0.96 0.01 120);
+  --sidebar-accent-foreground: oklch(0.25 0.02 120);
+  --sidebar-border: oklch(0.92 0.01 120);
+  --sidebar-ring: oklch(0.42 0.15 155);
+  --font-sans: var(--font-instrument), 'Instrument Sans', system-ui, sans-serif;
+  --font-mono: var(--font-jetbrains), 'JetBrains Mono', monospace;
+  --font-display: var(--font-instrument-serif), 'Instrument Serif', Georgia, serif;
 }
 
 .dark {
-  --background: #0a0a0a;
-  --foreground: #e5e2e1;
-  --card: #121212;
-  --card-foreground: #e5e2e1;
-  --popover: #1a1a1a;
-  --popover-foreground: #e5e2e1;
-  --primary: #ffffff;
-  --primary-foreground: #2f3131;
-  --secondary: #c8c6c6;
-  --secondary-foreground: #303030;
-  --muted: #2a2a2a;
-  --muted-foreground: #8e9192;
-  --accent: #c6c6c7;
-  --accent-foreground: #2f3131;
-  --destructive: #ffb4ab;
-  --border: #333333;
-  --input: #121212;
-  --ring: #ffffff;
-  --chart-1: #ffffff;
-  --chart-2: #c8c6c6;
-  --chart-3: #8e9192;
-  --chart-4: #444748;
-  --chart-5: #2a2a2a;
-  --sidebar: #0a0a0a;
-  --sidebar-foreground: #e5e2e1;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #2f3131;
-  --sidebar-accent: #1a1a1a;
-  --sidebar-accent-foreground: #e5e2e1;
-  --sidebar-border: #333333;
-  --sidebar-ring: #ffffff;
-  --on-surface: #e5e2e1;
-  --on-surface-variant: #8e9192;
-  --surface-container: #121212;
-  --surface-container-low: #0f0f0f;
-  --surface-container-high: #1a1a1a;
-  --outline: #333333;
-  --outline-variant: #444748;
+  /* SwarmTrace AI Monitoring - Green theme for dark mode */
+  --background: oklch(0.12 0.01 155);
+  --foreground: oklch(0.98 0.005 155);
+  --card: oklch(0.15 0.01 155);
+  --card-foreground: oklch(0.98 0.005 155);
+  --popover: oklch(0.15 0.01 155);
+  --popover-foreground: oklch(0.98 0.005 155);
+  --primary: oklch(0.55 0.18 155);
+  --primary-foreground: oklch(0.98 0.01 155);
+  --secondary: oklch(0.2 0.02 155);
+  --secondary-foreground: oklch(0.98 0.005 155);
+  --muted: oklch(0.2 0.02 155);
+  --muted-foreground: oklch(0.65 0.02 155);
+  --accent: oklch(0.55 0.18 155);
+  --accent-foreground: oklch(0.98 0.01 155);
+  --destructive: oklch(0.5 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 0);
+  --border: oklch(0.25 0.02 155);
+  --input: oklch(0.25 0.02 155);
+  --ring: oklch(0.55 0.18 155);
+  --chart-1: oklch(0.42 0.15 155);
+  --chart-2: oklch(0.55 0.18 155);
+  --chart-3: oklch(0.65 0.12 155);
+  --chart-4: oklch(0.75 0.08 155);
+  --chart-5: oklch(0.85 0.04 155);
+  --sidebar: oklch(0.15 0.01 155);
+  --sidebar-foreground: oklch(0.98 0.005 155);
+  --sidebar-primary: oklch(0.55 0.18 155);
+  --sidebar-primary-foreground: oklch(0.98 0.01 155);
+  --sidebar-accent: oklch(0.2 0.02 155);
+  --sidebar-accent-foreground: oklch(0.98 0.005 155);
+  --sidebar-border: oklch(0.25 0.02 155);
+  --sidebar-ring: oklch(0.55 0.18 155);
+}
+
+@theme inline {
+  /* optional: --font-sans, --font-serif, --font-mono if they are applied in the layout.tsx */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 }
 
 @layer base {
@@ -138,7 +126,115 @@
   body {
     @apply bg-background text-foreground;
   }
-  html {
-    @apply font-sans;
+}
+
+/* Custom animations for smooth card interactions */
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0px);
   }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Added barSlideUp animation for modern analytics chart */
+@keyframes barSlideUp {
+  from {
+    transform: scaleY(0);
+    opacity: 0;
+  }
+  to {
+    transform: scaleY(1);
+    opacity: 1;
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    box-shadow: 0 0 0 0 rgba(66, 153, 225, 0.4);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(66, 153, 225, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(66, 153, 225, 0);
+  }
+}
+
+/* Added shimmer and fade-in animations for chart interactions */
+@keyframes shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+.animate-slide-in-up {
+  animation: slideInUp 0.5s ease-out forwards;
+}
+
+/* Added utility classes for new animations */
+.animate-shimmer {
+  animation: shimmer 1.5s ease-in-out infinite;
+}
+
+.animate-fade-in {
+  animation: fade-in 0.2s ease-out forwards;
+}
+
+/* ─── Landing page animations ─────────────────────────────────────────────── */
+
+@keyframes marquee {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+.marquee {
+  animation: marquee 30s linear infinite;
+}
+
+/* Pause marquee when user prefers reduced motion */
+@media (prefers-reduced-motion: reduce) {
+  .marquee {
+    animation: none;
+  }
+}
+
+@keyframes char-in {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-char-in {
+  animation: char-in 0.3s ease forwards;
 }
