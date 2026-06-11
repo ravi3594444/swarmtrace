@@ -27,7 +27,12 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <ClerkProvider>
+    <ClerkProvider
+      afterSignInUrl="/traces"
+      afterSignUpUrl="/traces"
+      signInUrl="/sign-in"
+      signUpUrl="/sign-up"
+    >
       {/*
         suppressHydrationWarning is required here:
         next-themes writes the theme class (e.g. "dark") to <html> on the client
