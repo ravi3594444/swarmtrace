@@ -1,52 +1,117 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
-import { Bell, Save, Check, Copy, Trash2, AlertCircle } from 'lucide-react'
+import { Bell, Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Construction, Sparkles } from 'lucide-react'
 import { fetchApiKeys, createApiKey, revokeApiKey, fetchIntegrations, fetchBillingInfo } from '@/lib/api'
 import { SkeletonCard } from '@/components/skeleton'
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
+interface Integration { id: string; name: string; description: string; connected: boolean }
+interface BillingInfo {
+  plan?: string
+  price?: number
+  // API returns these field names:
+  traces_used?: number
+  traces_limit?: number
+  cost_this_month?: number
+  next_billing?: string
+  // Fallback fields:
+  nextBilling?: string
+  paymentMethod?: string
+}
+
+// ─── Coming Soon Banner ───────────────────────────────────────────────────────
+function ComingSoonBanner() {
+  return (
+    <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-8 text-center">
+      {/* Decorative background dots */}
+      <div className="pointer-events-none absolute inset-0 opacity-20">
+        {[...Array(20)].map((_, i) => (
+          <div
+            key={i}
+            className="absolute h-1.5 w-1.5 rounded-full bg-primary"
+            style={{ left: `${(i * 19) % 100}%`, top: `${(i * 37) % 100}%` }}
+          />
+        ))}
+      </div>
+
+      <div className="relative z-10 space-y-4">
+        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/20 border border-primary/30">
+          <Construction className="h-8 w-8 text-primary" />
+        </div>
+
+        <div>
+          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-primary/20 px-3 py-1 text-xs font-semibold text-primary border border-primary/30">
+            <Sparkles className="h-3 w-3" />
+            Coming Soon
+          </div>
+          <h2 className="text-2xl font-bold text-on-surface">Billing & Plans</h2>
+          <p className="mt-2 text-sm text-on-surface-variant max-w-md mx-auto">
+            Full billing management, invoice history, plan upgrades, and payment methods are being built right now. Stay tuned!
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
+          {['Plan Management', 'Invoice History', 'Usage Analytics', 'Team Billing'].map((feat) => (
+            <span key={feat} className="rounded-full bg-surface-container-high border border-outline px-3 py-1 text-xs text-on-surface-variant">
+              {feat}
+            </span>
+          ))}
+        </div>
+
+        <p className="text-xs text-on-surface-variant pt-2">
+          Current plan: <span className="font-semibold text-primary">Pro</span> — you&apos;re all set for now.
+        </p>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
-  const [profile, setProfile] = useState({
-    fullName: 'Admin User',
-    email: 'admin@swarmtrace.ai',
-  })
-  const [preferences, setPreferences] = useState({
-    emailNotifications: true,
-    darkMode: true,
-    weeklyReports: false,
-  })
+  const [profile, setProfile] = useState({ fullName: 'Admin User', email: 'admin@swarmtrace.ai' })
+  const [preferences, setPreferences] = useState({ emailNotifications: true, darkMode: false, weeklyReports: false })
   const [saved, setSaved] = useState(false)
 
-  const [apiKeys, setApiKeys] = useState<any[]>([])
+  // API Keys state
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loadingApiKeys, setLoadingApiKeys] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
-  const [createdKey, setCreatedKey] = useState<any>(null)
-  const [apiError, setApiError] = useState(false)
+  const [createdKey, setCreatedKey] = useState<{ key: string } | null>(null)
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null)
+  const [creatingKey, setCreatingKey] = useState(false)
+  const [copiedKey, setCopiedKey] = useState(false)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
 
-  const [integrations, setIntegrations] = useState<any[]>([])
+  // Integrations state
+  const [integrations, setIntegrations] = useState<Integration[]>([])
   const [loadingIntegrations, setLoadingIntegrations] = useState(false)
-  const [integrationError, setIntegrationError] = useState(false)
 
-  const [billing, setBilling] = useState<any>(null)
-  const [loadingBilling, setLoadingBilling] = useState(false)
-  const [billingError, setBillingError] = useState(false)
+  // Load API keys when tab changes
+  const loadApiKeys = useCallback(async () => {
+    setLoadingApiKeys(true)
+    setApiKeyError(null)
+    try {
+      const result = await fetchApiKeys()
+      if (result?.keys) {
+        setApiKeys(result.keys)
+      } else {
+        setApiKeys([])
+        setApiKeyError('Could not load API keys. Check your connection.')
+      }
+    } catch {
+      setApiKeyError('Failed to load API keys.')
+    } finally {
+      setLoadingApiKeys(false)
+    }
+  }, [])
 
   useEffect(() => {
-    if (activeTab === 'api') {
-      const load = async () => {
-        setLoadingApiKeys(true)
-        const result = await fetchApiKeys()
-        setApiKeys(result?.keys || [
-          { id: 'key_1', prefix: 'sk_live_abc123', name: 'Production', created: '2024-01-10T10:30:00Z' },
-        ])
-        setApiError(!result)
-        setLoadingApiKeys(false)
-      }
-      load()
-    }
-  }, [activeTab])
+    if (activeTab === 'api') loadApiKeys()
+  }, [activeTab, loadApiKeys])
 
   useEffect(() => {
     if (activeTab === 'integrations') {
@@ -58,54 +123,59 @@ export default function SettingsPage() {
           { id: 'pagerduty', name: 'PagerDuty', description: 'Alert escalation', connected: false },
           { id: 'datadog', name: 'Datadog', description: 'Metrics and monitoring', connected: true },
         ])
-        setIntegrationError(!result)
         setLoadingIntegrations(false)
       }
       load()
     }
   }, [activeTab])
 
-  useEffect(() => {
-    if (activeTab === 'billing') {
-      const load = async () => {
-        setLoadingBilling(true)
-        const result = await fetchBillingInfo()
-        setBilling(result || {
-          plan: 'Pro',
-          price: 99,
-          nextBilling: '2024-02-15',
-          paymentMethod: '****4242',
-        })
-        setBillingError(!result)
-        setLoadingBilling(false)
-      }
-      load()
-    }
-  }, [activeTab])
-
+  // Create API key with full error feedback
   const handleCreateApiKey = async () => {
-    if (!newKeyName.trim()) return
+    if (!newKeyName.trim()) {
+      setApiKeyError('Please enter a name for your API key.')
+      return
+    }
+    setCreatingKey(true)
+    setApiKeyError(null)
+    setCreatedKey(null)
     try {
-      const result = await createApiKey(newKeyName)
-      if (result) {
+      const result = await createApiKey(newKeyName.trim())
+      if (result?.key) {
         setCreatedKey(result)
         setNewKeyName('')
+        // Refresh list
         const list = await fetchApiKeys()
-        setApiKeys(list?.keys || apiKeys)
+        if (list?.keys) setApiKeys(list.keys)
+      } else {
+        setApiKeyError('Failed to create API key. The API may be unavailable — check your backend connection.')
       }
-    } catch (err) {
-      console.error('[v0] API key creation failed:', err)
+    } catch (err: any) {
+      setApiKeyError(`Error creating key: ${err?.message || 'Unknown error'}`)
+    } finally {
+      setCreatingKey(false)
     }
   }
 
+  const handleCopyKey = async () => {
+    if (!createdKey?.key) return
+    await navigator.clipboard.writeText(createdKey.key)
+    setCopiedKey(true)
+    setTimeout(() => setCopiedKey(false), 2000)
+  }
+
   const handleRevokeKey = async (id: string) => {
+    setRevokingId(id)
     try {
       const success = await revokeApiKey(id)
       if (success) {
-        setApiKeys(apiKeys.filter(k => k.id !== id))
+        setApiKeys(prev => prev.filter(k => k.id !== id))
+      } else {
+        setApiKeyError('Failed to revoke key.')
       }
-    } catch (err) {
-      console.error('[v0] API key revocation failed:', err)
+    } catch {
+      setApiKeyError('Failed to revoke key.')
+    } finally {
+      setRevokingId(null)
     }
   }
 
@@ -115,17 +185,22 @@ export default function SettingsPage() {
   }
 
   const handlePreferenceChange = (field: string) => {
-    setPreferences(prev => ({ ...prev, [field]: !prev[field] }))
+    setPreferences(prev => ({ ...prev, [field]: !prev[field as keyof typeof preferences] }))
     setSaved(false)
   }
 
   const handleSave = () => {
-    localStorage.setItem('userProfile', JSON.stringify(profile))
-    localStorage.setItem('userPreferences', JSON.stringify(preferences))
     setSaved(true)
     const timer = setTimeout(() => setSaved(false), 3000)
     return () => clearTimeout(timer)
   }
+
+  const navItems = [
+    { id: 'general', label: 'General', icon: Settings2 },
+    { id: 'api', label: 'API Keys', icon: Key },
+    { id: 'billing', label: 'Billing', icon: CreditCard },
+    { id: 'integrations', label: 'Integrations', icon: Puzzle },
+  ]
 
   return (
     <DashboardLayout>
@@ -142,67 +217,42 @@ export default function SettingsPage() {
         </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Settings Menu */}
+          {/* Sidebar Nav */}
           <div className="lg:col-span-1">
-            <nav className="space-y-2">
-              <button
-                onClick={() => setActiveTab('general')}
-                className={`w-full text-left px-4 py-3 rounded-full font-medium text-sm transition-colors ${
-                  activeTab === 'general'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                General
-              </button>
-              <button
-                onClick={() => setActiveTab('api')}
-                className={`w-full text-left px-4 py-3 rounded-full font-medium text-sm transition-colors ${
-                  activeTab === 'api'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                API Keys
-              </button>
-              <button
-                onClick={() => setActiveTab('billing')}
-                className={`w-full text-left px-4 py-3 rounded-full font-medium text-sm transition-colors ${
-                  activeTab === 'billing'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                Billing
-              </button>
-              <button
-                onClick={() => setActiveTab('integrations')}
-                className={`w-full text-left px-4 py-3 rounded-full font-medium text-sm transition-colors ${
-                  activeTab === 'integrations'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                Integrations
-              </button>
+            <nav className="space-y-1">
+              {navItems.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-full font-medium text-sm transition-colors ${
+                    activeTab === id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </button>
+              ))}
             </nav>
           </div>
 
-          {/* Settings Content */}
-          <div className="lg:col-span-3 space-y-8">
+          {/* Content */}
+          <div className="lg:col-span-3 space-y-6">
+
+            {/* ── General ─────────────────────────────────────────────── */}
             {activeTab === 'general' && (
               <>
-                {/* Profile Information */}
                 <div className="bg-surface-container border border-outline rounded-2xl p-6">
                   <h2 className="text-xl font-semibold text-on-surface mb-6">Profile Information</h2>
-                  <div className="space-y-6">
+                  <div className="space-y-5">
                     <div>
                       <label className="block text-sm font-medium text-on-surface mb-2">Full Name</label>
                       <input
                         type="text"
                         value={profile.fullName}
                         onChange={(e) => handleProfileChange('fullName', e.target.value)}
-                        className="w-full px-4 py-2 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50"
+                        className="w-full px-4 py-2.5 rounded-full bg-surface-container-low border border-outline text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
                       />
                     </div>
                     <div>
@@ -211,57 +261,47 @@ export default function SettingsPage() {
                         type="email"
                         value={profile.email}
                         onChange={(e) => handleProfileChange('email', e.target.value)}
-                        className="w-full px-4 py-2 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50"
+                        className="w-full px-4 py-2.5 rounded-full bg-surface-container-low border border-outline text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* Preferences */}
                 <div className="bg-surface-container border border-outline rounded-2xl p-6">
                   <h2 className="text-xl font-semibold text-on-surface mb-6">Preferences</h2>
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline/50 hover:border-outline transition-colors">
-                      <div>
-                        <p className="text-sm font-medium text-on-surface">Email Notifications</p>
-                        <p className="text-xs text-on-surface-variant">Receive alerts and updates</p>
+                    {[
+                      { field: 'emailNotifications', label: 'Email Notifications', desc: 'Receive alerts and updates' },
+                      { field: 'weeklyReports', label: 'Weekly Reports', desc: 'Get weekly performance summaries' },
+                    ].map(({ field, label, desc }) => (
+                      <div key={field} className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline/50 hover:border-outline transition-colors">
+                        <div>
+                          <p className="text-sm font-medium text-on-surface">{label}</p>
+                          <p className="text-xs text-on-surface-variant">{desc}</p>
+                        </div>
+                        <button
+                          onClick={() => handlePreferenceChange(field)}
+                          className={`relative w-11 h-6 rounded-full transition-colors ${preferences[field as keyof typeof preferences] ? 'bg-primary' : 'bg-outline-variant'}`}
+                        >
+                          <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${preferences[field as keyof typeof preferences] ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handlePreferenceChange('emailNotifications')}
-                        className={`w-10 h-6 rounded-full transition-colors ${preferences.emailNotifications ? 'bg-primary' : 'bg-outline-variant'}`}
-                      >
-                        <div className={`w-5 h-5 rounded-full bg-surface-container transition-transform ${preferences.emailNotifications ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline/50 hover:border-outline transition-colors">
-                      <div>
-                        <p className="text-sm font-medium text-on-surface">Weekly Reports</p>
-                        <p className="text-xs text-on-surface-variant">Get weekly performance summaries</p>
-                      </div>
-                      <button
-                        onClick={() => handlePreferenceChange('weeklyReports')}
-                        className={`w-10 h-6 rounded-full transition-colors ${preferences.weeklyReports ? 'bg-primary' : 'bg-outline-variant'}`}
-                      >
-                        <div className={`w-5 h-5 rounded-full bg-surface-container transition-transform ${preferences.weeklyReports ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
+                    ))}
                   </div>
                 </div>
 
-                {/* Danger Zone */}
                 <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-6">Danger Zone</h2>
-                  <button className="px-6 py-2 rounded-full bg-red-500/20 text-red-400 font-medium text-sm border border-red-500/30 hover:bg-red-500/30 transition-colors">
+                  <h2 className="text-xl font-semibold text-on-surface mb-4">Danger Zone</h2>
+                  <button className="px-6 py-2 rounded-full bg-red-500/10 text-red-500 font-medium text-sm border border-red-500/30 hover:bg-red-500/20 transition-colors">
                     Delete Account
                   </button>
                 </div>
 
-                {/* Save Button */}
                 <div className="flex justify-end gap-3">
                   {saved && (
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-600 border border-green-500/30 text-sm font-medium">
                       <Check className="w-4 h-4" />
-                      <span className="text-sm font-medium">Changes saved</span>
+                      Changes saved
                     </div>
                   )}
                   <button
@@ -269,78 +309,109 @@ export default function SettingsPage() {
                     className="flex items-center gap-2 px-6 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
                   >
                     <Save className="w-4 h-4" />
-                    <span>Save Changes</span>
+                    Save Changes
                   </button>
                 </div>
               </>
             )}
 
+            {/* ── API Keys ─────────────────────────────────────────────── */}
             {activeTab === 'api' && (
               <div className="space-y-6">
-                {apiError && (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>API unavailable — showing cached data</span>
+                {/* Error banner */}
+                {apiKeyError && (
+                  <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>{apiKeyError}</span>
                   </div>
                 )}
 
+                {/* Created key reveal */}
+                {createdKey && (
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-6">
+                    <p className="text-sm text-green-600 font-semibold mb-3">✓ API Key Created Successfully</p>
+                    <div className="flex items-center gap-2 mb-3">
+                      <code className="flex-1 px-3 py-2 bg-surface-container border border-outline rounded-xl text-on-surface text-xs break-all font-mono">
+                        {createdKey.key}
+                      </code>
+                      <button
+                        onClick={handleCopyKey}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/20 border border-green-500/30 text-green-600 hover:bg-green-500/30 transition-colors text-xs font-medium"
+                      >
+                        {copiedKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        {copiedKey ? 'Copied!' : 'Copy'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-on-surface-variant">⚠ Save this key now. You won&apos;t be able to see it again.</p>
+                    <button onClick={() => setCreatedKey(null)} className="mt-3 text-xs text-on-surface-variant underline underline-offset-2">Dismiss</button>
+                  </div>
+                )}
+
+                {/* Create new key */}
                 <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-6">Create New API Key</h2>
+                  <h2 className="text-xl font-semibold text-on-surface mb-2">Create New API Key</h2>
+                  <p className="text-sm text-on-surface-variant mb-5">Use API keys to authenticate requests from your agent code.</p>
                   <div className="flex gap-3">
                     <input
                       type="text"
-                      placeholder="Key name (e.g., Production)"
+                      placeholder="Key name (e.g., Production, Staging)"
                       value={newKeyName}
-                      onChange={(e) => setNewKeyName(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary"
+                      onChange={(e) => { setNewKeyName(e.target.value); setApiKeyError(null) }}
+                      onKeyDown={(e) => e.key === 'Enter' && !creatingKey && handleCreateApiKey()}
+                      className="flex-1 px-4 py-2.5 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
                     />
                     <button
                       onClick={handleCreateApiKey}
-                      className="px-6 py-2 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:opacity-90"
+                      disabled={creatingKey || !newKeyName.trim()}
+                      className="px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity flex items-center gap-2"
                     >
-                      Create
+                      {creatingKey ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                          Creating…
+                        </>
+                      ) : 'Create Key'}
                     </button>
                   </div>
                 </div>
 
-                {createdKey && (
-                  <div className="bg-green-500/20 border border-green-500/30 rounded-2xl p-6">
-                    <p className="text-sm text-green-400 font-semibold mb-3">API Key Created Successfully</p>
-                    <div className="flex items-center gap-2 mb-4">
-                      <code className="flex-1 px-3 py-2 bg-surface-container border border-outline rounded text-on-surface text-xs break-all font-mono">
-                        {createdKey.key}
-                      </code>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(createdKey.key)}
-                        className="p-2 hover:bg-surface-container-high rounded"
-                      >
-                        <Copy className="w-4 h-4 text-green-400" />
-                      </button>
-                    </div>
-                    <p className="text-xs text-on-surface-variant">Save this key in a secure location. You won&apos;t be able to see it again.</p>
-                  </div>
-                )}
-
+                {/* Existing keys */}
                 <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h3 className="text-lg font-semibold text-on-surface mb-4">Existing Keys</h3>
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="text-lg font-semibold text-on-surface">Your API Keys</h3>
+                    <button onClick={loadApiKeys} className="text-xs text-on-surface-variant hover:text-on-surface transition-colors underline underline-offset-2">
+                      Refresh
+                    </button>
+                  </div>
                   {loadingApiKeys ? (
                     <SkeletonCard />
                   ) : apiKeys.length === 0 ? (
-                    <p className="text-on-surface-variant">No API keys yet</p>
+                    <div className="text-center py-8">
+                      <Key className="w-10 h-10 text-on-surface-variant/40 mx-auto mb-3" />
+                      <p className="text-sm text-on-surface-variant">No API keys yet. Create one above.</p>
+                    </div>
                   ) : (
                     <div className="space-y-3">
                       {apiKeys.map((key) => (
                         <div key={key.id} className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline">
-                          <div>
+                          <div className="min-w-0 flex-1">
                             <p className="text-sm font-semibold text-on-surface">{key.name}</p>
-                            <p className="text-xs text-on-surface-variant font-mono">{key.prefix}...</p>
-                            <p className="text-xs text-on-surface-variant mt-1">Created {new Date(key.created).toLocaleDateString()}</p>
+                            <p className="text-xs text-on-surface-variant font-mono mt-0.5">{key.prefix}</p>
+                            <p className="text-xs text-on-surface-variant mt-1">
+                              Created {new Date(key.created).toLocaleDateString()}
+                              {key.last_used && ` · Last used ${new Date(key.last_used).toLocaleDateString()}`}
+                            </p>
                           </div>
                           <button
                             onClick={() => handleRevokeKey(key.id)}
-                            className="p-2 hover:bg-red-500/20 rounded text-red-400 transition-colors"
+                            disabled={revokingId === key.id}
+                            className="ml-4 p-2 hover:bg-red-500/10 rounded-lg text-red-500/60 hover:text-red-500 transition-colors disabled:opacity-50"
+                            title="Revoke key"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {revokingId === key.id
+                              ? <div className="w-4 h-4 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin" />
+                              : <Trash2 className="w-4 h-4" />
+                            }
                           </button>
                         </div>
                       ))}
@@ -350,80 +421,29 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {activeTab === 'billing' && (
-              <div className="space-y-6">
-                {billingError && (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>API unavailable — showing cached data</span>
-                  </div>
-                )}
+            {/* ── Billing (Coming Soon) ───────────────────────────────── */}
+            {activeTab === 'billing' && <ComingSoonBanner />}
 
-                {loadingBilling ? (
-                  <SkeletonCard />
-                ) : (
-                  <>
-                    <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                      <h2 className="text-xl font-semibold text-on-surface mb-6">Billing Summary</h2>
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-start pb-4 border-b border-outline">
-                          <div>
-                            <p className="text-sm font-medium text-on-surface">Current Plan</p>
-                            <p className="text-xs text-on-surface-variant">{billing?.plan} Tier</p>
-                          </div>
-                          <p className="text-lg font-bold text-on-surface">${billing?.price}/mo</p>
-                        </div>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-sm font-medium text-on-surface">Next Billing Date</p>
-                            <p className="text-xs text-on-surface-variant">{new Date(billing?.nextBilling).toLocaleDateString()}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                      <h3 className="text-lg font-semibold text-on-surface mb-4">Payment Method</h3>
-                      <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline">
-                        <div>
-                          <p className="text-sm text-on-surface">Visa ending in {billing?.paymentMethod.slice(-4)}</p>
-                        </div>
-                        <button className="px-4 py-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors">
-                          Update
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
+            {/* ── Integrations ─────────────────────────────────────────── */}
             {activeTab === 'integrations' && (
               <div className="space-y-6">
-                {integrationError && (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>API unavailable — showing cached data</span>
-                  </div>
-                )}
-
                 {loadingIntegrations ? (
-                  <div className="grid grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {Array(3).fill(0).map((_, i) => <SkeletonCard key={i} />)}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {integrations.map((integration) => (
-                      <div key={integration.id} className="bg-surface-container border border-outline rounded-2xl p-6 hover:border-primary/50 transition-colors cursor-pointer">
-                        <div className="flex items-start justify-between mb-4">
+                      <div key={integration.id} className="bg-surface-container border border-outline rounded-2xl p-6 hover:border-primary/50 transition-colors">
+                        <div className="flex items-start justify-between mb-3">
                           <h3 className="font-semibold text-on-surface">{integration.name}</h3>
-                          <div className={`w-3 h-3 rounded-full ${integration.connected ? 'bg-green-500' : 'bg-outline-variant'}`} />
+                          <span className={`w-2.5 h-2.5 mt-1 rounded-full shrink-0 ${integration.connected ? 'bg-green-500' : 'bg-outline-variant'}`} />
                         </div>
-                        <p className="text-sm text-on-surface-variant mb-4">{integration.description}</p>
+                        <p className="text-sm text-on-surface-variant mb-5 leading-relaxed">{integration.description}</p>
                         <button className={`w-full px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                           integration.connected
-                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            : 'bg-primary/20 text-primary hover:bg-primary/30'
+                            ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20'
+                            : 'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20'
                         }`}>
                           {integration.connected ? 'Disconnect' : 'Connect'}
                         </button>
@@ -433,6 +453,7 @@ export default function SettingsPage() {
                 )}
               </div>
             )}
+
           </div>
         </div>
       </div>
