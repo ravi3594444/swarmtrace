@@ -15,22 +15,17 @@ export function DevelopersSection() {
             </p>
 
             <div className="space-y-4 mb-8">
-              <div className="flex items-center gap-3">
-                <span className="text-green-500">✓</span>
-                <span>Open-source instrumentation</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-green-500">✓</span>
-                <span>API-first design</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-green-500">✓</span>
-                <span>CLI tools for local development</span>
-              </div>
-              <div className="flex items-center gap-3">
-                <span className="text-green-500">✓</span>
-                <span>Webhook integrations</span>
-              </div>
+              {[
+                { text: "Open-source instrumentation", icon: "ti-brand-github" },
+                { text: "API-first design",             icon: "ti-api"          },
+                { text: "CLI tools for local development", icon: "ti-terminal"  },
+                { text: "Webhook integrations",         icon: "ti-webhook"      },
+              ].map((item, i) => (
+                <div key={i} className="flex items-center gap-3">
+                  <i className={`ti ${item.icon}`} style={{ fontSize: "18px", color: "#6366f1" }} aria-hidden="true" />
+                  <span>{item.text}</span>
+                </div>
+              ))}
             </div>
 
             <Button size="lg" asChild>
