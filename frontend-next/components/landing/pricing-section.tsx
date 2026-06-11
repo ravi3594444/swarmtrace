@@ -3,49 +3,49 @@
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 
-export function PricingSection() {
-  const plans = [
-    {
-      name: "Free",
-      price: "$0",
-      description: "Perfect for small projects and getting started",
-      features: [
-        "Up to 1,000 traces/month",
-        "Basic metrics & dashboards",
-        "Community support",
-        "1 team member"
-      ],
-      cta: "Get Started"
-    },
-    {
-      name: "Pro",
-      price: "$49",
-      description: "For growing teams and production workloads",
-      features: [
-        "Up to 50,000 traces/month",
-        "Advanced analytics",
-        "Priority support",
-        "5 team members",
-        "Custom dashboards"
-      ],
-      cta: "Start Free Trial",
-      featured: true
-    },
-    {
-      name: "Enterprise",
-      price: "Custom",
-      description: "For large-scale deployments and mission-critical applications",
-      features: [
-        "Unlimited traces",
-        "Dedicated support",
-        "SSO & SAML",
-        "Custom integrations",
-        "On-premise options"
-      ],
-      cta: "Contact Sales"
-    }
-  ]
+const plans = [
+  {
+    name: "Free",
+    price: "$0",
+    description: "Perfect for small projects and getting started",
+    features: [
+      { text: "Up to 1,000 traces/month", icon: "ti-chart-bar" },
+      { text: "Basic metrics & dashboards", icon: "ti-layout-dashboard" },
+      { text: "Community support", icon: "ti-users" },
+      { text: "1 team member", icon: "ti-user" },
+    ],
+    cta: "Get Started",
+  },
+  {
+    name: "Pro",
+    price: "$49",
+    description: "For growing teams and production workloads",
+    features: [
+      { text: "Up to 50,000 traces/month", icon: "ti-chart-line" },
+      { text: "Advanced analytics", icon: "ti-telescope" },
+      { text: "Priority support", icon: "ti-headset" },
+      { text: "5 team members", icon: "ti-users-group" },
+      { text: "Custom dashboards", icon: "ti-layout-columns" },
+    ],
+    cta: "Start Free Trial",
+    featured: true,
+  },
+  {
+    name: "Enterprise",
+    price: "Custom",
+    description: "For large-scale deployments and mission-critical applications",
+    features: [
+      { text: "Unlimited traces", icon: "ti-infinity" },
+      { text: "Dedicated support", icon: "ti-lifebuoy" },
+      { text: "SSO & SAML", icon: "ti-shield-lock" },
+      { text: "Custom integrations", icon: "ti-plug-connected" },
+      { text: "On-premise options", icon: "ti-server" },
+    ],
+    cta: "Contact Sales",
+  },
+]
 
+export function PricingSection() {
   return (
     <section className="py-24">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
@@ -60,7 +60,7 @@ export function PricingSection() {
           {plans.map((plan, index) => (
             <Card
               key={index}
-              className={`p-8 ${plan.featured ? 'border-primary/50 ring-2 ring-primary' : ''}`}
+              className={`p-8 ${plan.featured ? "border-primary/50 ring-2 ring-primary" : ""}`}
             >
               <h3 className="text-2xl font-semibold mb-2">{plan.name}</h3>
               <p className="text-muted-foreground mb-6">{plan.description}</p>
@@ -73,8 +73,12 @@ export function PricingSection() {
               <ul className="space-y-3 mb-8">
                 {plan.features.map((feature, i) => (
                   <li key={i} className="flex items-center gap-3">
-                    <span className="text-green-500">✓</span>
-                    <span className="text-sm">{feature}</span>
+                    <i
+                      className={`ti ${feature.icon}`}
+                      style={{ fontSize: "17px", color: plan.featured ? "#6366f1" : "var(--color-text-secondary, #888)" }}
+                      aria-hidden="true"
+                    />
+                    <span className="text-sm">{feature.text}</span>
                   </li>
                 ))}
               </ul>
