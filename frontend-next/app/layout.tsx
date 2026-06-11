@@ -28,8 +28,9 @@ export default function RootLayout({
 }>) {
   return (
     <ClerkProvider
-      afterSignInUrl="/traces"
-      afterSignUpUrl="/traces"
+      signInFallbackRedirectUrl="/overview"
+      signUpFallbackRedirectUrl="/overview"
+      afterSignOutUrl="/sign-in"
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
     >
