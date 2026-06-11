@@ -6,7 +6,7 @@ import { LayoutGrid, Users, ActivitySquare, BarChart3, Settings } from 'lucide-r
 import { UserButton, useUser } from '@clerk/nextjs'
 
 const navItems = [
-  { href: '/', label: 'Overview', icon: LayoutGrid },
+  { href: '/overview', label: 'Overview', icon: LayoutGrid },
   { href: '/agents', label: 'Agents', icon: Users },
   { href: '/traces', label: 'Traces', icon: ActivitySquare },
   { href: '/metrics', label: 'Metrics', icon: BarChart3 },
@@ -63,7 +63,7 @@ export function Sidebar() {
 
       {/* Auth Profile Section */}
       <div className="px-6 pb-6 pt-4 border-t border-sidebar-border flex items-center gap-3">
-        <UserButton afterSignOutUrl="/sign-in" />
+        <UserButton />
         <div className="min-w-0">
           <p className="text-xs font-semibold text-foreground truncate">
             {user?.fullName || user?.primaryEmailAddress?.emailAddress || 'Admin User'}
