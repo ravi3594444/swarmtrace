@@ -30,7 +30,10 @@ export async function fetchTraces() {
 
 export async function fetchMetrics() {
   try {
-    const res = await fetch(`/api/metrics`, { next: { revalidate: 30 } })
+    // cache: 'no-store' — always fresh. Staleness is managed by the
+    // visibility-aware Realtime subscription in metrics/page.tsx, not by
+    // polling or Next.js ISR, so we must never serve a cached response here.
+    const res = await fetch(`/api/metrics`, { cache: 'no-store' })
     return res.ok ? res.json() : null
   } catch {
     return null
