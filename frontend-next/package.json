@@ -12,6 +12,7 @@
     "@base-ui/react": "^1.5.0",
     "@clerk/nextjs": "^7.4.3",
     "@radix-ui/react-slot": "^1.2.5",
+    "@supabase/supabase-js": "^2.108.1",
     "@vercel/analytics": "1.6.1",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
