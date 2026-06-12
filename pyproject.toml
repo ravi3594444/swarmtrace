@@ -11,6 +11,9 @@ authors = [{ name = "Ravi" }]
 requires-python = ">=3.10"
 dependencies = ["click", "rich"]
 
+[project.optional-dependencies]
+regression = ["litai"]
+
 [project.scripts]
 swarmtrace = "tracely.cli:view"
 swarmtrace-export = "tracely.export:main"
