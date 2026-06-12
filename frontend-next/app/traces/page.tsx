@@ -1,10 +1,14 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useRef, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { Search, X, AlertCircle } from 'lucide-react'
 import { fetchTraces, formatTime } from '@/lib/api'
 import { SkeletonTableRow } from '@/components/skeleton'
+import { createClient } from '@supabase/supabase-js'
+
+const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL  || ''
+const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
 
 const FALLBACK_TRACES = [
   {
@@ -55,14 +59,16 @@ const FALLBACK_TRACES = [
 ]
 
 export default function TracesPage() {
-  const [traces, setTraces] = useState<any[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
-  const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'all' | 'success' | 'error'>('all')
-  const [liveMode, setLiveMode] = useState(false)
+  const [traces, setTraces]           = useState<any[]>([])
+  const [loading, setLoading]         = useState(true)
+  const [error, setError]             = useState(false)
+  const [search, setSearch]           = useState('')
+  const [filter, setFilter]           = useState<'all' | 'success' | 'error'>('all')
+  const [liveMode, setLiveMode]       = useState(false)
   const [selectedTrace, setSelectedTrace] = useState<any>(null)
-  const [newRowIds, setNewRowIds] = useState<Set<string>>(new Set())
+  const [newRowIds, setNewRowIds]     = useState<Set<string>>(new Set())
+  const [realtimeOk, setRealtimeOk]  = useState(false)
+  const supaRef = useRef<ReturnType<typeof createClient> | null>(null)
 
   useEffect(() => {
     let isMounted = true
@@ -89,32 +95,51 @@ export default function TracesPage() {
     }
   }, [])
 
+  // ── Supabase Realtime — replaces setInterval polling entirely ─────────────
+  // When liveMode is on: subscribe to INSERT events on the traces table.
+  // New row slides in instantly (~50ms) with a green highlight for 3 seconds.
+  // Zero extra Vercel function calls — Supabase broadcasts over WebSocket.
   useEffect(() => {
-    if (!liveMode) return
-    let isMounted = true
-    let highlightTimer: NodeJS.Timeout | null = null
-    const interval = setInterval(async () => {
-      const result = await fetchTraces()
-      if (result && isMounted) {
-        const newTraces = result.traces || FALLBACK_TRACES
-        const newIds = new Set<string>()
-        newTraces.forEach((t: any) => {
-          if (!traces.find(x => x.id === t.id)) {
-            newIds.add(t.id)
+    if (!liveMode || !supabaseUrl || !supabaseAnon) return
+
+    const sb = createClient(supabaseUrl, supabaseAnon)
+    supaRef.current = sb
+
+    const channel = sb
+      .channel('traces-live')
+      .on(
+        'postgres_changes',
+        { event: 'INSERT', schema: 'public', table: 'traces' },
+        (payload: any) => {
+          const raw = payload.new
+          // Normalise the incoming row to match the trace shape the table expects
+          const newTrace = {
+            id:            raw.id,
+            function_name: raw.function  || raw.function_name || 'unknown',
+            status:        raw.error     ? 'ERROR' : 'SUCCESS',
+            duration:      Math.round((raw.latency_sec || 0) * 1000),
+            tokens_in:     raw.input_tokens  || 0,
+            tokens_out:    raw.output_tokens || 0,
+            cost:          raw.cost_usd  || 0,
+            timestamp:     raw.timestamp || new Date().toISOString(),
+            args:          raw.args      || '',
+            output:        raw.output    || '',
+            error:         raw.error     || null,
+            parent_id:     raw.parent_id || null,
           }
-        })
-        setTraces(newTraces)
-        setNewRowIds(newIds)
-        if (highlightTimer) clearTimeout(highlightTimer)
-        highlightTimer = setTimeout(() => {
-          if (isMounted) setNewRowIds(new Set())
-        }, 3000)
-      }
-    }, 2000)
+
+          setTraces(prev => [newTrace, ...prev].slice(0, 200)) // cap at 200 rows
+          setNewRowIds(prev => new Set([...prev, raw.id]))
+          setTimeout(() => {
+            setNewRowIds(prev => { const s = new Set(prev); s.delete(raw.id); return s })
+          }, 3000)
+        }
+      )
+      .subscribe((status: string) => setRealtimeOk(status === 'SUBSCRIBED'))
+
     return () => {
-      isMounted = false
-      clearInterval(interval)
-      if (highlightTimer) clearTimeout(highlightTimer)
+      sb.removeChannel(channel)
+      setRealtimeOk(false)
     }
   }, [liveMode])
 
@@ -137,13 +162,21 @@ export default function TracesPage() {
           </div>
           <button
             onClick={() => setLiveMode(!liveMode)}
-            className={`px-4 py-2 rounded-full font-semibold text-sm transition-colors ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-sm transition-colors ${
               liveMode
                 ? 'bg-primary text-primary-foreground'
                 : 'bg-surface-container-high text-on-surface-variant'
             }`}
           >
-            {liveMode ? '◉ Live' : '○ Live'}
+            {liveMode ? (
+              <>
+                <span className="relative flex h-2 w-2">
+                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${realtimeOk ? 'bg-green-300' : 'bg-primary-foreground'}`} />
+                  <span className={`relative inline-flex rounded-full h-2 w-2 ${realtimeOk ? 'bg-green-400' : 'bg-primary-foreground'}`} />
+                </span>
+                {realtimeOk ? 'Live' : 'Connecting…'}
+              </>
+            ) : '○ Live'}
           </button>
         </div>
 
@@ -228,9 +261,9 @@ export default function TracesPage() {
                   <tr
                     key={trace.id}
                     onClick={() => setSelectedTrace(trace)}
-                    className={`cursor-pointer hover:bg-surface-container-high/50 transition-all ${
-                      newRowIds.has(trace.id) ? 'bg-white/5' : ''
-                    } border-b border-outline`}
+                    className={`cursor-pointer hover:bg-surface-container-high/50 transition-all duration-500 border-b border-outline ${
+                      newRowIds.has(trace.id) ? 'bg-primary/8 border-l-2 border-l-primary' : ''
+                    }`}
                   >
                     <td className="px-6 py-4 text-on-surface text-sm font-mono">{trace.id}</td>
                     <td className="px-6 py-4 text-on-surface">{trace.function_name}</td>
