@@ -8,8 +8,16 @@ version = "0.1.8"
 description = "pytest for AI agents — trace, debug and catch regressions in LLM swarms"
 readme = "README.md"
 authors = [{ name = "Ravi" }]
+license = { text = "MIT" }
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+]
 requires-python = ">=3.10"
 dependencies = ["click", "rich"]
+
+[project.optional-dependencies]
+regression = ["litai"]
 
 [project.scripts]
 swarmtrace = "tracely.cli:view"
