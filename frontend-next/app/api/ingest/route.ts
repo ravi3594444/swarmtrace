@@ -1,11 +1,15 @@
 export const runtime = 'edge'
 
-const MAX_BODY_BYTES = 64 * 1024
-const MAX_TEXT_LEN   = 4000
+const MAX_BODY_BYTES  = 64 * 1024
+const MAX_TEXT_LEN    = 4000
 const SUPA_TIMEOUT_MS = 5000
 
+// ── Key auth cache ────────────────────────────────────────────────────────────
+// NOTE: Vercel Edge is serverless — this Map lives per-isolate, not globally.
+// It still helps: repeated requests within the same warm isolate skip a DB
+// lookup. For a true shared cache, use Vercel KV or Upstash Redis.
 interface CacheEntry { user_id: string; expires: number }
-const KEY_CACHE  = new Map<string, CacheEntry>()
+const KEY_CACHE    = new Map<string, CacheEntry>()
 const CACHE_TTL_MS = 5 * 60 * 1000
 
 function getCached(hash: string): string | null {
@@ -17,6 +21,29 @@ function getCached(hash: string): string | null {
 function setCache(hash: string, user_id: string) {
   KEY_CACHE.set(hash, { user_id, expires: Date.now() + CACHE_TTL_MS })
 }
+
+// ── Per-key rate limiter ──────────────────────────────────────────────────────
+// 120 requests per 60-second window per API key.
+// Best-effort on Edge (per-isolate), but stops naive abuse on warm instances.
+// For true multi-instance rate limiting, use Upstash Redis with INCR + EXPIRE.
+const RATE_LIMIT     = 120     // max requests per window
+const RATE_WINDOW_MS = 60_000  // 1 minute
+
+interface RateEntry { count: number; windowStart: number }
+const RATE_MAP = new Map<string, RateEntry>()
+
+function checkRateLimit(keyHash: string): boolean {
+  const now   = Date.now()
+  const entry = RATE_MAP.get(keyHash)
+  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+    RATE_MAP.set(keyHash, { count: 1, windowStart: now })
+    return true
+  }
+  if (entry.count >= RATE_LIMIT) return false
+  entry.count++
+  return true
+}
+
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
   return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
@@ -107,6 +134,18 @@ export async function POST(req: Request) {
   try {
     const keyHash = await sha256Hex(apiKey)
 
+    // ── Rate limit check (before DB lookup — cheap, fast) ─────────────────
+    if (!checkRateLimit(keyHash)) {
+      return new Response(null, {
+        status: 429,
+        headers: {
+          'Retry-After': '60',
+          'X-RateLimit-Limit':  String(RATE_LIMIT),
+          'X-RateLimit-Window': '60s',
+        },
+      })
+    }
+
     let user_id = getCached(keyHash)
     if (!user_id) {
       const res = await supa(
@@ -130,7 +169,7 @@ export async function POST(req: Request) {
     // ── 1. Insert trace ───────────────────────────────────────────────────
     await supa('traces', { method: 'POST', body: JSON.stringify({ ...row, user_id }) })
 
-    // ── 2. Atomically increment daily_metrics — this is what powers the dashboard
+    // ── 2. Atomically increment daily_metrics — powers the dashboard ──────
     await supaRpc('increment_daily_metrics', {
       p_user_id:       user_id,
       p_cost:          row.cost_usd,

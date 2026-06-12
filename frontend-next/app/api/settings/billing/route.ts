@@ -7,17 +7,28 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
+    // Read from daily_metrics — pre-aggregated, tiny, never scans traces.
     const rows = await supaRequest(
-      `traces?user_id=eq.${encodeURIComponent(userId)}&select=cost_usd`
+      `daily_metrics?user_id=eq.${encodeURIComponent(userId)}&order=date.desc&limit=90`
     )
-    const total_cost = rows.reduce((acc: number, r: any) => acc + (r.cost_usd || 0.0), 0)
+
+    const now        = new Date()
+    const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
+
+    const allTime     = rows  ?? []
+    const thisMonth   = allTime.filter((r: any) => r.date >= monthStart)
+
+    const cost_this_month = parseFloat(
+      thisMonth.reduce((a: number, r: any) => a + (r.cost_usd || 0), 0).toFixed(4)
+    )
+    const traces_used = allTime.reduce((a: number, r: any) => a + (r.trace_count || 0), 0)
 
     return NextResponse.json({
-      plan: 'Pro',
-      traces_used: rows.length,
-      traces_limit: 100000,
-      cost_this_month: parseFloat(total_cost.toFixed(4)),
-      next_billing: '2026-07-01',
+      plan:             'Pro',
+      traces_used,
+      traces_limit:     100_000,
+      cost_this_month,
+      next_billing:     `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 2).padStart(2, '0')}-01`,
     })
   } catch (error) {
     console.error('[api/settings/billing] request failed:', error)
