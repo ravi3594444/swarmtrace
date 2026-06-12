@@ -9,13 +9,17 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { id: keyId } = await params
 
   try {
-    // Soft delete key
-    await supaRequest(`api_keys?id=eq.${keyId}&user_id=eq.${userId}`, {
-      method: 'PATCH',
-      body: JSON.stringify({ revoked: true }),
-    })
+    // Soft delete key (scoped to the owner)
+    await supaRequest(
+      `api_keys?id=eq.${encodeURIComponent(keyId)}&user_id=eq.${encodeURIComponent(userId)}`,
+      {
+        method: 'PATCH',
+        body: JSON.stringify({ revoked: true }),
+      }
+    )
     return NextResponse.json({ status: 'revoked' })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error('[api/settings/api-keys/:id] DELETE failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
