@@ -1,3 +1,30 @@
 [build-system]
 requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
+
+[project]
+name = "swarmtrace"
+version = "0.1.8"
+description = "pytest for AI agents — trace, debug and catch regressions in LLM swarms"
+readme = "README.md"
+authors = [{ name = "Ravi" }]
+requires-python = ">=3.10"
+dependencies = ["click", "rich"]
+
+[project.scripts]
+swarmtrace = "tracely.cli:view"
+swarmtrace-export = "tracely.export:main"
+swarmtrace-replay = "tracely.cli:main_replay"
+
+[tool.setuptools]
+packages = ["tracely"]
+
+[tool.setuptools.package-data]
+tracely = ["py.typed"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

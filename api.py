@@ -1,14 +1,16 @@
 """
-FastAPI backend for SwarmTrace application.
-Provides API endpoints for the frontend to consume trace data.
+Local development API for SwarmTrace.
+
+Serves traces from the tracely SQLite DB to the local dashboard.
+Production ingest, auth and dashboard APIs live in frontend-next/app/api
+(Next.js + Clerk + Supabase) — this server is intentionally read-only
+and unauthenticated, for localhost use only.
 """
 
 import asyncio
-import hashlib
 import json
 import os
 import random
-import secrets
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -16,7 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import FastAPI, HTTPException, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -29,8 +31,6 @@ from tracely.storage import get_all_traces as _db_get_all_traces
 ANALYSIS_FILE = Path("swarm_trace_analysis.json")
 
 # Comma-separated list of allowed origins.
-# Set ALLOWED_ORIGINS env var for cloud deployments (Lightning AI, Codespaces, etc.)
-# Example: ALLOWED_ORIGINS="https://myapp.lightning.ai,https://abc123.github.dev"
 ALLOWED_ORIGINS: List[str] = [
     o.strip()
     for o in os.environ.get(
@@ -71,7 +71,7 @@ class Trace(BaseModel):
     cost_usd: float = Field(ge=0)
 
 # ---------------------------------------------------------------------------
-# Trace generation (demo fallback only)
+# Trace generation (demo fallback only — used when the local DB is empty)
 # ---------------------------------------------------------------------------
 
 _FUNCTION_TEMPLATES: dict = {
@@ -95,7 +95,7 @@ _FUNCTION_TEMPLATES: dict = {
 def _make_trace(parent_ids: List[Optional[str]]) -> Trace:
     parent_id = random.choice(parent_ids) if random.random() < 0.7 else None
     function = random.choice(FUNCTIONS)
-    trace_id = uuid.uuid4().hex[:8]
+    trace_id = uuid.uuid4().hex
 
     if function in _FUNCTION_TEMPLATES:
         args, output_tpl, lat_range, in_range, out_range = _FUNCTION_TEMPLATES[function]
@@ -153,13 +153,13 @@ async def lifespan(app: FastAPI):
     yield
     _trace_store.clear()
 
-app = FastAPI(title="SwarmTrace API", lifespan=lifespan)
+app = FastAPI(title="SwarmTrace Local Dev API", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "DELETE"],
+    allow_methods=["GET"],
     allow_headers=["*"],
 )
 
@@ -260,285 +260,9 @@ async def health():
     return {"status": "ok", "trace_count": count}
 
 # ---------------------------------------------------------------------------
-# Dashboard Endpoints (Overview, Agents, Metrics, Settings)
-# ---------------------------------------------------------------------------
-
-# In-memory API keys store (for hackathon demo)
-_api_keys: dict = {}
-
-# ---------------------------------------------------------------------------
-# Ingest endpoint — accepts traces from the tracely Python library
-# ---------------------------------------------------------------------------
-
-class IngestTrace(BaseModel):
-    id: Optional[str] = None
-    parent_id: Optional[str] = None
-    function: str
-    args: str = "{}"
-    output: str = ""
-    latency_sec: float = 0.0
-    error: Optional[str] = None
-    timestamp: Optional[str] = None
-    input_tokens: int = 0
-    output_tokens: int = 0
-    cost_usd: float = 0.0
-
-class IngestPayload(BaseModel):
-    traces: List[IngestTrace]
-
-def _verify_api_key(api_key: str) -> bool:
-    """Check the provided key against stored key hashes."""
-    key_hash = hashlib.sha256(api_key.encode()).hexdigest()
-    for entry in _api_keys.values():
-        if entry.get("key_hash") == key_hash:
-            entry["last_used"] = datetime.now(timezone.utc).isoformat()
-            return True
-    return False
-
-@app.post("/ingest")
-async def ingest_traces(payload: IngestPayload, request: Request):
-    """
-    Remote ingest endpoint consumed by tracely when SWARMTRACE_ENDPOINT is set.
-    Requires a valid API key in the Authorization header: 'Bearer st_...'
-    """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
-    api_key = auth_header.removeprefix("Bearer ").strip()
-    if not _verify_api_key(api_key):
-        raise HTTPException(status_code=401, detail="Invalid API key")
-
-    now = datetime.now(timezone.utc).isoformat()
-    ingested: List[Trace] = []
-    for t in payload.traces:
-        ingested.append(Trace(
-            id=t.id or uuid.uuid4().hex[:8],
-            parent_id=t.parent_id,
-            function=t.function,
-            args=t.args,
-            output=t.output,
-            latency_sec=t.latency_sec,
-            error=t.error,
-            timestamp=t.timestamp or now,
-            input_tokens=t.input_tokens,
-            output_tokens=t.output_tokens,
-            cost_usd=t.cost_usd,
-        ))
-
-    async with _trace_store_lock:
-        _trace_store.extend(ingested)
-
-    return {"accepted": len(ingested)}
-
-
-async def get_overview():
-    """Aggregated system overview for the Overview page."""
-    async with _trace_store_lock:
-        store_snapshot = list(_trace_store)
-
-    active_agents = len(store_snapshot)
-    total_throughput = sum(t.input_tokens + t.output_tokens for t in store_snapshot)
-    avg_latency_ms = round(
-        sum(t.latency_sec for t in store_snapshot) / max(len(store_snapshot), 1) * 1000,
-        1,
-    )
-
-    return {
-        "system_health": 99.9,
-        "active_agents": active_agents,
-        "total_throughput": total_throughput,
-        "avg_latency_ms": avg_latency_ms,
-        "activity": [
-            {"time": f"{i:02d}:00", "value": random.randint(1000, 8000)}
-            for i in range(0, 24, 2)
-        ],
-        "top_agents": [
-            {
-                "name": t.function,
-                "id": t.id,
-                "score": round(random.uniform(90, 99), 1),
-                "status": "ACTIVE" if not t.error else "ERROR",
-            }
-            for t in store_snapshot[:3]
-        ],
-        "events": [
-            {
-                "timestamp": t.timestamp,
-                "type": "ERROR" if t.error else "INFO",
-                "message": t.error or f"{t.function} completed in {t.latency_sec}s",
-            }
-            for t in store_snapshot[:5]
-        ],
-    }
-
-@app.get("/agents")
-async def get_agents():
-    """Aggregated agent status for the Agents page."""
-    async with _trace_store_lock:
-        store_snapshot = list(_trace_store)
-
-    seen = {}
-    for t in store_snapshot:
-        if t.function not in seen:
-            seen[t.function] = {
-                "id": t.id,
-                "name": t.function,
-                "status": "RUNNING" if not t.error else "ERROR",
-                "tasks": random.randint(1, 20),
-                "tokens": f"{(t.input_tokens + t.output_tokens) // 1000}K",
-                "lastActive": "just now",
-                "uptime": f"{random.randint(1, 30)}d {random.randint(0, 23)}h",
-                "success_rate": f"{round(random.uniform(95, 99.9), 1)}%",
-                "current_task": t.args[:50] if t.args else "Idle",
-            }
-    return {"agents": list(seen.values())}
-
-@app.get("/metrics")
-async def get_metrics():
-    """Aggregated metrics for the Metrics page."""
-    async with _trace_store_lock:
-        store_snapshot = list(_trace_store)
-
-    total_cost = sum(t.cost_usd for t in store_snapshot)
-    total_in = sum(t.input_tokens for t in store_snapshot)
-    total_out = sum(t.output_tokens for t in store_snapshot)
-    return {
-        "daily_burn_rate": round(total_cost * 24, 2),
-        "projected_monthly": round(total_cost * 24 * 30, 2),
-        "budget": 5000,
-        "spent": round(total_cost * 24 * 15, 2),
-        "token_volume": {
-            "input": total_in,
-            "output": total_out,
-            "chart": [
-                {
-                    "day": i + 1,
-                    "input": random.randint(1_000_000, 8_000_000),
-                    "output": random.randint(500_000, 4_000_000),
-                }
-                for i in range(30)
-            ],
-        },
-        "latency_heatmap": [
-            {
-                "time": f"{i}:00",
-                "Retrieval_v2": round(t.latency_sec * 1000 * random.uniform(0.6, 1.2)),
-                "Synthesis_v1": round(t.latency_sec * 1000 * random.uniform(0.5, 1.0)),
-                "Router_fast": round(t.latency_sec * 1000 * random.uniform(0.3, 0.8)),
-            }
-            for t in store_snapshot[:3]
-            for i in range(0, 24, 4)
-        ],
-    }
-
-# --- Settings: API Keys ---
-
-@app.get("/settings/api-keys")
-async def list_api_keys():
-    return {
-        "keys": [
-            {
-                "id": k,
-                "name": v["name"],
-                "created": v["created"],
-                "last_used": v["last_used"],
-                "prefix": v["key_prefix"] + "...",
-            }
-            for k, v in _api_keys.items()
-        ]
-    }
-
-@app.post("/settings/api-keys")
-async def create_api_key(body: dict):
-    key_id = str(uuid.uuid4())
-    raw_key = "st_" + secrets.token_hex(24)
-    key_hash = hashlib.sha256(raw_key.encode()).hexdigest()
-    _api_keys[key_id] = {
-        "key_hash": key_hash,
-        "key_prefix": raw_key[:10],
-        "name": body.get("name", "New Key"),
-        "created": datetime.now(timezone.utc).isoformat(),
-        "last_used": None,
-    }
-    # Return the raw key ONCE — it is never retrievable again
-    return {"id": key_id, "key": raw_key}
-
-@app.delete("/settings/api-keys/{key_id}")
-async def revoke_api_key(key_id: str):
-    _api_keys.pop(key_id, None)
-    return {"status": "revoked"}
-
-# --- Settings: Billing ---
-
-@app.get("/settings/billing")
-async def get_billing():
-    async with _trace_store_lock:
-        count = len(_trace_store)
-        cost = sum(t.cost_usd for t in _trace_store)
-    return {
-        "plan": "Pro",
-        "traces_used": count,
-        "traces_limit": 100_000,
-        "cost_this_month": round(cost, 4),
-        "next_billing": "2026-07-01",
-    }
-
-# --- Settings: Team ---
-
-@app.get("/settings/team")
-async def get_team():
-    return [
-        {
-            "name": "Ravi Kumar",
-            "email": "ravi@swarmtrace.io",
-            "role": "Admin",
-            "joined": "2026-01-01",
-        }
-    ]
-
-# --- Settings: Integrations ---
-
-@app.get("/settings/integrations")
-async def get_integrations():
-    return {
-        "integrations": [
-            {
-                "id": "tracely-observe",
-                "name": "tracely @observe",
-                "connected": True,
-                "description": "Auto-traces all decorated functions",
-            },
-            {
-                "id": "token-budget",
-                "name": "Token Budget",
-                "connected": True,
-                "description": "Monitors token limits per agent",
-            },
-            {
-                "id": "tool-attention",
-                "name": "Tool Attention",
-                "connected": False,
-                "description": "Requires sentence-transformers + faiss",
-            },
-            {
-                "id": "scrapling",
-                "name": "Scrapling",
-                "connected": False,
-                "description": "Web scraping traces",
-            },
-            {
-                "id": "regression-detector",
-                "name": "Regression Detector",
-                "connected": False,
-                "description": "Requires LIGHTNING_API_KEY",
-            },
-        ]
-    }
-
-# ---------------------------------------------------------------------------
 # Dev entry point
 # ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("api:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("api:app", host="127.0.0.1", port=8000, reload=True)
