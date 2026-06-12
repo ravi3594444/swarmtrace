@@ -7,7 +7,9 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const rows = await supaRequest(`traces?user_id=eq.${userId}&order=timestamp.desc&limit=500`)
+    const rows = await supaRequest(
+      `traces?user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=500`
+    )
     return NextResponse.json({
       traces: rows.map((r: any) => ({
         id: r.id,
@@ -25,7 +27,8 @@ export async function GET() {
         error: r.error,
       }))
     })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error('[api/traces] request failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
