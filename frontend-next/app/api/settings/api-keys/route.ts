@@ -8,7 +8,9 @@ export async function GET() {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const keys = await supaRequest(`api_keys?user_id=eq.${userId}&revoked=eq.false&order=created_at.desc`)
+    const keys = await supaRequest(
+      `api_keys?user_id=eq.${encodeURIComponent(userId)}&revoked=eq.false&order=created_at.desc`
+    )
     return NextResponse.json({
       keys: keys.map((k: any) => ({
         id: k.id,
@@ -19,8 +21,9 @@ export async function GET() {
         prefix: k.key_prefix + '...',
       }))
     })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error('[api/settings/api-keys] GET failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
 
@@ -29,8 +32,10 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const body = await req.json()
-    const name = body.name || 'New Key'
+    const body = await req.json().catch(() => ({}))
+    const name = typeof body.name === 'string' && body.name.trim()
+      ? body.name.trim().slice(0, 100)
+      : 'New Key'
 
     // id and key are separate: id is a UUID used for DB lookups/deletion,
     // key is the secret shown once, stored only as a SHA-256 hash.
@@ -58,7 +63,8 @@ export async function POST(req: Request) {
 
     // Return the raw key ONCE — it is never retrievable again
     return NextResponse.json({ key: rawKey })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error('[api/settings/api-keys] POST failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
