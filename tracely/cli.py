@@ -1,6 +1,24 @@
 import sys
 from tracely.storage import get_traces, get_by_id
 
+DEFAULT_VIEW_LIMIT = 100
+
+
+def _parse_limit(default: int = DEFAULT_VIEW_LIMIT) -> int:
+    """Parse an optional --limit N / --limit=N CLI flag."""
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg == "--limit" and i + 1 < len(args):
+            try:
+                return max(1, int(args[i + 1]))
+            except ValueError:
+                break
+        if arg.startswith("--limit="):
+            try:
+                return max(1, int(arg.split("=", 1)[1]))
+            except ValueError:
+                break
+    return default
 
 
 # ---------- helpers ----------
@@ -17,9 +35,12 @@ def _print_tree(traces, parent_id=None, indent=0):
 
 # ---------- view ----------
 
-def view():
+def view(limit=None):
+    """Show recent traces. Usage: swarmtrace [--limit N] (default 100)."""
+    if limit is None:
+        limit = _parse_limit()
     try:
-        traces = get_traces()
+        traces = get_traces(limit=limit)
     except Exception:
         traces = []
 
