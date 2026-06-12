@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swarmtrace"
-version = "0.1.9"
+version = "0.2.0"
 description = "pytest for AI agents — trace, debug and catch regressions in LLM swarms"
 readme = "README.md"
 authors = [{ name = "Ravi" }]
@@ -18,6 +18,10 @@ dependencies = ["click", "rich"]
 
 [project.optional-dependencies]
 regression = ["litai"]
+scraper    = ["scrapling"]
+tools      = ["sentence-transformers", "faiss-cpu", "numpy"]
+budget     = ["tiktoken"]
+all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken"]
 
 [project.scripts]
 swarmtrace = "tracely.cli:view"
