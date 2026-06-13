@@ -1,10 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  // TypeScript errors now fail the build — no silent surprises in production.
-  // Fix any TS errors reported by `next build` before deploying.
-  images: {
-    unoptimized: true,
-  },
+  // images.unoptimized was removed — Vercel runs the optimizer automatically.
+  // Only set it to true for static exports (next export), which we don't use.
 }
 
 export default nextConfig

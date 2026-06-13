@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import React from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
-import { Plus, Search, AlertCircle } from 'lucide-react'
+import { Search, AlertCircle } from 'lucide-react'
 import { fetchAgents } from '@/lib/api'
 import { SkeletonTableRow } from '@/components/skeleton'
 
@@ -15,8 +15,6 @@ const FALLBACK_AGENTS = [
   { id: 'cache-2819', name: 'CacheManager_v1', status: 'RUNNING', tasks: 5, tokens: '560K', lastActive: '3 min ago', uptime: '22d 14h', success_rate: '98.8%', current_task: 'Syncing cache' },
   { id: 'gat-9102', name: 'GatewayRouter', status: 'RUNNING', tasks: 20, tokens: '4.1M', lastActive: 'Just now', uptime: '60d+', success_rate: '99.7%', current_task: 'Routing requests' },
 ]
-
-const SPARKLINE_DATA = [45, 52, 48, 61, 55, 58, 62, 70, 65, 68]
 
 export default function AgentsPage() {
   const [agents, setAgents] = useState<any[]>([])
@@ -73,10 +71,6 @@ export default function AgentsPage() {
             <h1 className="text-4xl font-bold text-on-surface mb-2">Agents</h1>
             <p className="text-muted-foreground">Manage and monitor your autonomous agents.</p>
           </div>
-          <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity text-sm">
-            <Plus className="w-4 h-4" />
-            <span>New Agent</span>
-          </button>
         </div>
 
         {error && (
@@ -201,16 +195,8 @@ export default function AgentsPage() {
                               <p className="text-sm text-on-surface">{agent.current_task}</p>
                             </div>
                             <div>
-                              <p className="text-xs text-on-surface-variant mb-2">1H TOKEN USAGE</p>
-                              <div className="flex gap-1">
-                                {SPARKLINE_DATA.map((v, i) => (
-                                  <div
-                                    key={i}
-                                    className="w-1 bg-primary/60 rounded-sm"
-                                    style={{ height: `${(v / 70) * 20}px` }}
-                                  />
-                                ))}
-                              </div>
+                              <p className="text-xs text-on-surface-variant mb-2">TOTAL TOKENS</p>
+                              <p className="text-sm font-semibold text-on-surface">{agent.tokens}</p>
                             </div>
                             <div>
                               <p className="text-xs text-on-surface-variant mb-2">UPTIME</p>
