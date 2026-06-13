@@ -51,11 +51,13 @@ function Button({
   // When asChild is true, use Radix Slot to merge props onto the child element
   // (e.g. <Button asChild><a href="/sign-up">text</a></Button>)
   if (asChild) {
+    const { style, className: _cls, ...slotRest } = props as React.ComponentProps<'button'>
     return (
       <Slot
         data-slot="button"
         className={cn(buttonVariants({ variant, size, className }))}
-        {...props}
+        style={style}
+        {...slotRest}
       />
     )
   }

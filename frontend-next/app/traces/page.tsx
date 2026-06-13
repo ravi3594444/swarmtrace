@@ -5,7 +5,7 @@ import { DashboardLayout } from '@/components/dashboard-layout'
 import { Search, X, AlertCircle } from 'lucide-react'
 import { fetchTraces, formatTime } from '@/lib/api'
 import { SkeletonTableRow } from '@/components/skeleton'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL  || ''
 const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
@@ -68,7 +68,7 @@ export default function TracesPage() {
   const [selectedTrace, setSelectedTrace] = useState<any>(null)
   const [newRowIds, setNewRowIds]     = useState<Set<string>>(new Set())
   const [realtimeOk, setRealtimeOk]  = useState(false)
-  const supaRef = useRef<ReturnType<typeof createClient> | null>(null)
+  const supaRef = useRef<SupabaseClient<any> | null>(null)
 
   useEffect(() => {
     let isMounted = true
