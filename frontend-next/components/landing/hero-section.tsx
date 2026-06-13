@@ -99,56 +99,55 @@ export function HeroSection() {
           </h1>
         </div>
 
-        {/* CTAs — keep original 2-col layout, description removed */}
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-24 items-end">
-          <div />
-          <div
-            className={`flex flex-col sm:flex-row items-start gap-4 transition-all duration-700 delay-300 ${
-              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-            }`}
+        {/* CTAs — left-aligned, same as original */}
+        <div
+          className={`flex flex-col sm:flex-row items-start gap-4 transition-all duration-700 delay-300 ${
+            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <Button
+            size="lg"
+            className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
+            asChild
           >
-            <Button
-              size="lg"
-              className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
-              asChild
-            >
-              <a href="/sign-up">Get Started Free</a>
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
-              asChild
-            >
-              <a href="https://github.com/ravi3594444/swarmtrace">
-                View on GitHub
-              </a>
-            </Button>
-          </div>
+            <a href="/sign-up">Get Started Free</a>
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
+            asChild
+          >
+            <a href="https://github.com/ravi3594444/swarmtrace">
+              View on GitHub
+            </a>
+          </Button>
         </div>
       </div>
 
-      {/* Stats row */}
+      {/* Scrolling stats marquee — fixed alignment */}
       <div
-        className={`absolute bottom-12 left-0 right-0 transition-all duration-700 delay-500 ${
+        className={`absolute bottom-12 left-0 right-0 overflow-hidden transition-all duration-700 delay-500 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 border-t border-foreground/10 pt-8">
-            {[
-              { value: "< 1s",    label: "Trace ingestion latency",   note: "REAL-TIME"   },
-              { value: "2 lines", label: "To full observability",      note: "PIP INSTALL" },
-              { value: "0ms",     label: "Overhead on your agent",     note: "@OBSERVE"    },
-              { value: "100%",    label: "Automatic trace coverage",   note: "AUTOMATIC"   },
-            ].map((s) => (
-              <div key={s.note}>
-                <div className="text-3xl lg:text-4xl font-display mb-1">{s.value}</div>
-                <div className="text-sm text-muted-foreground">{s.label}</div>
-                <div className="text-[10px] font-mono text-muted-foreground/50 mt-1 tracking-widest">{s.note}</div>
-              </div>
-            ))}
-          </div>
+        <div className="flex gap-24 marquee whitespace-nowrap">
+          {[...Array(2)].map((_, i) => (
+            <div key={i} className="flex gap-24 shrink-0">
+              {[
+                { value: "< 1s",    label: "Trace ingestion latency", note: "REAL-TIME"   },
+                { value: "2 lines", label: "To full observability",    note: "PIP INSTALL" },
+                { value: "0ms",     label: "Overhead on your agent",   note: "@OBSERVE"    },
+                { value: "100%",    label: "Automatic trace coverage", note: "AUTOMATIC"   },
+              ].map((s) => (
+                <div key={`${s.note}-${i}`} className="flex flex-col justify-start">
+                  <span className="text-4xl lg:text-5xl font-display leading-none mb-1">{s.value}</span>
+                  <span className="text-sm text-muted-foreground leading-tight">{s.label}</span>
+                  <span className="text-[10px] font-mono text-muted-foreground/40 tracking-widest mt-1">{s.note}</span>
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       </div>
     </section>
