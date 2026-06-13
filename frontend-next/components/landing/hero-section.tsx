@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
-import { Github } from "lucide-react";
+
 import { AnimatedSphere } from "./animated-sphere";
 
 const words = ["trace", "debug", "monitor", "fix"];
@@ -94,11 +94,10 @@ export function HeroSection() {
           <Button
             size="lg"
             variant="outline"
-            className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5 flex items-center gap-2"
+            className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
             asChild
           >
             <a href="https://github.com/ravi3594444/swarmtrace">
-              <Github className="w-4 h-4" />
               View on GitHub
             </a>
           </Button>
