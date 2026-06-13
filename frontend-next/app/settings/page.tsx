@@ -404,8 +404,9 @@ export default function SettingsPage() {
 
   const handleSave = () => {
     setSaved(true)
-    const timer = setTimeout(() => setSaved(false), 3000)
-    return () => clearTimeout(timer)
+    // No return value — this is a click handler, not a useEffect.
+    // Returning a cleanup fn here does nothing; React won't call it.
+    setTimeout(() => setSaved(false), 3000)
   }
 
   const navItems = [
@@ -504,8 +505,17 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-4">Danger Zone</h2>
-                  <button className="px-6 py-2 rounded-full bg-red-500/10 text-red-500 font-medium text-sm border border-red-500/30 hover:bg-red-500/20 transition-colors">
+                  <h2 className="text-xl font-semibold text-on-surface mb-1">Danger Zone</h2>
+                  <p className="text-sm text-on-surface-variant mb-4">Permanently delete your account and all traces. This cannot be undone.</p>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Are you sure? This will permanently delete your account and all data.')) {
+                        // Account deletion via Clerk requires a backend endpoint.
+                        // Until wired up, direct the user to Clerk's user portal.
+                        window.open('https://accounts.clerk.dev/user', '_blank')
+                      }
+                    }}
+                    className="px-6 py-2 rounded-full bg-red-500/10 text-red-500 font-medium text-sm border border-red-500/30 hover:bg-red-500/20 transition-colors">
                     Delete Account
                   </button>
                 </div>

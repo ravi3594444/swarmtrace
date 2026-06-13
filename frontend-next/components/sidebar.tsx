@@ -68,7 +68,7 @@ export function Sidebar() {
           <p className="text-xs font-semibold text-foreground truncate">
             {user?.fullName || user?.primaryEmailAddress?.emailAddress || 'Admin User'}
           </p>
-          <p className="text-[10px] text-muted-foreground">Pro Tier</p>
+          <p className="text-[10px] text-muted-foreground">Free Tier</p>
         </div>
       </div>
     </aside>

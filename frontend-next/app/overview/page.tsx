@@ -8,10 +8,9 @@ import { fetchOverview, formatTime } from '@/lib/api'
 import { SkeletonMetricCard, SkeletonChart, SkeletonCard } from '@/components/skeleton'
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-// ─── Supabase realtime client (anon key only — read-only, public) ────────────
-// NEXT_PUBLIC_ vars are safe to expose in the browser
 const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL  || ''
 const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
+const REALTIME_CONFIGURED = Boolean(supabaseUrl && supabaseAnon)
 
 // ─── Fallback data ─────────────────────────────────────────────────────────
 const FALLBACK_ACTIVITY = [
@@ -295,7 +294,7 @@ export default function OverviewPage() {
           </div>
           <div className="flex items-center gap-2 text-xs text-on-surface-variant mt-1">
             <LiveDot active={realtimeOk} />
-            <span>{realtimeOk ? 'Live' : 'Connecting…'}</span>
+            <span>{realtimeOk ? 'Live' : REALTIME_CONFIGURED ? 'Connecting…' : 'Offline'}</span>
           </div>
         </div>
 
