@@ -7,7 +7,7 @@ import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from 'recharts'
-import { Download, FileText, AlertCircle, Wifi, WifiOff } from 'lucide-react'
+import { Download, FileText, AlertCircle, Wifi, WifiOff, Loader2 } from 'lucide-react'
 import { fetchMetrics } from '@/lib/api'
 import { SkeletonChart } from '@/components/skeleton'
 
@@ -53,12 +53,81 @@ const EMPTY: MetricsData = {
   chart: [],
 }
 
+// ── Export helpers ────────────────────────────────────────────────────────────
+function exportCSV(data: MetricsData) {
+  const rows = [
+    ['Date', 'Cost (USD)', 'Input Tokens', 'Output Tokens', 'Traces'],
+    ...data.chart.map(r => [r.date, r.cost.toFixed(6), r.input, r.output, r.traces]),
+    [],
+    ['Period', 'Cost (USD)', 'Input Tokens', 'Output Tokens', 'Traces'],
+    ['Today',      data.today.cost.toFixed(6),      data.today.tokens_in,      data.today.tokens_out,      data.today.traces],
+    ['Last 7 Days',data.last_7_days.cost.toFixed(6), data.last_7_days.tokens_in, data.last_7_days.tokens_out, data.last_7_days.traces],
+    ['This Month', data.this_month.cost.toFixed(6),  data.this_month.tokens_in,  data.this_month.tokens_out,  data.this_month.traces],
+    ['All Time',   data.all_time.cost.toFixed(6),    data.all_time.tokens_in,    data.all_time.tokens_out,    data.all_time.traces],
+  ]
+  const csv = rows.map(r => r.join(',')).join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `swarmtrace-metrics-${new Date().toISOString().slice(0,10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+async function exportPDF(data: MetricsData) {
+  // Build a self-contained HTML report and print-to-PDF via browser
+  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+  const rows = data.chart.map(r =>
+    `<tr><td>${r.date}</td><td>${fmtCost(r.cost)}</td><td>${fmtTokens(r.input)}</td><td>${fmtTokens(r.output)}</td><td>${r.traces}</td></tr>`
+  ).join('')
+
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+  <title>SwarmTrace Metrics Report</title>
+  <style>
+    body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:900px;margin:0 auto}
+    h1{font-size:28px;margin-bottom:4px}
+    .subtitle{color:#666;margin-bottom:32px}
+    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px}
+    .card{border:1px solid #e5e7eb;border-radius:12px;padding:16px}
+    .card-label{font-size:12px;color:#666;margin-bottom:4px}
+    .card-value{font-size:22px;font-weight:700;color:#111}
+    .card-sub{font-size:11px;color:#888;margin-top:4px}
+    table{width:100%;border-collapse:collapse;font-size:13px}
+    th{text-align:left;padding:8px 12px;background:#f9fafb;border-bottom:2px solid #e5e7eb;font-weight:600}
+    td{padding:8px 12px;border-bottom:1px solid #f3f4f6}
+    tr:last-child td{border-bottom:none}
+    h2{font-size:16px;margin:24px 0 12px}
+    .footer{margin-top:32px;font-size:11px;color:#aaa;text-align:center}
+  </style></head><body>
+  <h1>SwarmTrace Metrics Report</h1>
+  <div class="subtitle">Generated ${date}</div>
+  <div class="cards">
+    <div class="card"><div class="card-label">Today</div><div class="card-value">${fmtCost(data.today.cost)}</div><div class="card-sub">${data.today.traces} traces · ${fmtTokens(data.today.tokens_in+data.today.tokens_out)} tokens</div></div>
+    <div class="card"><div class="card-label">Last 7 Days</div><div class="card-value">${fmtCost(data.last_7_days.cost)}</div><div class="card-sub">${data.last_7_days.traces} traces · ${fmtTokens(data.last_7_days.tokens_in+data.last_7_days.tokens_out)} tokens</div></div>
+    <div class="card"><div class="card-label">This Month</div><div class="card-value">${fmtCost(data.this_month.cost)}</div><div class="card-sub">${data.this_month.traces} traces · ${fmtTokens(data.this_month.tokens_in+data.this_month.tokens_out)} tokens</div></div>
+    <div class="card"><div class="card-label">All Time</div><div class="card-value">${data.all_time.traces.toLocaleString()}</div><div class="card-sub">${fmtCost(data.all_time.cost)} total</div></div>
+  </div>
+  <h2>Daily Breakdown (last ${data.chart.length} days)</h2>
+  <table><thead><tr><th>Date</th><th>Cost</th><th>Input Tokens</th><th>Output Tokens</th><th>Traces</th></tr></thead>
+  <tbody>${rows}</tbody></table>
+  <div class="footer">SwarmTrace · swarmtrace.vercel.app</div>
+  </body></html>`
+
+  const win = window.open('', '_blank')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
+  win.onload = () => { win.print() }
+}
+
 // ── Component ─────────────────────────────────────────────────────────────────
 export default function MetricsPage() {
   const [data,       setData]       = useState<MetricsData>(EMPTY)
   const [loading,    setLoading]    = useState(true)
   const [error,      setError]      = useState(false)
   const [realtimeOk, setRealtimeOk] = useState(false)
+  const [exporting,  setExporting]  = useState<'csv'|'pdf'|null>(null)
 
   const supaRef    = useRef<ReturnType<typeof createClient> | null>(null)
   const channelRef = useRef<any>(null)
@@ -173,12 +242,18 @@ export default function MetricsPage() {
                 ? <><Wifi className="w-3 h-3" /><span>Live</span></>
                 : <><WifiOff className="w-3 h-3" /><span>Connecting…</span></>}
             </div>
-            <button className="flex items-center gap-2 px-4 py-2 rounded-full border border-border text-on-surface-variant hover:border-outline transition-colors text-sm font-medium">
-              <Download className="w-4 h-4" />
+            <button
+              onClick={() => { setExporting('csv'); exportCSV(data); setTimeout(() => setExporting(null), 1000) }}
+              disabled={loading || exporting !== null}
+              className="flex items-center gap-2 px-4 py-2 rounded-full border border-border text-on-surface-variant hover:border-outline transition-colors text-sm font-medium disabled:opacity-50">
+              {exporting === 'csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
               <span>CSV</span>
             </button>
-            <button className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity text-sm">
-              <FileText className="w-4 h-4" />
+            <button
+              onClick={async () => { setExporting('pdf'); await exportPDF(data); setTimeout(() => setExporting(null), 1000) }}
+              disabled={loading || exporting !== null}
+              className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity text-sm disabled:opacity-50">
+              {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
               <span>Export PDF</span>
             </button>
           </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
-import { Bell, Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Construction, Sparkles, Terminal, BookOpen } from 'lucide-react'
+import { Bell, Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Terminal, BookOpen } from 'lucide-react'
 import { fetchApiKeys, createApiKey, revokeApiKey, fetchIntegrations, fetchBillingInfo } from '@/lib/api'
 import { SkeletonCard } from '@/components/skeleton'
 
@@ -22,48 +22,133 @@ interface BillingInfo {
   paymentMethod?: string
 }
 
-// ─── Coming Soon Banner ───────────────────────────────────────────────────────
-function ComingSoonBanner() {
+// ─── Billing Page ─────────────────────────────────────────────────────────────
+function BillingTab() {
+  const plans = [
+    {
+      name: 'Hobby',
+      price: 0,
+      period: 'Free forever',
+      description: 'For personal projects and experimentation.',
+      features: ['10,000 traces / month', '1 API key', '7-day retention', 'Community support'],
+      cta: 'Current Plan',
+      current: true,
+      highlight: false,
+    },
+    {
+      name: 'Pro',
+      price: 19,
+      period: 'per month',
+      description: 'For teams shipping AI to production.',
+      features: ['1,000,000 traces / month', 'Unlimited API keys', '90-day retention', 'Realtime dashboard', 'CSV & PDF export', 'Email support'],
+      cta: 'Upgrade to Pro',
+      current: false,
+      highlight: true,
+    },
+    {
+      name: 'Enterprise',
+      price: null,
+      period: 'Custom pricing',
+      description: 'For large-scale deployments with custom needs.',
+      features: ['Unlimited traces', 'Custom retention', 'SSO / SAML', 'SLA guarantee', 'Dedicated support', 'On-prem option'],
+      cta: 'Contact Us',
+      current: false,
+      highlight: false,
+    },
+  ]
+
   return (
-    <div className="relative overflow-hidden rounded-2xl border border-primary/30 bg-gradient-to-br from-primary/10 via-primary/5 to-transparent p-8 text-center">
-      {/* Decorative background dots */}
-      <div className="pointer-events-none absolute inset-0 opacity-20">
-        {[...Array(20)].map((_, i) => (
+    <div className="space-y-8">
+      {/* Current usage summary */}
+      <div className="bg-surface-container border border-outline rounded-2xl p-6">
+        <h2 className="text-xl font-semibold text-on-surface mb-1">Current Usage</h2>
+        <p className="text-sm text-on-surface-variant mb-5">You are on the <span className="text-primary font-semibold">Hobby</span> plan.</p>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'Traces this month', value: '—', max: '10,000' },
+            { label: 'API Keys', value: '—', max: '1' },
+            { label: 'Data retention', value: '7 days', max: null },
+          ].map(({ label, value, max }) => (
+            <div key={label} className="bg-surface-container-low border border-outline/50 rounded-xl p-4">
+              <p className="text-xs text-on-surface-variant mb-1">{label}</p>
+              <p className="text-lg font-bold text-on-surface">
+                {value}
+                {max && <span className="text-sm font-normal text-on-surface-variant"> / {max}</span>}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Plan cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {plans.map((plan) => (
           <div
-            key={i}
-            className="absolute h-1.5 w-1.5 rounded-full bg-primary"
-            style={{ left: `${(i * 19) % 100}%`, top: `${(i * 37) % 100}%` }}
-          />
+            key={plan.name}
+            className={`relative border rounded-2xl p-6 flex flex-col gap-4 transition-all ${
+              plan.highlight
+                ? 'border-primary/60 bg-primary/5 shadow-sm shadow-primary/10'
+                : 'border-outline bg-surface-container'
+            }`}
+          >
+            {plan.highlight && (
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 rounded-full">
+                Most Popular
+              </span>
+            )}
+            <div>
+              <h3 className="text-lg font-bold text-on-surface">{plan.name}</h3>
+              <p className="text-sm text-on-surface-variant mt-0.5">{plan.description}</p>
+            </div>
+            <div>
+              {plan.price !== null
+                ? <span className="text-3xl font-bold text-on-surface">${plan.price}<span className="text-sm font-normal text-on-surface-variant"> /{plan.period}</span></span>
+                : <span className="text-2xl font-bold text-on-surface">{plan.period}</span>
+              }
+            </div>
+            <ul className="space-y-2 flex-1">
+              {plan.features.map(f => (
+                <li key={f} className="flex items-center gap-2 text-sm text-on-surface-variant">
+                  <span className="w-4 h-4 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0 text-xs font-bold">✓</span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <button
+              disabled={plan.current}
+              onClick={() => {
+                if (plan.name === 'Enterprise') window.open('mailto:hello@swarmtrace.ai?subject=Enterprise Plan', '_blank')
+              }}
+              className={`w-full py-2.5 rounded-full text-sm font-semibold transition-all ${
+                plan.current
+                  ? 'bg-surface-container-high text-on-surface-variant cursor-default border border-outline'
+                  : plan.highlight
+                  ? 'bg-primary text-primary-foreground hover:opacity-90'
+                  : 'border border-outline text-on-surface hover:bg-surface-container-high'
+              }`}
+            >
+              {plan.cta}
+            </button>
+          </div>
         ))}
       </div>
 
-      <div className="relative z-10 space-y-4">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/20 border border-primary/30">
-          <Construction className="h-8 w-8 text-primary" />
-        </div>
-
-        <div>
-          <div className="mb-2 inline-flex items-center gap-1.5 rounded-full bg-primary/20 px-3 py-1 text-xs font-semibold text-primary border border-primary/30">
-            <Sparkles className="h-3 w-3" />
-            Coming Soon
-          </div>
-          <h2 className="text-2xl font-bold text-on-surface">Billing & Plans</h2>
-          <p className="mt-2 text-sm text-on-surface-variant max-w-md mx-auto">
-            Full billing management, invoice history, plan upgrades, and payment methods are being built right now. Stay tuned!
-          </p>
-        </div>
-
-        <div className="flex flex-wrap items-center justify-center gap-3 pt-2">
-          {['Plan Management', 'Invoice History', 'Usage Analytics', 'Team Billing'].map((feat) => (
-            <span key={feat} className="rounded-full bg-surface-container-high border border-outline px-3 py-1 text-xs text-on-surface-variant">
-              {feat}
-            </span>
+      {/* FAQ */}
+      <div className="bg-surface-container border border-outline rounded-2xl p-6">
+        <h2 className="text-lg font-semibold text-on-surface mb-4">Billing FAQ</h2>
+        <div className="space-y-4">
+          {[
+            { q: 'When will Pro billing be available?', a: 'Pro plan payments are coming soon via Stripe. You will be notified by email when available.' },
+            { q: 'What counts as a trace?', a: 'Each @observe decorated function call that is successfully ingested counts as one trace.' },
+            { q: 'What happens if I exceed the free limit?', a: 'New traces will be rejected with a 429 response. Your existing data is never deleted.' },
+            { q: 'Can I export my data?', a: 'Yes — use the CSV or PDF export on the Metrics page at any time.' },
+          ].map(({ q, a }) => (
+            <div key={q} className="border-b border-outline/50 pb-4 last:border-0 last:pb-0">
+              <p className="text-sm font-semibold text-on-surface mb-1">{q}</p>
+              <p className="text-sm text-on-surface-variant">{a}</p>
+            </div>
           ))}
         </div>
-
-        <p className="text-xs text-on-surface-variant pt-2">
-          Current plan: <span className="font-semibold text-primary">Pro</span> — you&apos;re all set for now.
-        </p>
       </div>
     </div>
   )
@@ -552,8 +637,8 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* ── Billing (Coming Soon) ───────────────────────────────── */}
-            {activeTab === 'billing' && <ComingSoonBanner />}
+            {/* ── Billing ──────────────────────────────────────────────── */}
+            {activeTab === 'billing' && <BillingTab />}
 
             {/* ── Integrations ─────────────────────────────────────────── */}
             {activeTab === 'integrations' && (
