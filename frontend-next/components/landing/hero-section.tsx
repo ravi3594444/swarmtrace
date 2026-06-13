@@ -125,35 +125,27 @@ export function HeroSection() {
         </div>
       </div>
 
-      {/* Stats marquee — real SwarmTrace numbers, not fake company testimonials */}
+      {/* Stats row */}
       <div
-        className={`absolute bottom-24 left-0 right-0 transition-all duration-700 delay-500 ${
+        className={`absolute bottom-12 left-0 right-0 transition-all duration-700 delay-500 ${
           isVisible ? "opacity-100" : "opacity-0"
         }`}
       >
-        <div className="flex gap-16 marquee whitespace-nowrap">
-          {[...Array(2)].map((_, i) => (
-            <div key={i} className="flex gap-16">
-              {[
-                { value: "2 lines", label: "to full observability", company: "PIP INSTALL" },
-                { value: "0ms", label: "overhead on your agent", company: "@OBSERVE" },
-                { value: "100%", label: "trace coverage", company: "AUTOMATIC" },
-                { value: "< 1s", label: "trace ingestion latency", company: "REAL-TIME" },
-              ].map((stat) => (
-                <div key={`${stat.company}-${i}`} className="flex items-baseline gap-4">
-                  <span className="text-4xl lg:text-5xl font-display">
-                    {stat.value}
-                  </span>
-                  <span className="text-sm text-muted-foreground">
-                    {stat.label}
-                    <span className="block font-mono text-xs mt-1">
-                      {stat.company}
-                    </span>
-                  </span>
-                </div>
-              ))}
-            </div>
-          ))}
+        <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-8 border-t border-foreground/10 pt-8">
+            {[
+              { value: "< 1s",    label: "Trace ingestion latency",   note: "REAL-TIME"   },
+              { value: "2 lines", label: "To full observability",      note: "PIP INSTALL" },
+              { value: "0ms",     label: "Overhead on your agent",     note: "@OBSERVE"    },
+              { value: "100%",    label: "Automatic trace coverage",   note: "AUTOMATIC"   },
+            ].map((s) => (
+              <div key={s.note}>
+                <div className="text-3xl lg:text-4xl font-display mb-1">{s.value}</div>
+                <div className="text-sm text-muted-foreground">{s.label}</div>
+                <div className="text-[10px] font-mono text-muted-foreground/50 mt-1 tracking-widest">{s.note}</div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
     </section>
