@@ -99,42 +99,29 @@ export function HeroSection() {
           </h1>
         </div>
 
-        {/* Description */}
-        <div className="grid lg:grid-cols-2 gap-12 lg:gap-24 items-end">
-          <p
-            className={`text-xl lg:text-2xl text-muted-foreground leading-relaxed max-w-xl transition-all duration-700 delay-200 ${
-              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-            }`}
+        {/* CTAs */}
+        <div
+          className={`flex flex-col sm:flex-row items-start gap-4 transition-all duration-700 delay-300 ${
+            isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+          }`}
+        >
+          <Button
+            size="lg"
+            className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
+            asChild
           >
-            SwarmTrace gives you full visibility into your LLM swarms. Catch
-            regressions, track costs, and debug failures before they reach
-            production.
-          </p>
-
-          {/* CTAs */}
-          <div
-            className={`flex flex-col sm:flex-row items-start gap-4 transition-all duration-700 delay-300 ${
-              isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
-            }`}
+            <a href="/sign-up">Get Started Free</a>
+          </Button>
+          <Button
+            size="lg"
+            variant="outline"
+            className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
+            asChild
           >
-            <Button
-              size="lg"
-              className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full group"
-              asChild
-            >
-              <a href="/sign-up">Get Started Free</a>
-            </Button>
-            <Button
-              size="lg"
-              variant="outline"
-              className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
-              asChild
-            >
-              <a href="https://github.com/ravi3594444/swarmtrace">
-                View on GitHub
-              </a>
-            </Button>
-          </div>
+            <a href="https://github.com/ravi3594444/swarmtrace">
+              View on GitHub
+            </a>
+          </Button>
         </div>
       </div>
 
