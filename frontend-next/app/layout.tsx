@@ -44,6 +44,15 @@ export default function RootLayout({
         suppressHydrationWarning
         className={`${GeistSans.variable} ${GeistMono.variable}`}
       >
+        <head>
+          {/* Loaded as <link> instead of CSS @import to avoid PostCSS ordering
+              violations (inlined @imports from tw-animate-css would precede it)
+              and because <link> loads in parallel while @import is render-blocking. */}
+          <link
+            rel="stylesheet"
+            href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css"
+          />
+        </head>
         <body className="font-sans antialiased">
           {/*
             attribute="class" is REQUIRED — without it next-themes defaults to
