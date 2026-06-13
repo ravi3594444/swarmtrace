@@ -246,7 +246,7 @@ export default function MetricsPage() {
                 <YAxis stroke="#8e9192" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtTokens(v)} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#121212', border: '1px solid #333333', color: '#e5e2e1', borderRadius: 8 }}
-                  formatter={(v: number, name: string) => [fmtTokens(v), name === 'input' ? 'Input tokens' : 'Output tokens']}
+                  formatter={(v, name) => [fmtTokens(Number(v)), name === 'input' ? 'Input tokens' : 'Output tokens']}
                 />
                 <Bar dataKey="input"  stackId="a" fill="#ffffff" name="input" />
                 <Bar dataKey="output" stackId="a" fill="#c8c6c6" name="output" radius={[3, 3, 0, 0]} />
@@ -272,7 +272,7 @@ export default function MetricsPage() {
                 <YAxis stroke="#8e9192" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtCost(v)} width={72} />
                 <Tooltip
                   contentStyle={{ backgroundColor: '#121212', border: '1px solid #333333', color: '#e5e2e1', borderRadius: 8 }}
-                  formatter={(v: number) => [fmtCost(v), 'Cost']}
+                  formatter={(v) => [fmtCost(Number(v)), 'Cost']}
                 />
                 <Line
                   type="monotone"

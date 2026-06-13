@@ -6,7 +6,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { AlertCircle, Activity, Cpu, Gauge, Zap } from 'lucide-react'
 import { fetchOverview, formatTime } from '@/lib/api'
 import { SkeletonMetricCard, SkeletonChart, SkeletonCard } from '@/components/skeleton'
-import { createClient } from '@supabase/supabase-js'
+import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
 // ─── Supabase realtime client (anon key only — read-only, public) ────────────
 // NEXT_PUBLIC_ vars are safe to expose in the browser
@@ -192,7 +192,7 @@ export default function OverviewPage() {
   const [liveStats, setLiveStats] = useState({
     active_agents: 0, total_throughput: 0, avg_latency_ms: 0, trace_count: 0
   })
-  const supaRef = useRef<ReturnType<typeof createClient> | null>(null)
+  const supaRef = useRef<SupabaseClient<any> | null>(null)
 
   // ── Initial load ───────────────────────────────────────────────────────────
   useEffect(() => {
