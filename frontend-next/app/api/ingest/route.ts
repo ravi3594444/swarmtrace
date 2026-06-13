@@ -22,17 +22,37 @@ function setCache(hash: string, user_id: string) {
   KEY_CACHE.set(hash, { user_id, expires: Date.now() + CACHE_TTL_MS })
 }
 
-// ── Per-key rate limiter ──────────────────────────────────────────────────────
+// ── Distributed rate limiter (Upstash Redis) ──────────────────────────────────
+// Falls back to per-isolate map if UPSTASH_REDIS_REST_URL is not set.
+// To enable: add UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN to Vercel env.
+import { Redis } from '@upstash/redis'
+import { Ratelimit } from '@upstash/ratelimit'
+
+let upstashLimiter: Ratelimit | null = null
+
+function getUpstashLimiter(): Ratelimit | null {
+  if (upstashLimiter) return upstashLimiter
+  const url   = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (!url || !token) return null
+  upstashLimiter = new Ratelimit({
+    redis: new Redis({ url, token }),
+    limiter: Ratelimit.slidingWindow(120, '60 s'),
+    analytics: false,
+    prefix: 'st_rl',
+  })
+  return upstashLimiter
+}
+
+// ── Per-isolate fallback (used when Upstash env vars are absent) ──────────────
 // 120 requests per 60-second window per API key.
-// Best-effort on Edge (per-isolate), but stops naive abuse on warm instances.
-// For true multi-instance rate limiting, use Upstash Redis with INCR + EXPIRE.
-const RATE_LIMIT     = 120     // max requests per window
-const RATE_WINDOW_MS = 60_000  // 1 minute
+const RATE_LIMIT     = 120
+const RATE_WINDOW_MS = 60_000
 
 interface RateEntry { count: number; windowStart: number }
 const RATE_MAP = new Map<string, RateEntry>()
 
-function checkRateLimit(keyHash: string): boolean {
+function checkRateLimitLocal(keyHash: string): boolean {
   const now   = Date.now()
   const entry = RATE_MAP.get(keyHash)
   if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
@@ -42,6 +62,15 @@ function checkRateLimit(keyHash: string): boolean {
   if (entry.count >= RATE_LIMIT) return false
   entry.count++
   return true
+}
+
+async function checkRateLimit(keyHash: string): Promise<boolean> {
+  const limiter = getUpstashLimiter()
+  if (limiter) {
+    const { success } = await limiter.limit(keyHash)
+    return success
+  }
+  return checkRateLimitLocal(keyHash)
 }
 
 async function sha256Hex(input: string): Promise<string> {
@@ -135,7 +164,7 @@ export async function POST(req: Request) {
     const keyHash = await sha256Hex(apiKey)
 
     // ── Rate limit check (before DB lookup — cheap, fast) ─────────────────
-    if (!checkRateLimit(keyHash)) {
+    if (!await checkRateLimit(keyHash)) {
       return new Response(null, {
         status: 429,
         headers: {
