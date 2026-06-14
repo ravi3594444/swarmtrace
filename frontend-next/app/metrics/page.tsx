@@ -316,15 +316,15 @@ export default function MetricsPage() {
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-                <XAxis dataKey="day" stroke="#8e9192" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#8e9192" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtTokens(v)} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--outline)" />
+                <XAxis dataKey="day" stroke="var(--on-surface-variant)" tick={{ fontSize: 11 }} />
+                <YAxis stroke="var(--on-surface-variant)" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtTokens(v)} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#121212', border: '1px solid #333333', color: '#e5e2e1', borderRadius: 8 }}
+                  contentStyle={{ backgroundColor: 'var(--surface-container-low)', border: '1px solid var(--outline)', color: 'var(--on-surface)', borderRadius: 8 }}
                   formatter={(v, name) => [fmtTokens(Number(v)), name === 'input' ? 'Input tokens' : 'Output tokens']}
                 />
-                <Bar dataKey="input"  stackId="a" fill="#ffffff" name="input" />
-                <Bar dataKey="output" stackId="a" fill="#c8c6c6" name="output" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="input"  stackId="a" fill="var(--chart-1)" name="input" />
+                <Bar dataKey="output" stackId="a" fill="var(--chart-2)" name="output" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           )}
@@ -342,19 +342,19 @@ export default function MetricsPage() {
           ) : (
             <ResponsiveContainer width="100%" height={300}>
               <LineChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-                <XAxis dataKey="day" stroke="#8e9192" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#8e9192" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtCost(v)} width={72} />
+                <CartesianGrid strokeDasharray="3 3" stroke="var(--outline)" />
+                <XAxis dataKey="day" stroke="var(--on-surface-variant)" tick={{ fontSize: 11 }} />
+                <YAxis stroke="var(--on-surface-variant)" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtCost(v)} width={72} />
                 <Tooltip
-                  contentStyle={{ backgroundColor: '#121212', border: '1px solid #333333', color: '#e5e2e1', borderRadius: 8 }}
+                  contentStyle={{ backgroundColor: 'var(--surface-container-low)', border: '1px solid var(--outline)', color: 'var(--on-surface)', borderRadius: 8 }}
                   formatter={(v) => [fmtCost(Number(v)), 'Cost']}
                 />
                 <Line
                   type="monotone"
                   dataKey="cost"
-                  stroke="#ffffff"
+                  stroke="var(--primary)"
                   strokeWidth={2}
-                  dot={{ r: 3, fill: '#ffffff' }}
+                  dot={{ r: 3, fill: 'var(--primary)' }}
                   activeDot={{ r: 5 }}
                 />
               </LineChart>
