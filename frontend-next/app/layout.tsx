@@ -11,6 +11,9 @@ import "./globals.css"
 export const metadata: Metadata = {
   title: "SwarmTrace - AI Agent Monitoring",
   description: "Real-time observability platform for LLM swarms and AI agents",
+  verification: {
+    google: "FKuXzQR0mShmnAc_vV98diBhBW7OlVRes_lnm2HbbgM",
+  },
   icons: {
     icon: [
       { url: "/favicon.ico" },
