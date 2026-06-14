@@ -33,6 +33,7 @@ from typing import Optional
 from urllib.request import Request, urlopen
 
 from tracely.storage import save_trace
+from tracely.pricing import calculate_cost
 
 # ---------------------------------------------------------------------------
 # Remote ingest configuration (lazy — env vars are read at call time)
@@ -138,14 +139,30 @@ def _build_trace_id() -> str:
 
 
 def _extract_token_info(result) -> tuple[int, int, float]:
-    """Pull token/cost fields off the result if present."""
-    if result is not None and hasattr(result, "input_tokens"):
-        return (
-            result.input_tokens or 0,
-            result.output_tokens or 0,
-            result.cost_usd or 0.0,
+    """Pull token/cost fields off the result.
+
+    If the LLM library already provides cost_usd, use it directly.
+    Otherwise calculate from the live LiteLLM pricing table using
+    the model name on the result object.
+    """
+    if result is None:
+        return 0, 0, 0.0
+
+    in_tok  = int(getattr(result, "input_tokens",  0) or 0)
+    out_tok = int(getattr(result, "output_tokens", 0) or 0)
+    cost    = float(getattr(result, "cost_usd", 0) or 0)
+
+    if cost == 0.0 and (in_tok > 0 or out_tok > 0):
+        model = (
+            getattr(result, "model", None)
+            or getattr(result, "model_id", None)
+            or getattr(result, "model_name", None)
+            or ""
         )
-    return 0, 0, 0.0
+        if model:
+            cost = calculate_cost(str(model), in_tok, out_tok)
+
+    return in_tok, out_tok, cost
 
 
 def _flush(
