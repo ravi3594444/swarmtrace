@@ -16,6 +16,9 @@ export async function GET() {
         parent_id: r.parent_id,
         function: r.function,
         function_name: r.function, // compatible fallback
+        kind: r.kind,
+        agent_id: r.agent_id,
+        agent_name: r.agent_name,
         status: r.error ? 'ERROR' : 'SUCCESS',
         duration: Math.round((r.latency_sec || 0) * 1000),
         tokens_in: r.input_tokens || 0,

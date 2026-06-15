@@ -76,6 +76,44 @@ orchestrator("What is AGI?")
 
 ---
 
+## Span Kinds — agents vs. tool/LLM calls
+
+By default, `@observe` marks a call as `kind="agent"` — it gets its own
+entry on the dashboard's Agents page, with its own task count, tokens,
+cost, and status. That's the right default for named agents like
+`orchestrator`, `researcher`, and `summarizer` above.
+
+If you also wrap raw LLM or tool calls with `@observe` for visibility,
+tag them so they roll up into the calling agent's stats instead of
+showing up as their own (fake) agents:
+
+```python
+from tracely import observe
+
+@observe(kind="llm")
+def call_llm(prompt):
+    return client.chat(model="gpt-4o-mini", messages=[...])
+
+@observe(kind="tool")
+def search_web(query):
+    ...
+
+@observe(kind="function")
+def helper(x):
+    ...
+
+@observe                      # kind="agent" (default)
+def researcher(q):
+    return call_llm(f"Research: {q}")
+```
+
+`call_llm` and `search_web` are attributed to whichever `kind="agent"`
+call is currently running (`researcher`, here) — their tokens, cost, and
+any errors are folded into `researcher`'s stats. They never appear as
+separate entries on the Agents page, no matter how deeply nested.
+
+---
+
 ## Async Support
 
 ```python

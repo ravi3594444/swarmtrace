@@ -16,7 +16,7 @@ def show_failures():
     print(f"{'ID':<10} {'FUNCTION':<20} {'ERROR':<40} {'TIMESTAMP'}")
     print("-" * 90)
     for t in failed:
-        id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost = t
+        id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name = t
         print(f"{id_:<10} {func:<20} {str(error)[:38]:<40} {timestamp}")
     print(f"\nTotal failures: {len(failed)}")
     print("\nReplay any failure: from tracely.replay import replay; replay('id')")
