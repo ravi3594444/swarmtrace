@@ -2,14 +2,12 @@
 
 # SwarmTrace
 
-**The observability platform for AI agents**
+**Observability for AI agents — trace, debug, and monitor with 2 lines of code**
 
 [![PyPI](https://img.shields.io/pypi/v/swarmtrace?style=flat-square&color=black)](https://pypi.org/project/swarmtrace/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-black?style=flat-square)](https://pypi.org/project/swarmtrace/)
 [![License](https://img.shields.io/badge/license-MIT-black?style=flat-square)](LICENSE)
 [![Built at AMD Hackathon](https://img.shields.io/badge/built%20at-AMD%20Hackathon%202026-red?style=flat-square)](https://github.com/ravi3594444/swarmtrace)
-
-Trace, debug, and catch regressions in LLM swarms — with 2 lines of code.
 
 [Dashboard](https://swarmtrace.vercel.app) · [PyPI](https://pypi.org/project/swarmtrace/) · [GitHub](https://github.com/ravi3594444/swarmtrace)
 
@@ -38,27 +36,54 @@ my_agent("What is machine learning?")
 ```
 
 ```bash
-swarmtrace          # view traces in terminal
+swarmtrace    # view traces in terminal
 ```
 
-That's it. Every call is traced — latency, tokens, cost, errors.
+Every call is recorded — latency, tokens, cost, errors. Nothing else to configure.
+
+---
+
+## Single Agent
+
+Wrap your agent with `@observe`. Any LLM or tool calls inside it get tagged with `kind="llm"` or `kind="tool"` so they roll up into the agent's stats — they never appear as phantom agents on the dashboard.
+
+```python
+from tracely import observe, init
+
+init(api_key="your-key", endpoint="https://swarmtrace.vercel.app")
+
+@observe
+def my_agent(query):
+    plan = call_llm(query)
+    return search_web(plan)
+
+@observe(kind="llm")
+def call_llm(prompt):
+    return client.chat(model="gpt-4o-mini", messages=[...])
+
+@observe(kind="tool")
+def search_web(q):
+    ...
+```
+
+**One agent card on the dashboard.** `call_llm` and `search_web` fold their tokens, cost, and errors into `my_agent` — they never get their own card.
 
 ---
 
 ## Multi-Agent Swarms
 
-Nested agents are tracked automatically. Parent-child relationships are preserved.
+Every bare `@observe` is its own agent card. Nesting is handled automatically via contextvars — no IDs, no config.
 
 ```python
 from tracely import observe
 
 @observe
 def researcher(q):
-    return llm.chat(f"Research: {q}")
+    return call_llm(f"Research: {q}")
 
 @observe
 def summarizer(text):
-    return llm.chat(f"Summarize: {text}")
+    return call_llm(f"Summarize: {text}")
 
 @observe
 def orchestrator(q):
@@ -69,48 +94,25 @@ orchestrator("What is AGI?")
 ```
 
 ```
-▶ orchestrator          4.2s  |  7 in / 78 out  |  $0.0003
-  ▶ researcher          3.4s  |  7 in / 330 out  |  $0.0013
-  ▶ summarizer          0.8s  |  338 in / 78 out  |  $0.0005
+▶ orchestrator    4.2s  |  7 in / 78 out   |  $0.0003
+  ▶ researcher    3.4s  |  7 in / 330 out  |  $0.0013
+  ▶ summarizer    0.8s  |  338 in / 78 out |  $0.0005
 ```
+
+Three agent cards on the dashboard — one per named agent. Sub-calls (`call_llm`) fold into whichever agent invoked them.
 
 ---
 
-## Span Kinds — agents vs. tool/LLM calls
+## Span Kinds
 
-By default, `@observe` marks a call as `kind="agent"` — it gets its own
-entry on the dashboard's Agents page, with its own task count, tokens,
-cost, and status. That's the right default for named agents like
-`orchestrator`, `researcher`, and `summarizer` above.
+| Kind | Decorator | Dashboard |
+|---|---|---|
+| `agent` | `@observe` (default) | Own card — tasks, tokens, cost, status |
+| `llm` | `@observe(kind="llm")` | Rolls up into calling agent |
+| `tool` | `@observe(kind="tool")` | Rolls up into calling agent |
+| `function` | `@observe(kind="function")` | Rolls up into calling agent |
 
-If you also wrap raw LLM or tool calls with `@observe` for visibility,
-tag them so they roll up into the calling agent's stats instead of
-showing up as their own (fake) agents:
-
-```python
-from tracely import observe
-
-@observe(kind="llm")
-def call_llm(prompt):
-    return client.chat(model="gpt-4o-mini", messages=[...])
-
-@observe(kind="tool")
-def search_web(query):
-    ...
-
-@observe(kind="function")
-def helper(x):
-    ...
-
-@observe                      # kind="agent" (default)
-def researcher(q):
-    return call_llm(f"Research: {q}")
-```
-
-`call_llm` and `search_web` are attributed to whichever `kind="agent"`
-call is currently running (`researcher`, here) — their tokens, cost, and
-any errors are folded into `researcher`'s stats. They never appear as
-separate entries on the Agents page, no matter how deeply nested.
+The rule: **only functions you want as separate dashboard cards get bare `@observe`.** Everything else gets a `kind=`.
 
 ---
 
@@ -128,7 +130,7 @@ async def async_agent(q):
 async def orchestrator(q):
     results = await asyncio.gather(
         async_agent(q),
-        async_agent(q + " — deep dive")
+        async_agent(q + " — deep dive"),
     )
     return " | ".join(results)
 
@@ -139,19 +141,17 @@ asyncio.run(orchestrator("Explain transformers"))
 
 ## Live Cost Tracking
 
-SwarmTrace automatically calculates cost for **any model** from any provider — powered by the LiteLLM live pricing registry, refreshed every hour.
+Automatic cost calculation for any model from any provider — powered by LiteLLM's live pricing registry.
 
 ```python
-from tracely import observe
-
 @observe
 def agent(q):
-    # works with OpenAI, Anthropic, Google, Mistral,
-    # DeepSeek, Groq, Cohere, xAI — any model
+    # OpenAI, Anthropic, Google, Mistral, DeepSeek,
+    # Groq, Cohere, xAI — cost tracked automatically
     return client.chat(model="gpt-4o-mini", messages=[...])
 ```
 
-For custom or fine-tuned models:
+Custom or fine-tuned models:
 
 ```python
 from tracely import set_model_pricing
@@ -209,7 +209,7 @@ Result: 3/3 regressions detected
 
 ## Tool Attention
 
-Reduce token overhead by up to 95% — only pass relevant tools to each agent call, using ISO Scoring (arXiv:2604.21816).
+Reduce token overhead by up to 95% — only pass relevant tools to each agent call, scored via ISO Scoring (arXiv:2604.21816).
 
 ```bash
 pip install swarmtrace[tools]
@@ -228,21 +228,9 @@ def agent(query):
 
 ---
 
-## CLI
+## Remote Dashboard
 
-```bash
-swarmtrace                     # view last 100 traces
-swarmtrace --limit 50          # view last 50 traces
-swarmtrace-replay <id>         # replay any trace
-swarmtrace-export --format json
-swarmtrace-export --format csv
-```
-
----
-
-## Remote Ingest + SaaS Dashboard
-
-Send traces to your [SwarmTrace dashboard](https://swarmtrace.vercel.app) for live monitoring.
+Send traces to the [SwarmTrace dashboard](https://swarmtrace.vercel.app) for live monitoring.
 
 ```python
 from tracely import init, observe
@@ -266,19 +254,31 @@ export SWARMTRACE_ENDPOINT=https://swarmtrace.vercel.app
 
 ---
 
+## CLI
+
+```bash
+swarmtrace                       # last 100 traces
+swarmtrace --limit 50            # last 50
+swarmtrace-replay <id>           # replay any trace
+swarmtrace-export --format json
+swarmtrace-export --format csv
+```
+
+---
+
 ## vs LangSmith
 
-| Feature                  | SwarmTrace      | LangSmith         |
-|--------------------------|-----------------|-------------------|
-| Open source              | ✅              | ❌                |
-| Works offline            | ✅              | ❌                |
-| Any LLM / any framework  | ✅              | ❌ LangChain only |
-| Live cost tracking       | ✅ all models   | ✅                |
-| Regression detection     | ✅              | ❌                |
-| Token budget enforcement | ✅              | ❌                |
-| Tool attention (ISO)     | ✅              | ❌                |
-| Setup                    | 2 lines         | SDK + account     |
-| Price                    | Free            | $20/month         |
+| Feature | SwarmTrace | LangSmith |
+|---|---|---|
+| Open source | ✅ | ❌ |
+| Works offline | ✅ | ❌ |
+| Any LLM / any framework | ✅ | ❌ LangChain only |
+| Live cost tracking | ✅ all models | ✅ |
+| Regression detection | ✅ | ❌ |
+| Token budget enforcement | ✅ | ❌ |
+| Tool attention (ISO) | ✅ | ❌ |
+| Setup | 2 lines | SDK + account |
+| Price | Free | $20/month |
 
 ---
 
@@ -298,13 +298,13 @@ pip install swarmtrace[all]          # Everything
 
 Tested on AMD Instinct MI300X 192GB via AMD Developer Cloud.
 
-| Metric                   | Value        |
-|--------------------------|--------------|
-| Swarms tested            | 5            |
-| Total agent calls        | 20           |
-| Avg orchestrator latency | 6.1s         |
-| Avg researcher latency   | 1.8s         |
-| Trace overhead           | < 1ms        |
+| Metric | Value |
+|---|---|
+| Swarms tested | 5 |
+| Total agent calls | 20 |
+| Avg orchestrator latency | 6.1s |
+| Avg researcher latency | 1.8s |
+| Trace overhead | < 1ms |
 
 ---
 
