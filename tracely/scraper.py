@@ -2,7 +2,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from tracely.storage import save_trace
-from tracely.tracer import _parent_ctx, _current_parent
+from tracely.tracer import _parent_ctx, _current_parent, _current_agent
 
 def scrape(url: str, verbose=True):
     """
@@ -16,6 +16,7 @@ def scrape(url: str, verbose=True):
     """
     trace_id = uuid.uuid4().hex[:8]
     parent_id = _current_parent()
+    agent_id, agent_name = _current_agent() or (None, None)
     token = _parent_ctx.set(trace_id)
 
     indent = "  " if parent_id else ""
@@ -48,7 +49,8 @@ def scrape(url: str, verbose=True):
             url, result[:200] if result else None,
             latency, error,
             datetime.now(timezone.utc).isoformat(),
-            len(url) // 4, output_tokens, cost
+            len(url) // 4, output_tokens, cost,
+            kind="tool", agent_id=agent_id, agent_name=agent_name,
         )
         _parent_ctx.reset(token)
 

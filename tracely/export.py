@@ -6,7 +6,8 @@ from tracely.storage import get_all_traces
 
 def _traces_to_dicts(rows):
     keys = ["id", "parent_id", "function", "args", "output", "latency_sec",
-            "error", "timestamp", "input_tokens", "output_tokens", "cost_usd"]
+            "error", "timestamp", "input_tokens", "output_tokens", "cost_usd",
+            "kind", "agent_id", "agent_name"]
     return [dict(zip(keys, row)) for row in rows]
 
 

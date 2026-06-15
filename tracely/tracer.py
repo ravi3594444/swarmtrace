@@ -16,6 +16,36 @@ Usage::
 Remote ingest is enabled by setting SWARMTRACE_API_KEY and SWARMTRACE_ENDPOINT.
 The environment is read lazily (at call time), so values set after import
 (e.g. by ``load_dotenv()``) are picked up. Alternatively call :func:`init`.
+
+Span kinds
+----------
+Every traced call has a ``kind``:
+
+- ``"agent"``    (default) — the call itself IS an agent / autonomous run.
+  Shows up as its own entry on the dashboard's Agents page.
+- ``"tool"``     — a tool invocation made *by* an agent.
+- ``"llm"``      — a raw LLM call made *by* an agent.
+- ``"function"`` — any other traced helper that isn't its own agent.
+
+Only ``kind="agent"`` spans are surfaced as agents. Everything else is
+attributed (via ``agent_id`` / ``agent_name``) to the nearest enclosing
+``kind="agent"`` span — or to itself if there isn't one, which keeps it out
+of the Agents page entirely rather than appearing as a phantom agent. This
+means wrapping an LLM or tool call in ``@observe`` for visibility never turns
+it into a fake "agent" on the dashboard::
+
+    @observe                    # kind="agent" — this run IS an agent
+    def orchestrator(q):
+        research = researcher(q)   # also kind="agent" — its own agent
+        return summarize(research)
+
+    @observe(kind="tool")       # rolls up into the calling agent's stats
+    def search_web(q):
+        ...
+
+    @observe(kind="llm")        # rolls up into the calling agent's stats
+    def call_llm(prompt):
+        ...
 """
 
 import asyncio
@@ -29,7 +59,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Optional, Tuple
 from urllib.request import Request, urlopen
 
 from tracely.storage import save_trace
@@ -129,9 +159,26 @@ def _current_parent() -> Optional[str]:
     return _parent_ctx.get()
 
 
+# Thread-safe & async-safe agent tracking — (agent_id, agent_name) of the
+# nearest enclosing kind="agent" span. Used to attribute tool/llm/function
+# spans to the agent that's actually running them, regardless of whether the
+# parent_id chain stays intact end-to-end.
+_agent_ctx: contextvars.ContextVar[Optional[Tuple[str, str]]] = contextvars.ContextVar(
+    "agent_ctx", default=None
+)
+
+
+def _current_agent() -> Optional[Tuple[str, str]]:
+    """Return ``(agent_id, agent_name)`` of the nearest enclosing agent span, if any."""
+    return _agent_ctx.get()
+
+
 # ---------------------------------------------------------------------------
 # Shared record-and-save logic (keeps sync + async wrappers DRY)
 # ---------------------------------------------------------------------------
+
+_VALID_KINDS = {"agent", "tool", "llm", "function"}
+
 
 def _build_trace_id() -> str:
     # Full uuid4 hex (32 chars). Short 8-char IDs are collision-prone at scale.
@@ -178,6 +225,9 @@ def _flush(
     in_tok: int,
     out_tok: int,
     cost: float,
+    kind: str,
+    agent_id: str,
+    agent_name: str,
 ) -> None:
     # Capture up to the first two positional args + any kwargs for the record.
     args_repr = str(args[:2])
@@ -187,6 +237,7 @@ def _flush(
         trace_id, parent_id, func_name,
         args_repr, output, latency, error,
         timestamp, in_tok, out_tok, cost,
+        kind, agent_id, agent_name,
     )
 
     _enqueue_remote({
@@ -194,6 +245,7 @@ def _flush(
         "args": args_repr, "output": output or "", "latency_sec": latency,
         "error": error, "timestamp": timestamp,
         "input_tokens": in_tok, "output_tokens": out_tok, "cost_usd": cost,
+        "kind": kind, "agent_id": agent_id, "agent_name": agent_name,
     })
 
 
@@ -209,19 +261,47 @@ def _safe_flush(*flush_args) -> None:
 # Decorator
 # ---------------------------------------------------------------------------
 
-def observe(func):
+def observe(func=None, *, kind: str = "agent"):
     """
     Decorator that records every call (sync or async) to the traces DB.
-    Propagates parent–child relationships automatically via contextvars,
-    so nested ``@observe`` calls are linked in the tree.
+
+    Can be used bare (``@observe``, which defaults to ``kind="agent"``) or
+    with an explicit kind::
+
+        @observe(kind="tool")
+        def search_web(q): ...
+
+    See the module docstring for the full ``kind`` taxonomy and how
+    ``agent_id``/``agent_name`` attribution works.
+
+    Propagates parent-child relationships automatically via contextvars,
+    so nested ``@observe`` calls are linked in the tree, and attributes
+    every non-agent span to its nearest enclosing agent span.
     """
+    if func is None:
+        return lambda f: observe(f, kind=kind)
+
+    if kind not in _VALID_KINDS:
+        raise ValueError(
+            f"observe(kind={kind!r}) is invalid — kind must be one of "
+            f"{sorted(_VALID_KINDS)}"
+        )
+
     if asyncio.iscoroutinefunction(func):
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             trace_id = _build_trace_id()
             parent_id = _current_parent()
+            enclosing_agent = _current_agent()
             timestamp = datetime.now(timezone.utc).isoformat()
-            token = _parent_ctx.set(trace_id)
+            parent_token = _parent_ctx.set(trace_id)
+
+            if kind == "agent":
+                agent_id, agent_name = trace_id, func.__name__
+                agent_token = _agent_ctx.set((agent_id, agent_name))
+            else:
+                agent_id, agent_name = enclosing_agent or (trace_id, func.__name__)
+                agent_token = None
 
             start = time.perf_counter()
             output: Optional[str] = None
@@ -243,8 +323,11 @@ def observe(func):
                     args, kwargs, output,
                     round(time.perf_counter() - start, 3),
                     error, timestamp, in_tok, out_tok, cost,
+                    kind, agent_id, agent_name,
                 )
-                _parent_ctx.reset(token)
+                _parent_ctx.reset(parent_token)
+                if agent_token is not None:
+                    _agent_ctx.reset(agent_token)
 
         return async_wrapper
 
@@ -252,8 +335,16 @@ def observe(func):
     def sync_wrapper(*args, **kwargs):
         trace_id = _build_trace_id()
         parent_id = _current_parent()
+        enclosing_agent = _current_agent()
         timestamp = datetime.now(timezone.utc).isoformat()
-        token = _parent_ctx.set(trace_id)
+        parent_token = _parent_ctx.set(trace_id)
+
+        if kind == "agent":
+            agent_id, agent_name = trace_id, func.__name__
+            agent_token = _agent_ctx.set((agent_id, agent_name))
+        else:
+            agent_id, agent_name = enclosing_agent or (trace_id, func.__name__)
+            agent_token = None
 
         start = time.perf_counter()
         output: Optional[str] = None
@@ -275,7 +366,10 @@ def observe(func):
                 args, kwargs, output,
                 round(time.perf_counter() - start, 3),
                 error, timestamp, in_tok, out_tok, cost,
+                kind, agent_id, agent_name,
             )
-            _parent_ctx.reset(token)
+            _parent_ctx.reset(parent_token)
+            if agent_token is not None:
+                _agent_ctx.reset(agent_token)
 
     return sync_wrapper

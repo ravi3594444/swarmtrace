@@ -124,6 +124,8 @@ function jsonResponse(status: number, body: unknown) {
   })
 }
 
+const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function'])
+
 function validateTrace(payload: unknown): { row?: Record<string, unknown>; error?: string } {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload))
     return { error: 'Body must be a JSON object' }
@@ -136,6 +138,20 @@ function validateTrace(payload: unknown): { row?: Record<string, unknown>; error
     return { error: 'timestamp must be a valid ISO 8601 string' }
   const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, MAX_TEXT_LEN) : '')
   const num  = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+
+  // kind/agent_id/agent_name were added in tracely 0.3.0. Older SDK versions
+  // (or anything posting to /ingest directly) won't send them — default to
+  // kind='agent', agent_id=id, agent_name=function, which reproduces the
+  // pre-0.3.0 "every trace is its own agent" behavior exactly, so old
+  // clients keep working without becoming phantom sub-agents of anything.
+  const kind = typeof p.kind === 'string' && VALID_KINDS.has(p.kind) ? p.kind : 'agent'
+  const agentId =
+    typeof p.agent_id === 'string' && p.agent_id.length > 0 ? p.agent_id.slice(0, 64) : p.id
+  const agentName =
+    typeof p.agent_name === 'string' && p.agent_name.length > 0
+      ? p.agent_name.slice(0, 256)
+      : p.function
+
   return {
     row: {
       id:            p.id,
@@ -149,6 +165,9 @@ function validateTrace(payload: unknown): { row?: Record<string, unknown>; error
       input_tokens:  Math.max(0, Math.trunc(num(p.input_tokens))),
       output_tokens: Math.max(0, Math.trunc(num(p.output_tokens))),
       cost_usd:      Math.max(0, num(p.cost_usd)),
+      kind:          kind,
+      agent_id:      agentId,
+      agent_name:    agentName,
     },
   }
 }

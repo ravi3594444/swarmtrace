@@ -1,6 +1,7 @@
 import json
 import numpy as np
 from tracely.storage import save_trace
+from tracely.tracer import _current_agent
 import uuid
 from datetime import datetime, timezone
 import time
@@ -89,7 +90,11 @@ class ToolAttention:
             for t in selected:
                 print(f"[ToolAttention]   ✓ {t['name']}")
 
-        # Save to swarmtrace
+        # Save to swarmtrace — attribute to whichever @observe(kind="agent")
+        # call is currently in progress (if any), tagged as a tool call so
+        # it rolls into that agent's stats instead of becoming its own
+        # phantom "agent" on the dashboard.
+        agent_id, agent_name = _current_agent() or (None, None)
         save_trace(
             str(uuid.uuid4())[:8],
             None,
@@ -101,7 +106,8 @@ class ToolAttention:
             datetime.now(timezone.utc).isoformat(),  # fixed: was deprecated utcnow()
             full_tokens,
             active_tokens,
-            round((full_tokens - active_tokens) * 0.80 / 1_000_000, 8)
+            round((full_tokens - active_tokens) * 0.80 / 1_000_000, 8),
+            kind="tool", agent_id=agent_id, agent_name=agent_name,
         )
 
         return selected
