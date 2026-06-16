@@ -73,13 +73,32 @@ _api_key: Optional[str] = None
 _endpoint: Optional[str] = None
 
 
-def init(api_key: Optional[str] = None, endpoint: Optional[str] = None) -> None:
-    """Explicitly configure remote ingest (takes precedence over env vars)."""
+def init(
+    api_key: Optional[str] = None,
+    endpoint: Optional[str] = None,
+    fov: bool = False,
+    fov_watch_dir: str = ".",
+) -> None:
+    """
+    Configure remote ingest and optionally activate FOV live monitoring.
+
+    Parameters
+    ----------
+    api_key:       SwarmTrace API key (overrides SWARMTRACE_API_KEY env var).
+    endpoint:      Dashboard URL (overrides SWARMTRACE_ENDPOINT env var).
+    fov:           If True, activate all FOV patches (Playwright, streams,
+                   network, filesystem).  Same as calling
+                   ``tracely.fov.patch_all()``.
+    fov_watch_dir: Directory to watch for file-system events (default: ".").
+    """
     global _api_key, _endpoint
     if api_key is not None:
         _api_key = api_key
     if endpoint is not None:
         _endpoint = endpoint
+    if fov:
+        from tracely.fov import patch_all
+        patch_all(watch_dir=fov_watch_dir)
 
 
 def _remote_config() -> tuple[str, str]:

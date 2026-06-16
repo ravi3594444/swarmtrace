@@ -6,6 +6,7 @@ import { DashboardLayout } from '@/components/dashboard-layout'
 import { Search, AlertCircle } from 'lucide-react'
 import { fetchAgents } from '@/lib/api'
 import { SkeletonTableRow } from '@/components/skeleton'
+import LiveActivity from '@/components/LiveActivity'
 
 const FALLBACK_AGENTS = [
   { id: 'ext-8829', name: 'DataExtractor_v2', status: 'RUNNING', tasks: 12, tokens: '2.4M', lastActive: '2 min ago', uptime: '14d 2h', success_rate: '99.2%', current_task: 'Extracting Q3 earnings...' },
@@ -189,7 +190,7 @@ export default function AgentsPage() {
                     {expanded === agent.id && (
                       <tr className="border-b border-outline bg-surface-container-high/50">
                         <td colSpan={5} className="px-6 py-6">
-                          <div className="grid grid-cols-4 gap-6">
+                          <div className="grid grid-cols-4 gap-6 mb-6">
                             <div>
                               <p className="text-xs text-on-surface-variant mb-2">CURRENT TASK</p>
                               <p className="text-sm text-on-surface">{agent.current_task}</p>
@@ -206,6 +207,12 @@ export default function AgentsPage() {
                               <p className="text-xs text-on-surface-variant mb-2">SUCCESS RATE</p>
                               <p className="text-sm text-on-surface font-semibold">{agent.success_rate}</p>
                             </div>
+                          </div>
+                          <div style={{ height: 320 }}>
+                            <LiveActivity
+                              agentId={agent.id}
+                              agentName={agent.name}
+                            />
                           </div>
                         </td>
                       </tr>
