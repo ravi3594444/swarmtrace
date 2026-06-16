@@ -70,7 +70,91 @@ def search_web(q):
 
 ---
 
-## Multi-Agent Swarms
+## Quickstart — inject into any agent in 2 lines
+
+```python
+import tracely
+tracely.init()              # auto-detects OpenAI, Anthropic, Gemini, LiteLLM
+```
+
+That's all. Now decorate your top-level function:
+
+```python
+@tracely.observe
+def my_agent(prompt):
+    return openai_client.chat.completions.create(...)  # traced automatically
+```
+
+`tracely.init()` patches installed LLM clients so every raw LLM call is
+recorded as `kind="llm"` — with latency, model, tokens, and cost — and
+attributed to whatever agent is currently running. You don't decorate the
+LLM call. You don't pick a `kind`. You don't configure anything else.
+
+**Single agent**
+
+```python
+import tracely
+tracely.init()
+
+from openai import OpenAI
+client = OpenAI()
+
+@tracely.observe                    # one decorator. that's it.
+def my_agent(prompt):
+    return client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+    )
+
+my_agent("What is AGI?")
+```
+
+Dashboard: one "my_agent" card with tokens, cost, latency, error rate.
+
+**Multi-agent swarm**
+
+```python
+import tracely
+tracely.init()
+
+@tracely.observe                    # own card on the dashboard
+def researcher(q):
+    return client.chat.completions.create(model="gpt-4o-mini", messages=[...])
+
+@tracely.observe                    # own card
+def summarizer(text):
+    return client.chat.completions.create(model="gpt-4o-mini", messages=[...])
+
+@tracely.observe                    # own card — orchestrator
+def orchestrator(q):
+    research = researcher(q)
+    return summarizer(research)
+
+orchestrator("Explain transformers")
+```
+
+Dashboard: three cards. `researcher`'s and `summarizer`'s LLM costs roll
+into their own cards automatically.
+
+**Auto-detection** — `@observe` figures out the role at call time:
+- Nothing running yet → this call **is** the agent (gets its own card).
+- Already inside an agent → rolls up into it (tokens + errors fold in,
+  no extra card).
+
+So `@observe` everywhere is safe — helpers and inner calls just disappear
+into the agent that ran them, instead of cluttering the Agents page.
+
+**Need separate cards for named sub-agents?** Add `kind="agent"` explicitly:
+
+```python
+@tracely.observe(kind="agent")
+def researcher(q): ...
+```
+
+That's the only knob. `kind="llm"` / `kind="tool"` exist for labeling,
+but the dashboard works correctly without them.
+
+---
 
 Every bare `@observe` is its own agent card. Nesting is handled automatically via contextvars — no IDs, no config.
 
@@ -113,6 +197,44 @@ Three agent cards on the dashboard — one per named agent. Sub-calls (`call_llm
 | `function` | `@observe(kind="function")` | Rolls up into calling agent |
 
 The rule: **only functions you want as separate dashboard cards get bare `@observe`.** Everything else gets a `kind=`.
+
+---
+
+## Span Kinds — agents vs. tool/LLM calls
+
+By default, `@observe` marks a call as `kind="agent"` — it gets its own
+entry on the dashboard's Agents page, with its own task count, tokens,
+cost, and status. That's the right default for named agents like
+`orchestrator`, `researcher`, and `summarizer` above.
+
+If you also wrap raw LLM or tool calls with `@observe` for visibility,
+tag them so they roll up into the calling agent's stats instead of
+showing up as their own (fake) agents:
+
+```python
+from tracely import observe
+
+@observe(kind="llm")
+def call_llm(prompt):
+    return client.chat(model="gpt-4o-mini", messages=[...])
+
+@observe(kind="tool")
+def search_web(query):
+    ...
+
+@observe(kind="function")
+def helper(x):
+    ...
+
+@observe                      # kind="agent" (default)
+def researcher(q):
+    return call_llm(f"Research: {q}")
+```
+
+`call_llm` and `search_web` are attributed to whichever `kind="agent"`
+call is currently running (`researcher`, here) — their tokens, cost, and
+any errors are folded into `researcher`'s stats. They never appear as
+separate entries on the Agents page, no matter how deeply nested.
 
 ---
 

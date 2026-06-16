@@ -76,29 +76,35 @@ _endpoint: Optional[str] = None
 def init(
     api_key: Optional[str] = None,
     endpoint: Optional[str] = None,
+    auto_instrument: bool = True,
     fov: bool = False,
     fov_watch_dir: str = ".",
 ) -> None:
     """
-    Configure remote ingest and optionally activate FOV live monitoring.
+    Configure tracely.
 
-    Parameters
-    ----------
-    api_key:       SwarmTrace API key (overrides SWARMTRACE_API_KEY env var).
-    endpoint:      Dashboard URL (overrides SWARMTRACE_ENDPOINT env var).
-    fov:           If True, activate all FOV patches (Playwright, streams,
-                   network, filesystem).  Same as calling
-                   ``tracely.fov.patch_all()``.
-    fov_watch_dir: Directory to watch for file-system events (default: ".").
+    - ``api_key`` / ``endpoint``: explicit remote-ingest config, taking
+      precedence over SWARMTRACE_API_KEY / SWARMTRACE_ENDPOINT env vars.
+    - ``auto_instrument`` (default ``True``): patch installed LLM clients
+      (OpenAI, Anthropic, Gemini, LiteLLM) so every raw LLM call is traced
+      as ``kind="llm"`` — attributed to the running agent — with zero
+      decorators at the call site. Pass ``False`` to skip.
+    - ``fov`` (default ``False``): activate Field-of-View live monitoring —
+      patches Playwright, streams, requests/httpx, and the filesystem so
+      every agent action surfaces in real time on the dashboard.
+    - ``fov_watch_dir``: directory to watch for filesystem events (default ".").
     """
     global _api_key, _endpoint
     if api_key is not None:
         _api_key = api_key
     if endpoint is not None:
         _endpoint = endpoint
+    if auto_instrument:
+        from tracely.auto_instrument import patch_all
+        patch_all()
     if fov:
-        from tracely.fov import patch_all
-        patch_all(watch_dir=fov_watch_dir)
+        from tracely.fov import patch_all as fov_patch_all
+        fov_patch_all(watch_dir=fov_watch_dir)
 
 
 def _remote_config() -> tuple[str, str]:

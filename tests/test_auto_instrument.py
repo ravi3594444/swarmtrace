@@ -1,0 +1,323 @@
+"""Tests for auto-instrumentation of OpenAI / Anthropic / Gemini / LiteLLM.
+
+OpenAI and Anthropic are real installed SDKs here, so the response objects
+match production shapes exactly. Gemini and LiteLLM are exercised via fake
+modules injected into sys.modules — patch_gemini()/patch_litellm() are
+no-ops if those packages aren't installed, so this is the only way to test
+the wrapping logic without adding heavy optional dependencies to the test
+environment.
+"""
+
+import asyncio
+import sys
+import types
+
+import pytest
+
+import tracely.tracer as tracer
+import tracely.auto_instrument as ai
+
+
+@pytest.fixture()
+def records(monkeypatch):
+    """Capture save_trace calls instead of writing to the real SQLite DB."""
+    saved = []
+    monkeypatch.setattr(tracer, "save_trace", lambda *a, **k: saved.append(a))
+    monkeypatch.delenv("SWARMTRACE_API_KEY", raising=False)
+    monkeypatch.delenv("SWARMTRACE_ENDPOINT", raising=False)
+    return saved
+
+
+# ---------------------------------------------------------------------------
+# OpenAI
+# ---------------------------------------------------------------------------
+
+def _fake_chat_completion(model="gpt-4o-mini", prompt_tokens=10, completion_tokens=5):
+    from openai.types.chat import ChatCompletion
+    from openai.types.chat.chat_completion import Choice
+    from openai.types.chat.chat_completion_message import ChatCompletionMessage
+    from openai.types.completion_usage import CompletionUsage
+
+    return ChatCompletion(
+        id="chatcmpl-test",
+        object="chat.completion",
+        created=0,
+        model=model,
+        choices=[Choice(
+            finish_reason="stop", index=0,
+            message=ChatCompletionMessage(role="assistant", content="hi"),
+        )],
+        usage=CompletionUsage(
+            prompt_tokens=prompt_tokens, completion_tokens=completion_tokens,
+            total_tokens=prompt_tokens + completion_tokens,
+        ),
+    )
+
+
+def test_patch_openai_records_llm_trace_attributed_to_enclosing_agent(records, monkeypatch):
+    from openai import OpenAI
+    from openai.resources.chat.completions import Completions
+
+    response = _fake_chat_completion()
+    monkeypatch.setattr(Completions, "create", lambda self, **kw: response)
+
+    ai.patch_openai()
+    assert Completions.create.__tracely_patched__ is True
+
+    client = OpenAI(api_key="test")
+
+    @tracer.observe
+    def my_agent():
+        return client.chat.completions.create(
+            model="gpt-4o-mini", messages=[{"role": "user", "content": "hi"}]
+        )
+
+    my_agent()
+
+    by_func = {r[2]: r for r in records}
+    agent_id = by_func["my_agent"][0]
+    llm_row = by_func["openai.chat.completions.create"]
+
+    assert llm_row[-3:] == ("llm", agent_id, "my_agent")
+    assert llm_row[8] == 10  # input_tokens
+    assert llm_row[9] == 5   # output_tokens
+    assert llm_row[10] > 0   # cost computed from a real model name
+
+
+def test_patch_openai_is_idempotent(records, monkeypatch):
+    from openai import OpenAI
+    from openai.resources.chat.completions import Completions
+
+    response = _fake_chat_completion()
+    calls = []
+
+    def fake_create(self, **kw):
+        calls.append(kw)
+        return response
+
+    monkeypatch.setattr(Completions, "create", fake_create)
+    ai.patch_openai()
+    ai.patch_openai()  # second call must not double-wrap
+
+    client = OpenAI(api_key="test")
+    client.chat.completions.create(model="gpt-4o-mini", messages=[])
+
+    assert len(calls) == 1     # original invoked exactly once
+    assert len(records) == 1   # exactly one trace recorded, not double
+
+
+def test_patch_openai_records_error_with_zero_tokens(records, monkeypatch):
+    from openai import OpenAI
+    from openai.resources.chat.completions import Completions
+
+    def boom(self, **kw):
+        raise RuntimeError("rate limited")
+
+    monkeypatch.setattr(Completions, "create", boom)
+    ai.patch_openai()
+
+    client = OpenAI(api_key="test")
+
+    with pytest.raises(RuntimeError):
+        client.chat.completions.create(model="gpt-4o-mini", messages=[])
+
+    assert len(records) == 1
+    row = records[0]
+    assert row[2] == "openai.chat.completions.create"
+    assert row[6] == "rate limited"  # error
+    assert row[8] == 0 and row[9] == 0
+    assert row[-3] == "llm"
+
+
+# ---------------------------------------------------------------------------
+# Anthropic
+# ---------------------------------------------------------------------------
+
+def _fake_message(model="claude-3-haiku-20240307", input_tokens=7, output_tokens=12):
+    from anthropic.types import Message, Usage
+
+    return Message(
+        id="msg-test",
+        type="message",
+        role="assistant",
+        model=model,
+        content=[],
+        stop_reason="end_turn",
+        usage=Usage(input_tokens=input_tokens, output_tokens=output_tokens),
+    )
+
+
+def test_patch_anthropic_records_llm_trace(records, monkeypatch):
+    from anthropic import Anthropic
+    from anthropic.resources.messages import Messages
+
+    response = _fake_message()
+    monkeypatch.setattr(Messages, "create", lambda self, **kw: response)
+
+    ai.patch_anthropic()
+
+    client = Anthropic(api_key="test")
+
+    @tracer.observe
+    def my_agent():
+        return client.messages.create(
+            model="claude-3-haiku-20240307", max_tokens=10, messages=[]
+        )
+
+    my_agent()
+
+    by_func = {r[2]: r for r in records}
+    agent_id = by_func["my_agent"][0]
+    llm_row = by_func["anthropic.messages.create"]
+
+    assert llm_row[-3:] == ("llm", agent_id, "my_agent")
+    assert llm_row[8] == 7
+    assert llm_row[9] == 12
+
+
+# ---------------------------------------------------------------------------
+# Gemini (google-generativeai) — injected fake module, since the real
+# package isn't installed in this environment.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def fake_genai(monkeypatch):
+    google_pkg = types.ModuleType("google")
+    google_pkg.__path__ = []  # mark as a package so submodule import resolves
+    genai_pkg = types.ModuleType("google.generativeai")
+
+    class FakeUsage:
+        def __init__(self, p, c):
+            self.prompt_token_count = p
+            self.candidates_token_count = c
+
+    class FakeResponse:
+        def __init__(self, p, c):
+            self.usage_metadata = FakeUsage(p, c)
+
+    class GenerativeModel:
+        def __init__(self, model_name):
+            self.model_name = model_name
+
+        def generate_content(self, prompt):
+            return FakeResponse(8, 16)
+
+        async def generate_content_async(self, prompt):
+            return FakeResponse(8, 16)
+
+    genai_pkg.GenerativeModel = GenerativeModel
+    google_pkg.generativeai = genai_pkg
+    monkeypatch.setitem(sys.modules, "google", google_pkg)
+    monkeypatch.setitem(sys.modules, "google.generativeai", genai_pkg)
+    return genai_pkg
+
+
+def test_patch_gemini_sync_records_llm_trace(records, fake_genai):
+    ai.patch_gemini()
+
+    model = fake_genai.GenerativeModel("models/gemini-2.0-flash")
+
+    @tracer.observe
+    def my_agent():
+        return model.generate_content("hi")
+
+    my_agent()
+
+    by_func = {r[2]: r for r in records}
+    agent_id = by_func["my_agent"][0]
+    llm_row = by_func["gemini.generate_content"]
+
+    assert llm_row[-3:] == ("llm", agent_id, "my_agent")
+    assert llm_row[8] == 8
+    assert llm_row[9] == 16
+    # "models/" prefix stripped before being stored/used for pricing
+    assert llm_row[3] == "('gemini-2.0-flash',)"
+
+
+def test_patch_gemini_async_records_llm_trace(records, fake_genai):
+    ai.patch_gemini()
+
+    model = fake_genai.GenerativeModel("models/gemini-2.0-flash")
+
+    @tracer.observe
+    async def my_agent():
+        return await model.generate_content_async("hi")
+
+    asyncio.run(my_agent())
+
+    by_func = {r[2]: r for r in records}
+    agent_id = by_func["my_agent"][0]
+    llm_row = by_func["gemini.generate_content"]
+
+    assert llm_row[-3:] == ("llm", agent_id, "my_agent")
+    assert llm_row[8] == 8
+    assert llm_row[9] == 16
+
+
+# ---------------------------------------------------------------------------
+# LiteLLM — injected fake module, since the real package isn't installed.
+# ---------------------------------------------------------------------------
+
+@pytest.fixture()
+def fake_litellm(monkeypatch):
+    litellm_pkg = types.ModuleType("litellm")
+
+    class FakeUsage:
+        prompt_tokens = 3
+        completion_tokens = 4
+
+    class FakeResponse:
+        model = "mistral/mistral-small"
+        usage = FakeUsage()
+
+    def completion(*args, **kwargs):
+        return FakeResponse()
+
+    async def acompletion(*args, **kwargs):
+        return FakeResponse()
+
+    litellm_pkg.completion = completion
+    litellm_pkg.acompletion = acompletion
+    monkeypatch.setitem(sys.modules, "litellm", litellm_pkg)
+    return litellm_pkg
+
+
+def test_patch_litellm_records_llm_trace(records, fake_litellm):
+    ai.patch_litellm()
+    import litellm
+
+    @tracer.observe
+    def my_agent():
+        return litellm.completion(model="mistral/mistral-small", messages=[])
+
+    my_agent()
+
+    by_func = {r[2]: r for r in records}
+    agent_id = by_func["my_agent"][0]
+    llm_row = by_func["litellm.completion"]
+
+    assert llm_row[-3:] == ("llm", agent_id, "my_agent")
+    assert llm_row[8] == 3
+    assert llm_row[9] == 4
+
+
+# ---------------------------------------------------------------------------
+# patch_all() / init()
+# ---------------------------------------------------------------------------
+
+def test_patch_all_does_not_raise(records):
+    ai.patch_all()
+
+
+def test_init_default_runs_auto_instrument(monkeypatch):
+    called = []
+    monkeypatch.setattr(ai, "patch_all", lambda: called.append(True))
+    tracer.init()
+    assert called == [True]
+
+
+def test_init_auto_instrument_false_skips_patching(monkeypatch):
+    called = []
+    monkeypatch.setattr(ai, "patch_all", lambda: called.append(True))
+    tracer.init(auto_instrument=False)
+    assert called == []
