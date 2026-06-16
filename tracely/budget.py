@@ -56,13 +56,26 @@ def get_usage() -> dict[str, int]:
 # ---------------------------------------------------------------------------
 
 def _count_tokens(text: str) -> int:
-    """Best-effort token count: tiktoken when available, fallback to len/4."""
-    try:
-        import tiktoken
-        enc = tiktoken.get_encoding("cl100k_base")
-        return len(enc.encode(text))
-    except Exception:
-        return len(text) // 4
+    """Best-effort token count: tiktoken when available, fallback to len/4.
+
+    Runs tiktoken in a daemon thread with a 200 ms deadline so a stalled
+    tokenizer (e.g. on first load / cache miss) can't block the agent.
+    """
+    approx = len(text) // 4          # always available as fallback
+    result: list[int] = []
+
+    def _try_tiktoken():
+        try:
+            import tiktoken
+            enc = tiktoken.get_encoding("cl100k_base")
+            result.append(len(enc.encode(text)))
+        except Exception:
+            pass
+
+    t = threading.Thread(target=_try_tiktoken, daemon=True)
+    t.start()
+    t.join(timeout=0.2)
+    return result[0] if result else approx
 
 
 def _track(func_name: str, args, result, max_tokens: int, warn_at: float, hard_stop: bool) -> None:

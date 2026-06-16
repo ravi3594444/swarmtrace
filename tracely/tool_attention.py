@@ -96,7 +96,7 @@ class ToolAttention:
         # phantom "agent" on the dashboard.
         agent_id, agent_name = _current_agent() or (None, None)
         save_trace(
-            str(uuid.uuid4())[:8],
+            str(uuid.uuid4().hex),   # full 32-char — short IDs collision-prone at scale
             None,
             "tool_attention.select",
             query[:200],

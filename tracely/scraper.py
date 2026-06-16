@@ -14,7 +14,7 @@ def scrape(url: str, verbose=True):
     Raises the underlying exception on failure (after saving the trace)
     so callers are not silently handed a None.
     """
-    trace_id = uuid.uuid4().hex[:8]
+    trace_id = uuid.uuid4().hex  # full 32-char hex — short IDs are collision-prone
     parent_id = _current_parent()
     agent_id, agent_name = _current_agent() or (None, None)
     token = _parent_ctx.set(trace_id)
