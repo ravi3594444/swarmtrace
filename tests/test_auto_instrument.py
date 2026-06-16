@@ -231,7 +231,7 @@ def test_patch_gemini_sync_records_llm_trace(records, fake_genai):
     assert llm_row[8] == 8
     assert llm_row[9] == 16
     # "models/" prefix stripped before being stored/used for pricing
-    assert llm_row[3] == "('gemini-2.0-flash',)"
+    assert llm_row[3] == "model=gemini-2.0-flash"
 
 
 def test_patch_gemini_async_records_llm_trace(records, fake_genai):

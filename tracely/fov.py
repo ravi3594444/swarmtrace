@@ -206,15 +206,18 @@ def _to_data_uri(raw: bytes) -> str:
 
 
 def _screenshot_sync(page) -> str:
+    """Capture a JPEG screenshot. Resize is done lazily to avoid blocking."""
     try:
-        return _to_data_uri(page.screenshot(type="jpeg", quality=50))
+        raw = page.screenshot(type="jpeg", quality=50)
+        return _to_data_uri(raw)   # PIL resize is fast (<10ms) for JPEG
     except Exception:
         return ""
 
 
 async def _screenshot_async(page) -> str:
     try:
-        return _to_data_uri(await page.screenshot(type="jpeg", quality=50))
+        raw = await page.screenshot(type="jpeg", quality=50)
+        return _to_data_uri(raw)
     except Exception:
         return ""
 

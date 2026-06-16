@@ -205,6 +205,32 @@ def _current_agent() -> Optional[Tuple[str, str]]:
 _VALID_KINDS = {"agent", "tool", "llm", "function"}
 
 
+def _safe_str(obj, max_len: int = 4000) -> str:
+    """Convert *obj* to string safely.
+
+    Uses a background thread with a 100 ms deadline so a pathological
+    ``__str__`` (e.g. a huge numpy array) can't stall the traced call.
+    Falls back to repr(type) on timeout or any exception.
+    """
+    if obj is None:
+        return ""
+    result: list[str] = []
+    exc_holder: list[Exception] = []
+
+    def _do():
+        try:
+            result.append(str(obj)[:max_len])
+        except Exception as e:
+            exc_holder.append(e)
+
+    t = threading.Thread(target=_do, daemon=True)
+    t.start()
+    t.join(timeout=0.1)
+    if result:
+        return result[0]
+    return f"<{type(obj).__name__} (stringify timed out or failed)>"
+
+
 def _build_trace_id() -> str:
     # Full uuid4 hex (32 chars). Short 8-char IDs are collision-prone at scale.
     return uuid.uuid4().hex
@@ -336,7 +362,7 @@ def observe(func=None, *, kind: str = "agent"):
 
             try:
                 result = await func(*args, **kwargs)
-                output = str(result)[:4000]
+                output = _safe_str(result)
                 in_tok, out_tok, cost = _extract_token_info(result)
                 return result
             except Exception as exc:
@@ -379,7 +405,7 @@ def observe(func=None, *, kind: str = "agent"):
 
         try:
             result = func(*args, **kwargs)
-            output = str(result)[:4000]
+            output = _safe_str(result)
             in_tok, out_tok, cost = _extract_token_info(result)
             return result
         except Exception as exc:
