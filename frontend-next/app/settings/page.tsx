@@ -154,10 +154,11 @@ function BillingTab() {
   )
 }
 
-// ─── Quick Setup Card ─────────────────────────────────────────────────────────
-const ENDPOINT = typeof window !== 'undefined'
-  ? `${window.location.origin}/api`
-  : 'https://your-swarmtrace-url.vercel.app/api'
+// Resolved safely inside the component where window is always available
+function getEndpoint() {
+  if (typeof window === 'undefined') return 'https://your-swarmtrace-url.vercel.app/api'
+  return `${window.location.origin}/api`
+}
 
 function CopyLine({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   const [copied, setCopied] = useState(false)
@@ -186,7 +187,7 @@ function CopyLine({ label, value, mono = true }: { label: string; value: string;
 function QuickSetup({ apiKeyPlaceholder }: { apiKeyPlaceholder?: string }) {
   const [copiedSnippet, setCopiedSnippet] = useState(false)
   const keyDisplay = apiKeyPlaceholder || 'st_your_key_here'
-  const endpoint = typeof window !== 'undefined' ? `${window.location.origin}/api` : 'https://your-swarmtrace-url.vercel.app/api'
+  const endpoint = getEndpoint()
 
   const snippet = `import os
 from swarmtrace import observe

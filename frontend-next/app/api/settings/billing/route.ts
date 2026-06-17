@@ -19,16 +19,20 @@ export async function GET() {
     const thisMonth   = allTime.filter((r: any) => r.date >= monthStart)
 
     const cost_this_month = parseFloat(
-      thisMonth.reduce((a: number, r: any) => a + (r.cost_usd || 0), 0).toFixed(4)
+      thisMonth.reduce((a: number, r: any) => a + (r.total_cost ?? r.cost_usd ?? 0), 0).toFixed(4)
     )
     const traces_used = allTime.reduce((a: number, r: any) => a + (r.trace_count || 0), 0)
+
+    // Calculate next billing date safely (handles December → January wrap)
+    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+    const next_billing = nextMonth.toISOString().slice(0, 10)
 
     return NextResponse.json({
       plan:             'Pro',
       traces_used,
       traces_limit:     100_000,
       cost_this_month,
-      next_billing:     `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 2).padStart(2, '0')}-01`,
+      next_billing,
     })
   } catch (error) {
     console.error('[api/settings/billing] request failed:', error)

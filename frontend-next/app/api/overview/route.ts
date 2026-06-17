@@ -11,6 +11,18 @@ export async function GET() {
       `traces?user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=500`
     )
 
+    if (!rows || rows.length === 0) {
+      return NextResponse.json({
+        system_health: 100, active_agents: 0,
+        total_throughput: 0, avg_latency_ms: 0,
+        activity: [
+          { time: '00:00', requests: 0 }, { time: '06:00', requests: 0 },
+          { time: '12:00', requests: 0 }, { time: '18:00', requests: 0 },
+        ],
+        top_agents: [], events: [],
+      })
+    }
+
     const errorCount = rows.filter((r: any) => r.error).length
 
     const total_throughput = rows.reduce(
