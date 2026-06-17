@@ -214,8 +214,24 @@ export async function POST(req: Request) {
     const { row, error } = validateTrace(payload)
     if (!row) return jsonResponse(400, { error })
 
-    // ── 1. Insert trace ───────────────────────────────────────────────────
-    await supa('traces', { method: 'POST', body: JSON.stringify({ ...row, user_id }) })
+    // ── 1. Upsert trace (idempotent — safe on network retry) ─────────────────
+    await supaRpc('upsert_trace', {
+      p_id:            row.id,
+      p_user_id:       user_id,
+      p_parent_id:     row.parent_id ?? null,
+      p_function:      row.function,
+      p_args:          row.args,
+      p_output:        row.output,
+      p_latency_sec:   row.latency_sec,
+      p_error:         row.error ?? null,
+      p_timestamp:     row.timestamp,
+      p_input_tokens:  row.input_tokens,
+      p_output_tokens: row.output_tokens,
+      p_cost_usd:      row.cost_usd,
+      p_kind:          row.kind,
+      p_agent_id:      row.agent_id,
+      p_agent_name:    row.agent_name,
+    })
 
     // ── 2. Atomically increment daily_metrics — powers the dashboard ──────
     await supaRpc('increment_daily_metrics', {

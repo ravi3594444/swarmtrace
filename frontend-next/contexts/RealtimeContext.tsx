@@ -5,21 +5,16 @@
  * page navigations. Lives in DashboardLayout (above every dashboard page) so
  * channels survive route changes.
  *
- * Problem it solves
- * -----------------
- * Without this, each LiveActivity component creates and destroys its own
- * Supabase channel inside useEffect. Navigating away from /agents unmounts
- * the component → channel is torn down → real-time events are lost → on
- * return the user sees "connecting…" again and any events that arrived
- * during navigation are gone.
+ * Auth: uses Clerk's getToken({ template: 'supabase' }) to get a JWT that
+ * Supabase recognises. This is required for RLS policies (which check
+ * auth.jwt()->>'sub') to allow the browser to receive Realtime events.
+ * Without this, all postgres_changes subscriptions are silently empty.
  *
- * Solution
- * --------
- * A single shared channel per agentId, stored in this context. Components
- * call useAgentEvents(agentId) to subscribe — they receive a live-updating
- * array of events, but the channel itself is never torn down just because a
- * component unmounts. Channels are only cleaned up when the provider itself
- * unmounts (i.e. the user logs out or closes the tab).
+ * Setup required (one-time, in dashboards — not in code):
+ *   1. Clerk dashboard → JWT Templates → New → Supabase → copy signing secret
+ *   2. Supabase dashboard → Project Settings → API → JWT Secret → paste it
+ * Once done, every Realtime subscription here will correctly filter to the
+ * current user's data via RLS.
  */
 
 import {
@@ -30,6 +25,7 @@ import {
   useRef,
   useState,
 } from 'react'
+import { useAuth } from '@clerk/nextjs'
 import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -81,35 +77,60 @@ const RealtimeContext = createContext<RealtimeContextValue>({
 // ── Provider ─────────────────────────────────────────────────────────────────
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
-  // version[agentId] bumps on every new event — components re-render only
-  // when their specific agent gets a new event, not on any event.
   const [version, setVersion] = useState<Record<string, number>>({})
   const channels = useRef<Record<string, AgentChannel>>({})
   const sb       = useRef<SupabaseClient | null>(null)
+  const { getToken } = useAuth()
 
-  // Initialise Supabase client once
-  useEffect(() => {
+  // Build a Supabase client authenticated with the Clerk JWT.
+  // This is required for RLS policies (auth.jwt()->>'sub') to allow
+  // the browser to receive Realtime events filtered to the current user.
+  const getClient = useCallback(async (): Promise<SupabaseClient | null> => {
     const url  = process.env.NEXT_PUBLIC_SUPABASE_URL
     const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-    if (!url || !anon) return
-    sb.current = createClient(url, anon)
+    if (!url || !anon) return null
 
-    return () => {
-      // Tear down all channels on provider unmount (logout / tab close)
-      Object.values(channels.current).forEach(c => {
-        sb.current?.removeChannel(c.channel)
+    // Re-use existing client if already created
+    if (sb.current) return sb.current
+
+    try {
+      // 'supabase' template must be configured in Clerk dashboard.
+      // Falls back to anon (no RLS) if not set up yet — Realtime events
+      // will be empty until the JWT template is configured.
+      const token = await getToken({ template: 'supabase' }).catch(() => null)
+      const client = createClient(url, anon, {
+        global: token
+          ? { headers: { Authorization: `Bearer ${token}` } }
+          : {},
+        realtime: { params: { eventsPerSecond: 10 } },
       })
+      sb.current = client
+      return client
+    } catch {
+      return null
+    }
+  }, [getToken])
+
+  // Tear down all channels on provider unmount (logout / tab close)
+  useEffect(() => {
+    return () => {
+      const client = sb.current
+      if (client) {
+        Object.values(channels.current).forEach(c => {
+          if (c.channel) client.removeChannel(c.channel)
+        })
+      }
       channels.current = {}
     }
   }, [])
-
+  
   const bump = useCallback((agentId: string) => {
     setVersion(v => ({ ...v, [agentId]: (v[agentId] ?? 0) + 1 }))
   }, [])
 
   const openChannel = useCallback(async (agentId: string) => {
-    if (!sb.current) return
-    const client = sb.current
+    const client = await getClient()
+    if (!client) return
 
     // Load recent history first
     const { data } = await client
@@ -155,7 +176,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     if (channels.current[agentId]) {
       channels.current[agentId].channel = channel
     }
-  }, [bump])
+  }, [getClient, bump])
 
   const subscribe = useCallback((agentId: string) => {
     if (channels.current[agentId]) {
