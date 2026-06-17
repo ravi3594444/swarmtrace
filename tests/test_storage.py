@@ -8,7 +8,7 @@ import pytest
 @pytest.fixture()
 def storage(tmp_path, monkeypatch):
     """Reload the storage module against a temporary database file."""
-    monkeypatch.setenv("TRACELY_DB_PATH", str(tmp_path / "traces.db"))
+    monkeypatch.setenv("SWARMTRACE_DB_PATH", str(tmp_path / "traces.db"))
     import swarmtrace.storage as s
     importlib.reload(s)
     yield s
