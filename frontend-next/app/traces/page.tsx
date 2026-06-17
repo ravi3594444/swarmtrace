@@ -351,7 +351,7 @@ export default function TracesPage() {
                   </div>
                   <div>
                     <p className="text-xs text-on-surface-variant mb-1">COST</p>
-                    <p className="text-sm font-semibold text-on-surface">${selectedTrace.cost.toFixed(4)}</p>
+                    <p className="text-sm font-semibold text-on-surface">${(selectedTrace.cost ?? 0).toFixed(4)}</p>
                   </div>
                 </div>
 

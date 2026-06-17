@@ -26,9 +26,9 @@ const FALLBACK_TOP_AGENTS = [
   { id: 'agt-2', name: 'DataExtractor_v2',    score: 98.5, status: 'ACTIVE' },
 ]
 const FALLBACK_EVENTS = [
-  { timestamp: new Date().toISOString(), type: 'INFO', message: 'GatewayRouter completed successfully in 0.4s' },
-  { timestamp: new Date().toISOString(), type: 'INFO', message: 'VectorIndexer_Prod completed successfully in 1.2s' },
-  { timestamp: new Date().toISOString(), type: 'WARN', message: 'Error in LangRouter_EU: Timeout exceeded' },
+  { id: 'fb-1', timestamp: new Date().toISOString(), type: 'INFO', message: 'GatewayRouter completed successfully in 0.4s' },
+  { id: 'fb-2', timestamp: new Date().toISOString(), type: 'INFO', message: 'VectorIndexer_Prod completed successfully in 1.2s' },
+  { id: 'fb-3', timestamp: new Date().toISOString(), type: 'WARN', message: 'Error in LangRouter_EU: Timeout exceeded' },
 ]
 const FALLBACK_DATA = {
   system_health: 99.9, active_agents: 6,
