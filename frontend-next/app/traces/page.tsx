@@ -115,8 +115,8 @@ export default function TracesPage() {
           // Normalise the incoming row to match the trace shape the table expects
           const newTrace = {
             id:            raw.id,
-            function_name: raw.function  || raw.function_name || 'unknown',
-            status:        raw.error     ? 'ERROR' : 'SUCCESS',
+            function_name: raw.function_name || raw.function || 'unknown',
+            status:        raw.error ? 'ERROR' : 'SUCCESS',
             duration:      Math.round((raw.latency_sec || 0) * 1000),
             tokens_in:     raw.input_tokens  || 0,
             tokens_out:    raw.output_tokens || 0,
@@ -126,6 +126,7 @@ export default function TracesPage() {
             output:        raw.output    || '',
             error:         raw.error     || null,
             parent_id:     raw.parent_id || null,
+            kind:          raw.kind      || 'agent',
           }
 
           setTraces(prev => [newTrace, ...prev].slice(0, 200)) // cap at 200 rows

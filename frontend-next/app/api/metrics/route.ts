@@ -28,7 +28,7 @@ export async function GET() {
     const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
 
     const agg = (subset: any[]) => ({
-      cost:       parseFloat(subset.reduce((a: number, r: any) => a + (r.cost_usd || 0), 0).toFixed(6)),
+      cost:       parseFloat(subset.reduce((a: number, r: any) => a + (r.total_cost ?? r.cost_usd ?? 0), 0).toFixed(6)),
       tokens_in:  subset.reduce((a: number, r: any) => a + (r.input_tokens || 0), 0),
       tokens_out: subset.reduce((a: number, r: any) => a + (r.output_tokens || 0), 0),
       traces:     subset.reduce((a: number, r: any) => a + (r.trace_count || 0), 0),
