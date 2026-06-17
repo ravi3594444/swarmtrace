@@ -27,7 +27,7 @@ def _get_llm():
             "(e.g. a thin wrapper around the OpenAI or Anthropic SDK)."
         )
     client = LLM(
-        model=os.environ.get("TRACELY_REGRESSION_MODEL", "anthropic/claude-haiku-4-5-20251001"),
+        model=os.environ.get("SWARMTRACE_REGRESSION_MODEL", "anthropic/claude-haiku-4-5-20251001"),
         api_key=api_key,
     )
     return client.chat

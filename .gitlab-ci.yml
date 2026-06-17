@@ -9,7 +9,7 @@ python:tests:
   image: python:3.12
   script:
     - pip install -e . pytest ruff
-    - ruff check --select E9,F63,F7,F82 tracely tests
+    - ruff check --select E9,F63,F7,F82 swarmtrace tests
     - pytest -q
   rules:
     - if: $CI_PIPELINE_SOURCE == "merge_request_event"
