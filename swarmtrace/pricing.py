@@ -4,7 +4,7 @@ Falls back to cached data (or zero) if the fetch fails or times out.
 
 Thread-safety: a module-level lock ensures only one thread fetches at a time;
 all others get the cached value immediately. The fetch happens on the
-background sender thread (via _tracer_ref._enqueue_pricing_refresh), never
+background sender thread (via swarmtrace.tracer._enqueue_pricing_refresh), never
 on the agent's hot path.
 """
 

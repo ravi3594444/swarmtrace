@@ -1,7 +1,7 @@
 """
 Local development API for SwarmTrace.
 
-Serves traces from the swarmtrace SQLite DB to the local dashboard.
+Serves traces from the SwarmTrace SQLite DB to the local dashboard.
 Production ingest, auth and dashboard APIs live in frontend-next/app/api
 (Next.js + Clerk + Supabase) — this server is intentionally read-only
 and unauthenticated, for localhost use only.
@@ -171,7 +171,7 @@ app.add_middleware(
 async def get_traces():
     """
     Return all traces wrapped in { traces: [...] } for the frontend.
-    Reads from the swarmtrace SQLite DB when traces exist; falls back to
+    Reads from the SwarmTrace SQLite DB when traces exist; falls back to
     demo data when the DB is empty (e.g. first launch with no agents run yet).
     """
     rows = _db_get_all_traces(limit=500)

@@ -600,7 +600,7 @@ def patch_filesystem(watch_dir: str = ".") -> bool:
         class _Handler(FileSystemEventHandler):
             def _emit(self, action: str, path: str):
                 # Skip noisy internals
-                if any(x in path for x in (.swarmtrace", "__pycache__", ".git", ".pyc")):
+                if any(x in path for x in (".swarmtrace", "__pycache__", ".git", ".pyc")):
                     return
                 agent = _current_agent()
                 if agent is None:
