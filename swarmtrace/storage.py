@@ -124,7 +124,7 @@ def save_trace(
     Persist one trace row.
 
     ``kind``/``agent_id``/``agent_name`` classify the span and attribute it
-    to an agent — see :mod:`_tracer_ref` for the taxonomy. Callers that
+    to an agent — see :mod:`swarmtrace.tracer` for the taxonomy. Callers that
     don't pass these (e.g. ad-hoc instrumentation outside ``@observe``) get
     ``kind="function"`` and are attributed to themselves, so they never show
     up as a phantom "agent" on the dashboard.
