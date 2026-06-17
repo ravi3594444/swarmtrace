@@ -1,5 +1,5 @@
 import sys
-from tracely.storage import get_traces, get_by_id
+from swarmtrace.storage import get_traces, get_by_id
 
 DEFAULT_VIEW_LIMIT = 100
 

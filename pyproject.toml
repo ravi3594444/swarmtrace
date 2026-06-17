@@ -24,15 +24,15 @@ budget     = ["tiktoken"]
 all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken"]
 
 [project.scripts]
-swarmtrace = "tracely.cli:view"
-swarmtrace-export = "tracely.export:main"
-swarmtrace-replay = "tracely.cli:main_replay"
+swarmtrace = "swarmtrace.cli:view"
+swarmtrace-export = "swarmtrace.export:main"
+swarmtrace-replay = "swarmtrace.cli:main_replay"
 
 [tool.setuptools]
-packages = ["tracely"]
+packages = ["swarmtrace"]
 
 [tool.setuptools.package-data]
-tracely = ["py.typed"]
+swarmtrace = ["py.typed"]
 
 [tool.ruff]
 line-length = 100

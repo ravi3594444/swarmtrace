@@ -1,7 +1,7 @@
-from tracely.storage import get_traces
+from swarmtrace.storage import get_traces
 
-# replay() lives in tracely.cli — import from there to avoid duplication.
-from tracely.cli import replay  # noqa: F401  (re-exported for backwards compat)
+# replay() lives in swarmtrace.cli — import from there to avoid duplication.
+from swarmtrace.cli import replay  # noqa: F401  (re-exported for backwards compat)
 
 
 def show_failures():
@@ -19,4 +19,4 @@ def show_failures():
         id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name = t
         print(f"{id_:<10} {func:<20} {str(error)[:38]:<40} {timestamp}")
     print(f"\nTotal failures: {len(failed)}")
-    print("\nReplay any failure: from tracely.replay import replay; replay('id')")
+    print("\nReplay any failure: from swarmtrace.replay import replay; replay('id')")

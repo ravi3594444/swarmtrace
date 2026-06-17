@@ -1,14 +1,14 @@
 import time
 import uuid
 from datetime import datetime, timezone
-from tracely.storage import save_trace
-from tracely.tracer import _parent_ctx, _current_parent, _current_agent
+from swarmtrace.storage import save_trace
+from swarmtrace.tracer import _parent_ctx, _current_parent, _current_agent
 
 def scrape(url: str, verbose=True):
     """
     Trace a web scraping call using Scrapling.
     Usage:
-        from tracely.scraper import scrape
+        from swarmtrace.scraper import scrape
         result = scrape("https://news.ycombinator.com")
 
     Raises the underlying exception on failure (after saving the trace)

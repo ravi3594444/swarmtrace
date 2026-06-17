@@ -8,8 +8,8 @@ export async function GET() {
   return NextResponse.json({
     integrations: [
       {
-        id: "tracely-observe",
-        name: "tracely @observe",
+        id: "swarmtrace-observe",
+        name: "swarmtrace @observe",
         connected: true,
         description: "Auto-traces all decorated functions",
       },

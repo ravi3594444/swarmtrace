@@ -12,7 +12,7 @@ export async function GET() {
     )
 
     // ── Identify "agents" ──────────────────────────────────────────────────
-    // tracely >= 0.3.0 stamps every span with a `kind`
+    // swarmtrace >= 0.3.0 stamps every span with a `kind`
     // ('agent' | 'tool' | 'llm' | 'function') and an `agent_id`/`agent_name`
     // — the id/name of the @observe(kind="agent") span it belongs to (its
     // own id, for agent spans themselves). Older SDK versions and direct

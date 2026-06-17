@@ -1,7 +1,7 @@
 export const runtime = 'edge'
 
 // ── FOV event ingest ──────────────────────────────────────────────────────────
-// Receives live agent activity events from tracely.fov and inserts them into
+// Receives live agent activity events from swarmtrace.fov and inserts them into
 // the agent_events Supabase table.  Supabase Realtime then pushes to the
 // browser via WebSocket — Vercel is completely out of the real-time path.
 //

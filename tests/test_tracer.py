@@ -4,7 +4,7 @@ import asyncio
 
 import pytest
 
-import tracely.tracer as tracer
+import swarmtrace.tracer as tracer
 
 
 @pytest.fixture()
