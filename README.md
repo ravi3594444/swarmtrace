@@ -26,7 +26,7 @@ pip install swarmtrace
 ## Quick Start
 
 ```python
-from tracely import observe
+from swarmtrace import observe
 
 @observe
 def my_agent(question):
@@ -48,7 +48,7 @@ Every call is recorded — latency, tokens, cost, errors. Nothing else to config
 Wrap your agent with `@observe`. Any LLM or tool calls inside it get tagged with `kind="llm"` or `kind="tool"` so they roll up into the agent's stats — they never appear as phantom agents on the dashboard.
 
 ```python
-from tracely import observe, init
+from swarmtrace import observe, init
 
 init(api_key="your-key", endpoint="https://swarmtrace.vercel.app")
 
@@ -73,19 +73,19 @@ def search_web(q):
 ## Quickstart — inject into any agent in 2 lines
 
 ```python
-import tracely
-tracely.init()              # auto-detects OpenAI, Anthropic, Gemini, LiteLLM
+import swarmtrace
+swarmtrace.init()              # auto-detects OpenAI, Anthropic, Gemini, LiteLLM
 ```
 
 That's all. Now decorate your top-level function:
 
 ```python
-@tracely.observe
+@swarmtrace.observe
 def my_agent(prompt):
     return openai_client.chat.completions.create(...)  # traced automatically
 ```
 
-`tracely.init()` patches installed LLM clients so every raw LLM call is
+`swarmtrace.init()` patches installed LLM clients so every raw LLM call is
 recorded as `kind="llm"` — with latency, model, tokens, and cost — and
 attributed to whatever agent is currently running. You don't decorate the
 LLM call. You don't pick a `kind`. You don't configure anything else.
@@ -93,13 +93,13 @@ LLM call. You don't pick a `kind`. You don't configure anything else.
 **Single agent**
 
 ```python
-import tracely
-tracely.init()
+import swarmtrace
+swarmtrace.init()
 
 from openai import OpenAI
 client = OpenAI()
 
-@tracely.observe                    # one decorator. that's it.
+@swarmtrace.observe                    # one decorator. that's it.
 def my_agent(prompt):
     return client.chat.completions.create(
         model="gpt-4o-mini",
@@ -114,18 +114,18 @@ Dashboard: one "my_agent" card with tokens, cost, latency, error rate.
 **Multi-agent swarm**
 
 ```python
-import tracely
-tracely.init()
+import swarmtrace
+swarmtrace.init()
 
-@tracely.observe                    # own card on the dashboard
+@swarmtrace.observe                    # own card on the dashboard
 def researcher(q):
     return client.chat.completions.create(model="gpt-4o-mini", messages=[...])
 
-@tracely.observe                    # own card
+@swarmtrace.observe                    # own card
 def summarizer(text):
     return client.chat.completions.create(model="gpt-4o-mini", messages=[...])
 
-@tracely.observe                    # own card — orchestrator
+@swarmtrace.observe                    # own card — orchestrator
 def orchestrator(q):
     research = researcher(q)
     return summarizer(research)
@@ -147,7 +147,7 @@ into the agent that ran them, instead of cluttering the Agents page.
 **Need separate cards for named sub-agents?** Add `kind="agent"` explicitly:
 
 ```python
-@tracely.observe(kind="agent")
+@swarmtrace.observe(kind="agent")
 def researcher(q): ...
 ```
 
@@ -159,7 +159,7 @@ but the dashboard works correctly without them.
 Every bare `@observe` is its own agent card. Nesting is handled automatically via contextvars — no IDs, no config.
 
 ```python
-from tracely import observe
+from swarmtrace import observe
 
 @observe
 def researcher(q):
@@ -212,7 +212,7 @@ tag them so they roll up into the calling agent's stats instead of
 showing up as their own (fake) agents:
 
 ```python
-from tracely import observe
+from swarmtrace import observe
 
 @observe(kind="llm")
 def call_llm(prompt):
@@ -242,7 +242,7 @@ separate entries on the Agents page, no matter how deeply nested.
 
 ```python
 import asyncio
-from tracely import observe
+from swarmtrace import observe
 
 @observe
 async def async_agent(q):
@@ -276,7 +276,7 @@ def agent(q):
 Custom or fine-tuned models:
 
 ```python
-from tracely import set_model_pricing
+from swarmtrace import set_model_pricing
 
 set_model_pricing("my-finetune", input_per_million=5.00, output_per_million=15.00)
 ```
@@ -288,7 +288,7 @@ set_model_pricing("my-finetune", input_per_million=5.00, output_per_million=15.0
 Stop runaway agents before they burn your budget.
 
 ```python
-from tracely import observe, budget
+from swarmtrace import observe, budget
 
 @observe
 @budget(max_tokens=10_000, on_exceed="warn")   # or "stop"
@@ -307,7 +307,7 @@ pip install swarmtrace[regression]
 ```
 
 ```python
-from tracely.regression import compare
+from swarmtrace.regression import compare
 
 compare(
     my_agent,
@@ -338,7 +338,7 @@ pip install swarmtrace[tools]
 ```
 
 ```python
-from tracely import ToolAttention
+from swarmtrace import ToolAttention
 
 ta = ToolAttention(tools=all_my_tools)
 
@@ -355,7 +355,7 @@ def agent(query):
 Send traces to the [SwarmTrace dashboard](https://swarmtrace.vercel.app) for live monitoring.
 
 ```python
-from tracely import init, observe
+from swarmtrace import init, observe
 
 init(
     api_key="your-swarmtrace-api-key",

@@ -6,7 +6,7 @@ across calls and warns (or hard-stops) when limits are approached.
 
 Usage::
 
-    from tracely.budget import budget, reset
+    from swarmtrace.budget import budget, reset
 
     @observe
     @budget(max_tokens=10_000, warn_at=0.8)

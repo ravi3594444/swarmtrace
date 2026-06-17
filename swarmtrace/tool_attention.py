@@ -1,7 +1,7 @@
 import json
 import numpy as np
-from tracely.storage import save_trace
-from tracely.tracer import _current_agent
+from swarmtrace.storage import save_trace
+from swarmtrace.tracer import _current_agent
 import uuid
 from datetime import datetime, timezone
 import time

@@ -14,8 +14,8 @@ import types
 
 import pytest
 
-import tracely.tracer as tracer
-import tracely.auto_instrument as ai
+import swarmtrace.tracer as tracer
+import swarmtrace.auto_instrument as ai
 
 
 @pytest.fixture()
@@ -62,7 +62,7 @@ def test_patch_openai_records_llm_trace_attributed_to_enclosing_agent(records, m
     monkeypatch.setattr(Completions, "create", lambda self, **kw: response)
 
     ai.patch_openai()
-    assert Completions.create.__tracely_patched__ is True
+    assert Completions.create.__swarmtrace_patched__ is True
 
     client = OpenAI(api_key="test")
 

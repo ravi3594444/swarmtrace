@@ -15,7 +15,7 @@ import sys
 import threading
 from typing import List, Optional, Tuple
 
-DB_PATH = os.environ.get("TRACELY_DB_PATH", os.path.expanduser("~/.tracely.db"))
+DB_PATH = os.environ.get("SWARMTRACE_DB_PATH", os.path.expanduser("~/.swarmtrace.db"))
 
 MAX_ROWS: int = 10_000
 PURGE_EVERY: int = 100      # Only COUNT(*) every N writes
@@ -26,7 +26,7 @@ TraceRow = Tuple  # (id, parent_id, function, args, output,
                   #  kind, agent_id, agent_name)
 
 # Columns added after the initial release. ALTER TABLE ADD COLUMN always
-# appends to the end, so pre-existing ~/.tracely.db files (created before
+# appends to the end, so pre-existing ~/.swarmtrace.db files (created before
 # kind/agent_id/agent_name existed) end up with the same column order as a
 # freshly created DB.
 _ADDED_COLUMNS: List[Tuple[str, str]] = [
@@ -124,7 +124,7 @@ def save_trace(
     Persist one trace row.
 
     ``kind``/``agent_id``/``agent_name`` classify the span and attribute it
-    to an agent — see :mod:`tracely.tracer` for the taxonomy. Callers that
+    to an agent — see :mod:`_tracer_ref` for the taxonomy. Callers that
     don't pass these (e.g. ad-hoc instrumentation outside ``@observe``) get
     ``kind="function"`` and are attributed to themselves, so they never show
     up as a phantom "agent" on the dashboard.

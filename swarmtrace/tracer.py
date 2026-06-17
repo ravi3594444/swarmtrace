@@ -3,7 +3,7 @@
 
 Usage::
 
-    from tracely import observe
+    from swarmtrace import observe
 
     @observe
     def my_agent(prompt: str) -> str:
@@ -62,8 +62,8 @@ from datetime import datetime, timezone
 from typing import Optional, Tuple
 from urllib.request import Request, urlopen
 
-from tracely.storage import save_trace
-from tracely.pricing import calculate_cost
+from swarmtrace.storage import save_trace
+from swarmtrace.pricing import calculate_cost
 
 # ---------------------------------------------------------------------------
 # Remote ingest configuration (lazy — env vars are read at call time)
@@ -81,7 +81,7 @@ def init(
     fov_watch_dir: str = ".",
 ) -> None:
     """
-    Configure tracely.
+    Configure swarmtrace.
 
     - ``api_key`` / ``endpoint``: explicit remote-ingest config, taking
       precedence over SWARMTRACE_API_KEY / SWARMTRACE_ENDPOINT env vars.
@@ -100,10 +100,10 @@ def init(
     if endpoint is not None:
         _endpoint = endpoint
     if auto_instrument:
-        from tracely.auto_instrument import patch_all
+        from swarmtrace.auto_instrument import patch_all
         patch_all()
     if fov:
-        from tracely.fov import patch_all as fov_patch_all
+        from swarmtrace.fov import patch_all as fov_patch_all
         fov_patch_all(watch_dir=fov_watch_dir)
 
 

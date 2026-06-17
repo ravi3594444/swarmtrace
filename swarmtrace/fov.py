@@ -7,11 +7,11 @@ on the SwarmTrace dashboard.  Zero changes to agent code required.
 
 Usage::
 
-    from tracely import init
+    from swarmtrace import init
     init(api_key="...", endpoint="...", fov=True)
 
     # or explicitly:
-    from tracely.fov import patch_all
+    from swarmtrace.fov import patch_all
     patch_all()
 
 What each patch captures
@@ -37,10 +37,10 @@ from datetime import datetime, timezone
 from typing import Optional
 
 # ── context from tracer ──────────────────────────────────────────────────────
-from tracely.tracer import _current_agent, _remote_config
+from swarmtrace.tracer import _current_agent, _remote_config
 
 # ── local event storage ──────────────────────────────────────────────────────
-from tracely.storage import _get_conn, _lock as _storage_lock
+from swarmtrace.storage import _get_conn, _lock as _storage_lock
 
 # ---------------------------------------------------------------------------
 # Local SQLite event table
@@ -600,7 +600,7 @@ def patch_filesystem(watch_dir: str = ".") -> bool:
         class _Handler(FileSystemEventHandler):
             def _emit(self, action: str, path: str):
                 # Skip noisy internals
-                if any(x in path for x in (".tracely", "__pycache__", ".git", ".pyc")):
+                if any(x in path for x in (.swarmtrace", "__pycache__", ".git", ".pyc")):
                     return
                 agent = _current_agent()
                 if agent is None:

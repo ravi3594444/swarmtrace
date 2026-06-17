@@ -1,7 +1,7 @@
 import json
 import csv
 import sys
-from tracely.storage import get_all_traces
+from swarmtrace.storage import get_all_traces
 
 
 def _traces_to_dicts(rows):

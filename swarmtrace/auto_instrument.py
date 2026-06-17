@@ -1,7 +1,7 @@
 """
 Optional auto-instrumentation for popular LLM client libraries.
 
-``tracely.init()`` (default ``auto_instrument=True``) calls :func:`patch_all`,
+``swarmtrace.init()`` (default ``auto_instrument=True``) calls :func:`patch_all`,
 which patches whichever of OpenAI, Anthropic, Gemini, and LiteLLM are
 installed, so raw LLM calls are traced as ``kind="llm"`` — attributed to
 whatever ``@observe``'d agent is currently running, or to themselves if
@@ -12,12 +12,12 @@ Production guarantees
 - **Non-blocking**: trace recording is enqueued onto the background sender
   thread, never on the calling thread. The LLM call's latency is unaffected.
 - **Idempotent**: each client method is only wrapped once — safe to call
-  ``patch_all()`` (or ``tracely.init()``) multiple times.
+  ``patch_all()`` (or ``swarmtrace.init()``) multiple times.
 - **Exception-transparent**: the original exception always propagates to the
   caller; the trace records the error string but never swallows or delays it.
 - **No content capture**: only metadata is recorded (model, latency, tokens,
   cost). Prompt/response content is never persisted by auto-instrumentation.
-- **fov-compatible**: checks ``__tracely_patched__`` before wrapping, so the
+- **fov-compatible**: checks ``__swarmtrace_patched__`` before wrapping, so the
   fov stream patches (which also wrap OpenAI) don't produce double traces.
 """
 
@@ -27,8 +27,8 @@ import time
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
-from tracely.pricing import calculate_cost
-import tracely.tracer as _tracer
+from swarmtrace.pricing import calculate_cost
+import swarmtrace.tracer as _tracer
 
 
 def _record_async(
@@ -73,11 +73,11 @@ def _record_async(
 
 
 def _already_patched(target) -> bool:
-    return getattr(target, "__tracely_patched__", False)
+    return getattr(target, "__swarmtrace_patched__", False)
 
 
 def _mark_patched(wrapper):
-    wrapper.__tracely_patched__ = True
+    wrapper.__swarmtrace_patched__ = True
     return wrapper
 
 

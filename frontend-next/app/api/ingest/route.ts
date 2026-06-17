@@ -139,7 +139,7 @@ function validateTrace(payload: unknown): { row?: Record<string, unknown>; error
   const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, MAX_TEXT_LEN) : '')
   const num  = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
-  // kind/agent_id/agent_name were added in tracely 0.3.0. Older SDK versions
+  // kind/agent_id/agent_name were added in swarmtrace 0.3.0. Older SDK versions
   // (or anything posting to /ingest directly) won't send them — default to
   // kind='agent', agent_id=id, agent_name=function, which reproduces the
   // pre-0.3.0 "every trace is its own agent" behavior exactly, so old

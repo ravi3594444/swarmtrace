@@ -189,7 +189,7 @@ function QuickSetup({ apiKeyPlaceholder }: { apiKeyPlaceholder?: string }) {
   const endpoint = typeof window !== 'undefined' ? `${window.location.origin}/api` : 'https://your-swarmtrace-url.vercel.app/api'
 
   const snippet = `import os
-from tracely import observe
+from swarmtrace import observe
 
 os.environ["SWARMTRACE_API_KEY"]  = "${keyDisplay}"
 os.environ["SWARMTRACE_ENDPOINT"] = "${endpoint}"
@@ -257,7 +257,7 @@ def my_agent(prompt: str) -> str:
           </div>
           <pre className="bg-surface-container-low border border-outline rounded-xl p-4 text-xs font-mono text-on-surface overflow-x-auto leading-relaxed whitespace-pre">
 {`import os
-from tracely import observe
+from swarmtrace import observe
 
 os.environ[`}<span className="text-primary">{`"SWARMTRACE_API_KEY"`}</span>{`]  = `}<span className="text-green-600 dark:text-green-400">{`"${keyDisplay}"`}</span>{`
 os.environ[`}<span className="text-primary">{`"SWARMTRACE_ENDPOINT"`}</span>{`] = `}<span className="text-green-600 dark:text-green-400">{`"${endpoint}"`}</span>{`
