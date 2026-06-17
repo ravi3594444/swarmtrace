@@ -3,14 +3,20 @@
 import { useEffect, useRef, useState } from 'react'
 import { createClient } from '@supabase/supabase-js'
 
-// ── Types ─────────────────────────────────────────────────────────────────────
+// ── Per-event data shapes ─────────────────────────────────────────────────────
+interface BrowserData  { method?: string; url?: string; args?: string[]; screenshot?: string; error?: string }
+interface LlmTokenData { token?: string; accumulated?: string }
+interface HttpData     { method?: string; url?: string; status_code?: number; error?: string }
+interface FileData     { action?: string; path?: string }
+type EventData = BrowserData | LlmTokenData | HttpData | FileData
+
 interface AgentEvent {
   id: string
   agent_id: string
   agent_name: string
   event_type: 'browser' | 'llm_token' | 'http' | 'file'
   status: 'started' | 'done' | 'error' | 'streaming' | 'info'
-  data: Record<string, unknown>
+  data: EventData
   timestamp: string
 }
 
@@ -39,18 +45,25 @@ const STATUS_COLOR: Record<string, string> = {
 function EventRow({ ev }: { ev: AgentEvent }) {
   const [expanded, setExpanded] = useState(false)
   const d = ev.data
-  const hasScreenshot = typeof d.screenshot === 'string' && d.screenshot.startsWith('data:')
-  const hasTokens = ev.event_type === 'llm_token' && typeof d.accumulated === 'string'
+
+  // Type-narrowed accessors — never fall through to 'unknown'
+  const screenshot  = (d as BrowserData).screenshot
+  const accumulated = (d as LlmTokenData).accumulated
+  const hasScreenshot = typeof screenshot === 'string' && screenshot.startsWith('data:')
+  const hasTokens     = ev.event_type === 'llm_token' && typeof accumulated === 'string'
 
   let label = ''
   if (ev.event_type === 'browser') {
-    label = `${d.method as string} ${(d.url as string || (d.args as string[])?.[0] || '').slice(0, 60)}`
+    const bd = d as BrowserData
+    label = `${bd.method ?? ''} ${(bd.url ?? bd.args?.[0] ?? '').slice(0, 60)}`
   } else if (ev.event_type === 'llm_token') {
-    label = `"${(d.token as string || '').slice(0, 40)}"`
+    label = `"${((d as LlmTokenData).token ?? '').slice(0, 40)}"`
   } else if (ev.event_type === 'http') {
-    label = `${d.method as string} ${(d.url as string || '').slice(0, 60)} ${d.status_code ?? ''}`
+    const hd = d as HttpData
+    label = `${hd.method ?? ''} ${(hd.url ?? '').slice(0, 60)} ${hd.status_code ?? ''}`
   } else if (ev.event_type === 'file') {
-    label = `${d.action as string} ${(d.path as string || '').split('/').slice(-2).join('/')}`
+    const fd = d as FileData
+    label = `${fd.action ?? ''} ${(fd.path ?? '').split('/').slice(-2).join('/')}`
   }
 
   const ts = new Date(ev.timestamp).toLocaleTimeString([], { hour12: false })
@@ -71,30 +84,32 @@ function EventRow({ ev }: { ev: AgentEvent }) {
         )}
       </div>
 
-      {expanded && hasTokens && (
+      {expanded && hasTokens && typeof accumulated === 'string' && (
         <div className="ml-7 text-xs text-zinc-400 font-mono bg-black/20 rounded p-2 whitespace-pre-wrap max-h-32 overflow-y-auto">
-          {d.accumulated as string}
+          {accumulated}
         </div>
       )}
 
-      {expanded && hasScreenshot && (
+      {expanded && hasScreenshot && typeof screenshot === 'string' && (
         <div className="ml-7 mt-1">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
-            src={d.screenshot as string}
-            alt={`browser screenshot — ${d.url}`}
+            src={screenshot}
+            alt={`browser screenshot — ${(d as BrowserData).url ?? ''}`}
             className="rounded-md border border-white/10 max-w-full"
             style={{ maxHeight: 300 }}
           />
-          {d.url && (
-            <p className="text-zinc-500 text-xs mt-1 font-mono truncate">{d.url as string}</p>
+          {(d as BrowserData).url && (
+            <p className="text-zinc-500 text-xs mt-1 font-mono truncate">
+              {(d as BrowserData).url}
+            </p>
           )}
         </div>
       )}
 
-      {expanded && ev.status === 'error' && d.error && (
+      {expanded && ev.status === 'error' && (
         <div className="ml-7 text-xs text-red-400 font-mono bg-red-500/10 rounded p-2">
-          {d.error as string}
+          {(d as BrowserData).error ?? (d as HttpData).error ?? 'Unknown error'}
         </div>
       )}
     </div>
@@ -114,7 +129,7 @@ export default function LiveActivity({ agentId, agentName, maxEvents = 200 }: Pr
   const [events, setEvents]       = useState<AgentEvent[]>([])
   const [connected, setConnected] = useState(false)
   const [filter, setFilter]       = useState<string>('all')
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const bottomRef  = useRef<HTMLDivElement>(null)
   const autoScroll = useRef(true)
 
   useEffect(() => {
