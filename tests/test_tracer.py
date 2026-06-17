@@ -135,15 +135,19 @@ def test_nested_tool_and_llm_calls_attribute_to_enclosing_agent(records):
 
 
 def test_nested_agents_each_get_their_own_agent_id(records):
-    @tracer.observe
+    """Multi-agent: each sub-agent uses explicit kind="agent" so it gets its
+    own dashboard card. Bare @observe on orchestrator resolves to "agent"
+    since nothing is running yet when it starts."""
+
+    @tracer.observe(kind="agent")
     def researcher(q):
         return "research"
 
-    @tracer.observe
+    @tracer.observe(kind="agent")
     def summarizer(text):
         return "summary"
 
-    @tracer.observe
+    @tracer.observe           # auto → "agent" (top of call stack)
     def orchestrator(q):
         researcher(q)
         return summarizer("x")
@@ -152,7 +156,7 @@ def test_nested_agents_each_get_their_own_agent_id(records):
 
     by_func = {r[2]: r for r in records}
 
-    # Each is its own agent, with its own agent_id == its own trace id.
+    # Each is its own agent with its own agent_id.
     for name in ("orchestrator", "researcher", "summarizer"):
         kind, agent_id, agent_name = by_func[name][-3:]
         assert kind == "agent"

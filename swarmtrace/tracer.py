@@ -202,7 +202,20 @@ def _current_agent() -> Optional[Tuple[str, str]]:
 # Shared record-and-save logic (keeps sync + async wrappers DRY)
 # ---------------------------------------------------------------------------
 
-_VALID_KINDS = {"agent", "tool", "llm", "function"}
+_VALID_KINDS  = {"agent", "tool", "llm", "function"}
+_KIND_CHOICES = _VALID_KINDS | {"auto"}
+
+
+def _resolve_kind(kind: str, enclosing_agent: Optional[Tuple[str, str]]) -> str:
+    """Resolve ``kind="auto"`` at call time.
+
+    - ``"auto"`` + no agent running  → ``"agent"`` (this call IS the agent)
+    - ``"auto"`` + agent already running → ``"function"`` (rolls up into it)
+    - Any explicit kind → returned unchanged
+    """
+    if kind != "auto":
+        return kind
+    return "agent" if enclosing_agent is None else "function"
 
 
 def _safe_str(obj, max_len: int = 4000) -> str:
@@ -312,31 +325,123 @@ def _safe_flush(*flush_args) -> None:
 # Decorator
 # ---------------------------------------------------------------------------
 
-def observe(func=None, *, kind: str = "agent"):
+def observe(func=None, *, kind: str = "auto"):
     """
     Decorator that records every call (sync or async) to the traces DB.
 
-    Can be used bare (``@observe``, which defaults to ``kind="agent"``) or
-    with an explicit kind::
+    Bare ``@observe`` defaults to ``kind="auto"``:
+    - If no agent is currently running → this call becomes ``"agent"`` (its own dashboard card).
+    - If called from inside another ``@observe``'d function → rolls up as ``"function"``
+      (tokens/cost/errors fold into the parent agent, no extra card).
 
-        @observe(kind="tool")
+    This means you can ``@observe`` every function freely — helpers never
+    create phantom agent cards. Only use an explicit kind to override::
+
+        @observe(kind="agent")   # always its own card even when nested
+        def researcher(q): ...
+
+        @observe(kind="tool")    # explicit label, still rolls up
         def search_web(q): ...
-
-    See the module docstring for the full ``kind`` taxonomy and how
-    ``agent_id``/``agent_name`` attribution works.
-
-    Propagates parent-child relationships automatically via contextvars,
-    so nested ``@observe`` calls are linked in the tree, and attributes
-    every non-agent span to its nearest enclosing agent span.
     """
     if func is None:
         return lambda f: observe(f, kind=kind)
 
-    if kind not in _VALID_KINDS:
+    if kind not in _KIND_CHOICES:
         raise ValueError(
             f"observe(kind={kind!r}) is invalid — kind must be one of "
-            f"{sorted(_VALID_KINDS)}"
+            f"{sorted(_KIND_CHOICES)}"
         )
+
+    if asyncio.iscoroutinefunction(func):
+        @functools.wraps(func)
+        async def async_wrapper(*args, **kwargs):
+            trace_id = _build_trace_id()
+            parent_id = _current_parent()
+            enclosing_agent = _current_agent()
+            timestamp = datetime.now(timezone.utc).isoformat()
+            parent_token = _parent_ctx.set(trace_id)
+
+            resolved_kind = _resolve_kind(kind, enclosing_agent)
+
+            if resolved_kind == "agent":
+                agent_id, agent_name = trace_id, func.__name__
+                agent_token = _agent_ctx.set((agent_id, agent_name))
+            else:
+                agent_id, agent_name = enclosing_agent or (trace_id, func.__name__)
+                agent_token = None
+
+            start = time.perf_counter()
+            output: Optional[str] = None
+            error: Optional[str] = None
+            in_tok = out_tok = 0
+            cost = 0.0
+
+            try:
+                result = await func(*args, **kwargs)
+                output = _safe_str(result)
+                in_tok, out_tok, cost = _extract_token_info(result)
+                return result
+            except Exception as exc:
+                error = str(exc)
+                raise
+            finally:
+                _safe_flush(
+                    trace_id, parent_id, func.__name__,
+                    args, kwargs, output,
+                    round(time.perf_counter() - start, 3),
+                    error, timestamp, in_tok, out_tok, cost,
+                    resolved_kind, agent_id, agent_name,
+                )
+                _parent_ctx.reset(parent_token)
+                if agent_token is not None:
+                    _agent_ctx.reset(agent_token)
+
+        return async_wrapper
+
+    @functools.wraps(func)
+    def sync_wrapper(*args, **kwargs):
+        trace_id = _build_trace_id()
+        parent_id = _current_parent()
+        enclosing_agent = _current_agent()
+        timestamp = datetime.now(timezone.utc).isoformat()
+        parent_token = _parent_ctx.set(trace_id)
+
+        resolved_kind = _resolve_kind(kind, enclosing_agent)
+
+        if resolved_kind == "agent":
+            agent_id, agent_name = trace_id, func.__name__
+            agent_token = _agent_ctx.set((agent_id, agent_name))
+        else:
+            agent_id, agent_name = enclosing_agent or (trace_id, func.__name__)
+            agent_token = None
+
+        start = time.perf_counter()
+        output: Optional[str] = None
+        error: Optional[str] = None
+        in_tok = out_tok = 0
+        cost = 0.0
+
+        try:
+            result = func(*args, **kwargs)
+            output = _safe_str(result)
+            in_tok, out_tok, cost = _extract_token_info(result)
+            return result
+        except Exception as exc:
+            error = str(exc)
+            raise
+        finally:
+            _safe_flush(
+                trace_id, parent_id, func.__name__,
+                args, kwargs, output,
+                round(time.perf_counter() - start, 3),
+                error, timestamp, in_tok, out_tok, cost,
+                resolved_kind, agent_id, agent_name,
+            )
+            _parent_ctx.reset(parent_token)
+            if agent_token is not None:
+                _agent_ctx.reset(agent_token)
+
+    return sync_wrapper
 
     if asyncio.iscoroutinefunction(func):
         @functools.wraps(func)
