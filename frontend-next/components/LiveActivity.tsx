@@ -1,24 +1,13 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { useRef, useState } from 'react'
+import { useAgentEvents, AgentEvent, EventData } from '@/contexts/RealtimeContext'
 
-// ── Per-event data shapes ─────────────────────────────────────────────────────
+// ── Per-event data shapes (re-exported from context for convenience) ──────────
 interface BrowserData  { method?: string; url?: string; args?: string[]; screenshot?: string; error?: string }
 interface LlmTokenData { token?: string; accumulated?: string }
 interface HttpData     { method?: string; url?: string; status_code?: number; error?: string }
 interface FileData     { action?: string; path?: string }
-type EventData = BrowserData | LlmTokenData | HttpData | FileData
-
-interface AgentEvent {
-  id: string
-  agent_id: string
-  agent_name: string
-  event_type: 'browser' | 'llm_token' | 'http' | 'file'
-  status: 'started' | 'done' | 'error' | 'streaming' | 'info'
-  data: EventData
-  timestamp: string
-}
 
 interface Props {
   agentId: string
@@ -26,7 +15,7 @@ interface Props {
   maxEvents?: number
 }
 
-// ── Icons ────────────────────────────────────────────────────────────────────
+// ── Icons ─────────────────────────────────────────────────────────────────────
 const ICONS: Record<string, string> = {
   browser:   '🌐',
   llm_token: '✨',
@@ -44,9 +33,8 @@ const STATUS_COLOR: Record<string, string> = {
 
 function EventRow({ ev }: { ev: AgentEvent }) {
   const [expanded, setExpanded] = useState(false)
-  const d = ev.data
+  const d = ev.data as EventData
 
-  // Type-narrowed accessors — never fall through to 'unknown'
   const screenshot  = (d as BrowserData).screenshot
   const accumulated = (d as LlmTokenData).accumulated
   const hasScreenshot = typeof screenshot === 'string' && screenshot.startsWith('data:')
@@ -116,66 +104,15 @@ function EventRow({ ev }: { ev: AgentEvent }) {
   )
 }
 
-// ── Supabase realtime client (browser-safe — uses anon key) ──────────────────
-function getSupabaseClient() {
-  const url  = process.env.NEXT_PUBLIC_SUPABASE_URL
-  const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
-  if (!url || !anon) return null
-  return createClient(url, anon)
-}
-
 // ── Main component ─────────────────────────────────────────────────────────────
-export default function LiveActivity({ agentId, agentName, maxEvents = 200 }: Props) {
-  const [events, setEvents]       = useState<AgentEvent[]>([])
-  const [connected, setConnected] = useState(false)
-  const [filter, setFilter]       = useState<string>('all')
+export default function LiveActivity({ agentId, agentName }: Props) {
+  // useAgentEvents reads from the shared RealtimeProvider — the channel stays
+  // open even when this component unmounts (page navigation). On return, events
+  // that arrived during navigation are already in the store.
+  const { events, connected } = useAgentEvents(agentId)
+
+  const [filter, setFilter]   = useState<string>('all')
   const bottomRef  = useRef<HTMLDivElement>(null)
-  const autoScroll = useRef(true)
-
-  useEffect(() => {
-    const sb = getSupabaseClient()
-    if (!sb) return
-
-    // Load last 50 historical events on mount
-    sb.from('agent_events')
-      .select('*')
-      .eq('agent_id', agentId)
-      .order('timestamp', { ascending: false })
-      .limit(50)
-      .then(({ data }) => {
-        if (data) setEvents((data as AgentEvent[]).reverse())
-      })
-
-    // Subscribe to realtime
-    const channel = sb
-      .channel(`fov:${agentId}`)
-      .on(
-        'postgres_changes',
-        {
-          event:  'INSERT',
-          schema: 'public',
-          table:  'agent_events',
-          filter: `agent_id=eq.${agentId}`,
-        },
-        (payload) => {
-          const ev = payload.new as AgentEvent
-          setEvents(prev => {
-            const next = [...prev, ev]
-            return next.length > maxEvents ? next.slice(-maxEvents) : next
-          })
-        }
-      )
-      .subscribe(status => setConnected(status === 'SUBSCRIBED'))
-
-    return () => { sb.removeChannel(channel) }
-  }, [agentId, maxEvents])
-
-  // Auto-scroll to bottom when new events arrive
-  useEffect(() => {
-    if (autoScroll.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
-    }
-  }, [events])
 
   const filtered = filter === 'all'
     ? events
@@ -206,7 +143,7 @@ export default function LiveActivity({ agentId, agentName, maxEvents = 200 }: Pr
 
       {/* Filter bar */}
       <div className="flex gap-1 px-3 py-2 border-b border-white/5 shrink-0 overflow-x-auto">
-        {['all', 'browser', 'llm_token', 'http', 'file'].map(f => (
+        {(['all', 'browser', 'llm_token', 'http', 'file'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
@@ -215,19 +152,15 @@ export default function LiveActivity({ agentId, agentName, maxEvents = 200 }: Pr
                 ? 'bg-white/15 text-white'
                 : 'text-zinc-500 hover:text-zinc-300'}`}
           >
-            {f === 'all' ? `all (${events.length})` : `${ICONS[f]} ${f} (${counts[f] ?? 0})`}
+            {f === 'all'
+              ? `all (${events.length})`
+              : `${ICONS[f]} ${f} (${counts[f] ?? 0})`}
           </button>
         ))}
       </div>
 
       {/* Event list */}
-      <div
-        className="flex-1 overflow-y-auto py-1"
-        onScroll={e => {
-          const el = e.currentTarget
-          autoScroll.current = el.scrollTop + el.clientHeight >= el.scrollHeight - 50
-        }}
-      >
+      <div className="flex-1 overflow-y-auto py-1">
         {filtered.length === 0 ? (
           <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
             {connected ? 'Waiting for agent activity…' : 'Connecting to Supabase Realtime…'}
