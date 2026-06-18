@@ -95,23 +95,32 @@ END;
 $$;
 
 -- ─────────────────────────────────────────────────────────────────────────────
--- REQUIRED: Clerk JWT → Supabase setup (cannot be done via SQL)
+-- REQUIRED: Native Clerk + Supabase integration (cannot be done via SQL)
 -- Without this, all browser Realtime subscriptions are silent (no events).
 --
--- Step 1 — Clerk dashboard (https://dashboard.clerk.com):
---   1. Go to Configure → JWT Templates → New template → Supabase
---   2. Set Signing algorithm: HS256
---   3. Copy the signing secret shown (you'll need it in step 2)
---   4. Add this claim under "Claims":
---        { "role": "authenticated" }
+-- ⚠️  DO NOT use the legacy "JWT Template" method — it shares Supabase's
+-- master JWT secret with Clerk, which is a security risk and causes downtime
+-- on secret rotation. Both Clerk and Supabase have deprecated it.
+--
+-- Modern approach (uses Clerk's public JWKS — no shared secrets):
+--
+-- Step 1 — Clerk Dashboard (https://dashboard.clerk.com):
+--   1. Go to Integrations (or Configure → Integrations)
+--   2. Find the Supabase integration card and click Configure
+--   3. Copy your Clerk Domain
+--      (looks like: https://your-app.clerk.accounts.dev)
+--
+-- Step 2 — Supabase Dashboard (https://supabase.com/dashboard):
+--   1. Go to Authentication → Providers (or Sign In → Providers)
+--   2. Find "Clerk" in the provider list
+--   3. Toggle it ON
+--   4. Paste your Clerk Domain from Step 1
 --   5. Save
 --
--- Step 2 — Supabase dashboard (https://supabase.com/dashboard):
---   1. Go to Project Settings → API → JWT Settings
---   2. Paste the signing secret from Clerk step 3 into "JWT Secret"
---   3. Save
+-- That's it. Supabase will now validate Clerk tokens via Clerk's public
+-- JWKS endpoint automatically. No secrets change hands.
 --
--- Step 3 — Next.js code (RealtimeContext.tsx):
---   The Supabase client needs to use the Clerk token instead of the anon key.
---   This is handled in the next migration's code changes (see commit).
+-- The code (RealtimeContext.tsx) calls getToken() with no template param —
+-- the standard Clerk session token is accepted directly by Supabase once
+-- the native integration is enabled.
 -- ─────────────────────────────────────────────────────────────────────────────
