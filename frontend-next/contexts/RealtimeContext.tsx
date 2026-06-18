@@ -90,14 +90,18 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     if (!url || !anon) return null
 
-    // Re-use existing client if already created
     if (sb.current) return sb.current
 
     try {
-      // 'supabase' template must be configured in Clerk dashboard.
-      // Falls back to anon (no RLS) if not set up yet — Realtime events
-      // will be empty until the JWT template is configured.
-      const token = await getToken({ template: 'supabase' }).catch(() => null)
+      // Native Clerk+Supabase integration (no JWT template needed):
+      // getToken() with no args returns the standard Clerk session token.
+      // Supabase validates it via Clerk's public JWKS endpoint — no shared
+      // secrets, no security risk, no downtime on secret rotation.
+      //
+      // One-time setup required (see supabase/migrations/0005_production_fixes.sql):
+      //   1. Clerk Dashboard → Integrations → Supabase → copy your Clerk Domain
+      //   2. Supabase Dashboard → Authentication → Providers → Clerk → paste domain + enable
+      const token = await getToken().catch(() => null)
       const client = createClient(url, anon, {
         global: token
           ? { headers: { Authorization: `Bearer ${token}` } }
