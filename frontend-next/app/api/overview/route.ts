@@ -39,16 +39,19 @@ export async function GET() {
       ? parseFloat((((rows.length - errorCount) / rows.length) * 100).toFixed(1))
       : 100
 
-    // ── Per-function stats — derived first so active_agents is correct ────────
-    const byFn: Record<string, { total: number; errors: number }> = {}
+    // ── Per-function stats ────────────────────────────────────────────────────
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+
+    const byFn: Record<string, { total: number; errors: number; lastSeen: string }> = {}
     rows.forEach((r: any) => {
-      const s = (byFn[r.function] ||= { total: 0, errors: 0 })
+      const s = (byFn[r.agent_name || r.function] ||= { total: 0, errors: 0, lastSeen: r.timestamp })
       s.total += 1
       if (r.error) s.errors += 1
+      if (r.timestamp > s.lastSeen) s.lastSeen = r.timestamp
     })
 
-    // active_agents = number of distinct decorated functions seen, not raw trace count
-    const active_agents = Object.keys(byFn).length
+    // active_agents = agents with a trace in the last 5 minutes only
+    const active_agents = Object.values(byFn).filter(s => s.lastSeen >= fiveMinutesAgo).length
 
     // ── Real activity — bucket traces into 6-hour UTC windows ─────────────────
     const hourBuckets: Record<string, number> = {
@@ -71,7 +74,9 @@ export async function GET() {
         id:     `agt-${i}`,
         name,
         score:  parseFloat((((s.total - s.errors) / s.total) * 100).toFixed(1)),
-        status: s.errors === 0 ? 'ACTIVE' : 'DEGRADED',
+        status: s.lastSeen >= fiveMinutesAgo
+          ? (s.errors === 0 ? 'ACTIVE' : 'DEGRADED')
+          : 'IDLE',
       }))
 
     const events = rows.slice(0, 5).map((r: any) => ({
