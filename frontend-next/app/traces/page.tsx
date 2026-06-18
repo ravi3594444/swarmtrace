@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
+import { PageHeader } from '@/components/page-header'
 import { Search, X, AlertCircle } from 'lucide-react'
 import { fetchTraces, formatTime } from '@/lib/api'
 import { SkeletonTableRow } from '@/components/skeleton'
@@ -154,36 +155,29 @@ export default function TracesPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Traces</h1>
-            <p className="text-muted-foreground">Detailed execution traces of individual agent runs and requests.</p>
-          </div>
+      <PageHeader
+        title="Traces"
+        description="Execution traces of individual agent runs"
+        status={{ label: liveMode ? (realtimeOk ? 'Live' : 'Connecting…') : 'Paused', variant: liveMode && realtimeOk ? 'active' : 'idle' }}
+        actions={
           <button
             onClick={() => setLiveMode(!liveMode)}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full font-semibold text-sm transition-colors ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium border transition-colors ${
               liveMode
-                ? 'bg-primary text-primary-foreground'
-                : 'bg-surface-container-high text-on-surface-variant'
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-background text-muted-foreground border-border hover:border-foreground/30'
             }`}
           >
-            {liveMode ? (
-              <>
-                <span className="relative flex h-2 w-2">
-                  <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${realtimeOk ? 'bg-green-300' : 'bg-primary-foreground'}`} />
-                  <span className={`relative inline-flex rounded-full h-2 w-2 ${realtimeOk ? 'bg-green-400' : 'bg-primary-foreground'}`} />
-                </span>
-                {realtimeOk ? 'Live' : 'Connecting…'}
-              </>
-            ) : '○ Live'}
+            <span className={`w-1.5 h-1.5 rounded-full ${liveMode && realtimeOk ? 'bg-emerald-400 animate-pulse' : 'bg-muted-foreground'}`} />
+            {liveMode ? 'Live' : 'Go Live'}
           </button>
-        </div>
+        }
+      />
+      <div className="p-5 space-y-4">
 
         {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4" />
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             <span>API unavailable — showing cached data</span>
           </div>
         )}

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { createClient } from '@supabase/supabase-js'
 import { DashboardLayout } from '@/components/dashboard-layout'
+import { PageHeader } from '@/components/page-header'
 import {
   BarChart, Bar, LineChart, Line,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -224,44 +225,34 @@ export default function MetricsPage() {
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-8">
-
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Metrics</h1>
-            <p className="text-muted-foreground">Token consumption and cost — live when you&apos;re here.</p>
-          </div>
-          <div className="flex items-center gap-3">
-            {/* Live indicator */}
-            <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border
-              ${realtimeOk
-                ? 'border-green-500/40 text-green-400 bg-green-500/10'
-                : 'border-outline text-on-surface-variant bg-surface-container'}`}>
-              {realtimeOk
-                ? <><Wifi className="w-3 h-3" /><span>Live</span></>
-                : <><WifiOff className="w-3 h-3" /><span>Connecting…</span></>}
-            </div>
+      <PageHeader
+        title="Metrics"
+        description="Token consumption and cost analytics"
+        status={{ label: realtimeOk ? 'Live' : 'Connecting…', variant: realtimeOk ? 'active' : 'idle' }}
+        actions={
+          <div className="flex items-center gap-2">
             <button
               onClick={() => { setExporting('csv'); exportCSV(data); setTimeout(() => setExporting(null), 1000) }}
               disabled={loading || exporting !== null}
-              className="flex items-center gap-2 px-4 py-2 rounded-full border border-border text-on-surface-variant hover:border-outline transition-colors text-sm font-medium disabled:opacity-50">
-              {exporting === 'csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              <span>CSV</span>
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md border border-border text-xs font-medium text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40">
+              {exporting === 'csv' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Download className="w-3.5 h-3.5" />}
+              CSV
             </button>
             <button
               onClick={async () => { setExporting('pdf'); await exportPDF(data); setTimeout(() => setExporting(null), 1000) }}
               disabled={loading || exporting !== null}
-              className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity text-sm disabled:opacity-50">
-              {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-              <span>Export PDF</span>
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-primary text-primary-foreground text-xs font-medium hover:opacity-90 transition-opacity disabled:opacity-40">
+              {exporting === 'pdf' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileText className="w-3.5 h-3.5" />}
+              PDF
             </button>
           </div>
-        </div>
+        }
+      />
+      <div className="p-5 space-y-5">
 
         {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4" />
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             <span>Could not reach API — data may be stale</span>
           </div>
         )}
