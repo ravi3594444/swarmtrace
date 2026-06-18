@@ -28,37 +28,38 @@ export async function GET() {
     const groups: Record<string, any[]> = {}
     rows.forEach((r: any) => { (groups[r.agent_id] ||= []).push(r) })
 
+    const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+
     const agents = Object.entries(groups)
       .filter(([id, traces]) => traces.some((t: any) => t.kind === 'agent' && t.id === id))
       .map(([id, traces]) => {
-        // `traces` keeps the original timestamp.desc order, so traces[0] is
-        // this agent's most recent activity at any depth (run, LLM call, or
-        // tool call), and runs[0] is its most recent top-level invocation.
-        const runs = traces.filter((t: any) => t.kind === 'agent' && t.id === id)
+        const runs        = traces.filter((t: any) => t.kind === 'agent' && t.id === id)
         const latestRun   = runs[0]
         const latestEvent = traces[0]
+        const isRecent    = latestEvent.timestamp >= fiveMinutesAgo
 
-        const errorCount = traces.filter((t: any) => t.error).length
-        const tokens = traces.reduce(
-          (acc: number, t: any) => acc + (t.input_tokens || 0) + (t.output_tokens || 0),
-          0
+        const errorCount  = traces.filter((t: any) => t.error).length
+        const tokens      = traces.reduce(
+          (acc: number, t: any) => acc + (t.input_tokens || 0) + (t.output_tokens || 0), 0
         )
         const successRate = ((traces.length - errorCount) / traces.length) * 100
 
+        const status = latestEvent.error
+          ? 'ERROR'
+          : isRecent ? 'RUNNING' : 'IDLE'
+
         return {
           id,
-          name: latestRun.agent_name,
-          // ERROR if the agent's most recent activity at ANY depth failed —
-          // e.g. a tool/LLM call inside the run — not just the run itself.
-          status: latestEvent.error ? 'ERROR' : 'RUNNING',
-          tasks: runs.length,
-          tokens: `${Math.round(tokens / 1000)}K`,
-          lastActive: latestEvent.timestamp,
-          uptime: 'n/a',
+          name:         latestRun.agent_name,
+          status,
+          tasks:        runs.length,
+          tokens:       `${Math.round(tokens / 1000)}K`,
+          lastActive:   latestEvent.timestamp,
+          uptime:       'n/a',
           success_rate: `${successRate.toFixed(1)}%`,
           current_task: latestEvent.error
             ? `Error in ${latestEvent.function}: ${latestEvent.error.substring(0, 80)}`
-            : latestEvent.args
+            : isRecent && latestEvent.args
               ? `${latestEvent.function}: ${latestEvent.args.substring(0, 60)}`
               : 'Idle',
         }
