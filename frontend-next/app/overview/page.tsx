@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
+import { PageHeader } from '@/components/page-header'
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
 import { AlertCircle, Activity, Cpu, Gauge, Zap } from 'lucide-react'
 import { fetchOverview, formatTime } from '@/lib/api'
@@ -284,23 +285,17 @@ export default function OverviewPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6">
-
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Overview</h1>
-            <p className="text-muted-foreground">A real-time snapshot of your swarm.</p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-on-surface-variant mt-1">
-            <LiveDot active={realtimeOk} />
-            <span>{realtimeOk ? 'Live' : REALTIME_CONFIGURED ? 'Connecting…' : 'Offline'}</span>
-          </div>
-        </div>
+      <PageHeader
+        title="Overview"
+        description="Real-time snapshot of your swarm"
+        status={{ label: realtimeOk ? 'Live' : 'Offline', variant: realtimeOk ? 'active' : 'idle' }}
+        badge={error ? 'Cached' : undefined}
+      />
+      <div className="p-5 space-y-5">
 
         {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4" />
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             <span>API unavailable — showing cached data</span>
           </div>
         )}

@@ -3,6 +3,7 @@
 import { useState, useEffect, useMemo } from 'react'
 import React from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
+import { PageHeader } from '@/components/page-header'
 import { Search, AlertCircle } from 'lucide-react'
 import { fetchAgents } from '@/lib/api'
 import { SkeletonTableRow } from '@/components/skeleton'
@@ -65,18 +66,16 @@ export default function AgentsPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Agents</h1>
-            <p className="text-muted-foreground">Manage and monitor your autonomous agents.</p>
-          </div>
-        </div>
+      <PageHeader
+        title="Agents"
+        description="Monitor your autonomous agents"
+        status={{ label: error ? 'Cached' : `${agents.length} agents`, variant: error ? 'idle' : 'info' }}
+      />
+      <div className="p-5 space-y-4">
 
         {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4" />
+          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-500/10 border border-red-500/20 text-red-500 text-xs">
+            <AlertCircle className="w-3.5 h-3.5 shrink-0" />
             <span>API unavailable — showing cached data</span>
           </div>
         )}

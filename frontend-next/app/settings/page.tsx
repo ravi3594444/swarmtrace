@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
+import { PageHeader } from '@/components/page-header'
 import { Bell, Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Terminal, BookOpen } from 'lucide-react'
 import { fetchApiKeys, createApiKey, revokeApiKey, fetchIntegrations, fetchBillingInfo } from '@/lib/api'
 import { SkeletonCard } from '@/components/skeleton'
@@ -419,17 +420,16 @@ export default function SettingsPage() {
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-8">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Settings</h1>
-            <p className="text-on-surface-variant">Manage your account and preferences.</p>
-          </div>
-          <button className="p-2 rounded-full hover:bg-surface-container-high transition-colors">
-            <Bell className="w-5 h-5 text-on-surface-variant" />
+      <PageHeader
+        title="Settings"
+        description="Manage your account and preferences"
+        actions={
+          <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition-colors">
+            <Bell className="w-4 h-4 text-muted-foreground" />
           </button>
-        </div>
+        }
+      />
+      <div className="p-5 space-y-6">
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
           {/* Sidebar Nav */}
