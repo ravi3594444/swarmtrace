@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[all]" pytest ruff openai anthropic
       - name: Lint (critical errors only)
-        run: ruff check --select E9,F63,F7,F82 tracely tests
+        run: ruff check --select E9,F63,F7,F82 swarmtrace tests
       - name: Tests
         run: pytest -q
 
