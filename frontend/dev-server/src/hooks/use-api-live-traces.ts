@@ -1,23 +1,28 @@
 import { useEffect, useState } from "react";
 import { DEMO_TRACES, type Trace } from "@/lib/traces-data";
 
-// Type for the environment variables
-declare global {
-  interface ImportMeta {
-    env: {
-      VITE_API_BASE_URL: string;
-      // Add other environment variables here if needed
-    };
-  }
-}
-
-const POLL_MS = 2000; 
+const POLL_MS = 2000;
 const NEW_WINDOW_MS = 5000;
 
-/**
- * Custom hook for fetching live traces from the backend API
- * This is a client-side alternative to the server-side trace functions
- */
+function mapApiTrace(t: any): Trace {
+  return {
+    id: t.id,
+    parent_id: t.parent_id ?? null,
+    function: t.function ?? "(unknown)",
+    args: t.args ?? "",
+    output: t.output ?? "{}",
+    latency_sec:
+      typeof t.duration === "number"
+        ? t.duration / 1000
+        : (t.latency_sec ?? 0),
+    error: t.error ?? null,
+    timestamp: t.timestamp ?? new Date().toISOString(),
+    input_tokens: t.tokens_in ?? t.input_tokens ?? 0,
+    output_tokens: t.tokens_out ?? t.output_tokens ?? 0,
+    cost_usd: t.cost ?? t.cost_usd ?? 0,
+  };
+}
+
 export function useApiLiveTraces(enabled: boolean) {
   const [traces, setTraces] = useState<Trace[]>(DEMO_TRACES);
   const [newIds, setNewIds] = useState<Map<string, number>>(new Map());
@@ -30,36 +35,31 @@ export function useApiLiveTraces(enabled: boolean) {
 
     const poll = async () => {
       try {
-        // Fetch directly from the API endpoint
-        const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/traces`, {
-          cache: "no-store"
-        });
-
+        const res = await fetch(
+          `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/traces`,
+          { cache: "no-store" }
+        );
         if (!res.ok) throw new Error(String(res.status));
 
-        const json = await res.json()
-        const apiTraces = (json.traces ?? json) as Trace[];
+        const json = await res.json();
+        const raw: any[] = json.traces ?? json;
+        const mapped: Trace[] = raw.map(mapApiTrace);
 
         if (cancelled) return;
-
-        // Update traces with data from API
-        setTraces(apiTraces);
+        setTraces(mapped.length > 0 ? mapped : DEMO_TRACES);
         setError(false);
 
-        // Mark all new traces as "new"
-        if (apiTraces.length > 0) {
-          setNewIds((m: Map<string, number>) => {
+        if (mapped.length > 0) {
+          setNewIds((m) => {
             const next = new Map(m);
             const now = Date.now();
-            apiTraces.forEach((t) => next.set(t.id, now));
+            mapped.forEach((t) => next.set(t.id, now));
             return next;
           });
         }
 
         setLastPoll(Date.now());
-      } catch (err) {
-        console.error("Error fetching traces from API:", err);
-        // Fall back to demo data if there's an error
+      } catch {
         if (cancelled) return;
         setTraces(DEMO_TRACES);
         setError(true);
@@ -79,11 +79,11 @@ export function useApiLiveTraces(enabled: boolean) {
   useEffect(() => {
     if (newIds.size === 0) return;
     const id = setInterval(() => {
-      setNewIds((m: Map<string, number>) => {
+      setNewIds((m) => {
         const now = Date.now();
         const next = new Map(m);
         let changed = false;
-        next.forEach((ts: number, key: string) => {
+        next.forEach((ts, key) => {
           if (now - ts > NEW_WINDOW_MS) {
             next.delete(key);
             changed = true;

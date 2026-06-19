@@ -22,6 +22,7 @@ export function SwarmLayout({
           </div>
           <nav className="flex items-center gap-6 text-sm font-medium">
             <NavLink to="/">Dashboard</NavLink>
+            <NavLink to="/traces">Traces</NavLink>
             <NavLink to="/failures">Failures</NavLink>
           </nav>
           <div className="ml-auto flex items-center gap-3">{rightSlot}</div>
@@ -38,7 +39,10 @@ function NavLink({ to, children }: { to: string; children: ReactNode }) {
       to={to}
       activeOptions={{ exact: true }}
       activeProps={{ className: "text-foreground border-b border-primary" }}
-      inactiveProps={{ className: "text-muted-foreground hover:text-foreground border-b border-transparent" }}
+      inactiveProps={{
+        className:
+          "text-muted-foreground hover:text-foreground border-b border-transparent",
+      }}
       className="pb-[19px] -mb-[17px] transition-colors"
     >
       {children}
@@ -58,7 +62,11 @@ export function LiveToggle({
   return (
     <div
       className="flex items-center gap-4 font-mono text-[11px] uppercase tracking-widest"
-      title={enabled ? "Polling /traces every 2s" : "Live updates paused — click to start polling"}
+      title={
+        enabled
+          ? "Polling /traces every 2s"
+          : "Live updates paused — click to start polling"
+      }
     >
       <span className="flex items-center gap-2 text-muted-foreground">
         <span className="h-2 w-2 rounded-full border border-[oklch(0.7_0.18_145)] bg-[oklch(0.7_0.18_145)]/20" />
@@ -75,7 +83,10 @@ export function LiveToggle({
           <span className="text-muted-foreground">PAUSED</span>
         )}
         {enabled && lastPoll && (
-          <span className="text-muted-foreground/60 normal-case tracking-normal" suppressHydrationWarning>
+          <span
+            className="text-muted-foreground/60 normal-case tracking-normal"
+            suppressHydrationWarning
+          >
             · {Math.max(0, Math.round((Date.now() - lastPoll) / 1000))}s
           </span>
         )}
@@ -89,7 +100,9 @@ export function LiveToggle({
       >
         <span
           className={`absolute top-0.5 h-3 w-3 rounded-full transition-transform ${
-            enabled ? "translate-x-4 bg-primary" : "translate-x-0.5 bg-muted-foreground/60"
+            enabled
+              ? "translate-x-4 bg-primary"
+              : "translate-x-0.5 bg-muted-foreground/60"
           }`}
         />
       </button>
