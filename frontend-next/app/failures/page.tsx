@@ -7,7 +7,7 @@ import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import type { Trace } from '@/lib/trace-types'
-import { AlertTriangle, Bug, TrendingDown, Database } from 'lucide-react'
+import { AlertTriangle, Bug, TrendingDown } from 'lucide-react'
 
 function formatTime(iso: string) {
   const d = new Date(iso)
@@ -15,7 +15,7 @@ function formatTime(iso: string) {
 }
 
 export default function FailuresPage() {
-  const { traces, loading, source } = useSwarmTraces(10000)
+  const { traces, loading } = useSwarmTraces(10000)
   const [selected, setSelected] = useState<Trace | null>(null)
 
   if (loading) return (
@@ -38,11 +38,6 @@ export default function FailuresPage() {
         title="Failures"
         description="All errored spans with root-cause detail"
         badge={`${failed.length} ERRORS`}
-        actions={source === 'demo' ? (
-          <span className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
-            <Database className="w-3 h-3" /> DEMO DATA
-          </span>
-        ) : undefined}
       />
 
       <div className="p-6 space-y-6">

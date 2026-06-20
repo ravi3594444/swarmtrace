@@ -11,7 +11,7 @@ import type { Trace } from '@/lib/trace-types'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import {
   ChevronRight, ChevronDown, X, Clock, Activity, Coins,
-  AlertTriangle, Search, Pause, Play, Database,
+  AlertTriangle, Search, Pause, Play,
 } from 'lucide-react'
 
 type SpanNode = Trace & { children: SpanNode[] }
@@ -197,7 +197,7 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
 }
 
 export default function TracesPage() {
-  const { traces, loading, source, isLive, toggleLive } = useSwarmTraces(8000)
+  const { traces, loading, isLive, toggleLive } = useSwarmTraces(8000)
   const [selected, setSelected] = useState<Trace | null>(null)
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OK' | 'ERROR'>('ALL')
@@ -231,11 +231,6 @@ export default function TracesPage() {
         liveStatus={isLive ? 'live' : 'paused'}
         actions={
           <div className="flex items-center gap-2">
-            {source === 'demo' && (
-              <span className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
-                <Database className="w-3 h-3" /> DEMO
-              </span>
-            )}
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input
