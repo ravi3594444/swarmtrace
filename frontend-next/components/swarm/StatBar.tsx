@@ -12,17 +12,17 @@ function StatCard({ label, value, unit, icon: Icon, trend }: {
 }) {
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
-      <div className="flex items-start justify-between mb-3">
-        <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</div>
+      <div className="flex items-start justify-between mb-4">
+        <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</div>
         <div className="w-10 h-10 rounded-lg border border-border bg-muted/60 flex items-center justify-center shrink-0">
           <Icon className="w-[18px] h-[18px] text-muted-foreground" />
         </div>
       </div>
-      <div className="text-2xl font-bold tabular-nums text-foreground">
+      <div className="text-4xl font-bold tabular-nums text-foreground leading-none tracking-tight">
         {value}
-        {unit && <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>}
+        {unit && <span className="ml-1.5 text-base font-medium text-muted-foreground">{unit}</span>}
       </div>
-      {trend && <div className="mt-1.5 text-xs text-muted-foreground">{trend}</div>}
+      {trend && <div className="mt-2.5 text-xs text-muted-foreground">{trend}</div>}
     </div>
   );
 }

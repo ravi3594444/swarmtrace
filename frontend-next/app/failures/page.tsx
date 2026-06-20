@@ -57,8 +57,8 @@ export default function FailuresPage() {
                 <Icon className="w-4 h-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold">{label}</span>
               </div>
-              <div className="text-2xl font-bold text-foreground">{value}</div>
-              <div className="text-xs text-muted-foreground mt-1">{sub}</div>
+              <div className="text-4xl font-bold text-foreground leading-none tracking-tight">{value}</div>
+              <div className="text-xs text-muted-foreground mt-2.5">{sub}</div>
             </div>
           ))}
         </div>

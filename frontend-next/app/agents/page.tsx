@@ -149,9 +149,9 @@ export default function AgentsPage() {
             { label: 'Idle', value: counts.IDLE },
             { label: 'Error', value: counts.ERROR },
           ].map((s) => (
-            <div key={s.label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
-              <div className="text-xs text-muted-foreground uppercase tracking-wider mb-1 font-medium">{s.label}</div>
-              <div className="text-2xl font-bold tabular-nums text-foreground">{s.value}</div>
+            <div key={s.label} className="rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-semibold">{s.label}</div>
+              <div className="text-4xl font-bold tabular-nums text-foreground leading-none tracking-tight">{s.value}</div>
             </div>
           ))}
         </div>
