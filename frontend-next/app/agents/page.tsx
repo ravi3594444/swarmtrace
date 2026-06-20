@@ -65,8 +65,8 @@ function AgentCard({ agent }: { agent: Agent }) {
             { label: 'Tokens', value: agent.tokens, icon: RefreshCw },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="flex items-center gap-2">
-              <div className="w-6 h-6 rounded-md bg-muted flex items-center justify-center shrink-0">
-                <Icon className="w-3 h-3 text-muted-foreground" />
+              <div className="w-7 h-7 rounded-md bg-muted flex items-center justify-center shrink-0">
+                <Icon className="w-[15px] h-[15px] text-muted-foreground" />
               </div>
               <div className="min-w-0">
                 <div className="text-xs font-bold text-foreground">{value}</div>

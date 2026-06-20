@@ -44,7 +44,7 @@ function NavItem({
         style={isActive ? { background: 'color-mix(in oklch, var(--primary) 8%, transparent)', borderRadius: 8 } : {}}
       >
         <Icon
-          className={`shrink-0 transition-colors ${collapsed ? 'w-5 h-5' : 'w-[17px] h-[17px]'} ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`}
+          className={`shrink-0 transition-colors ${collapsed ? 'w-5 h-5' : 'w-[19px] h-[19px]'} ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`}
           strokeWidth={isActive ? 2.2 : 1.7}
         />
         {!collapsed && <span className="truncate">{label}</span>}

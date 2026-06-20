@@ -14,8 +14,8 @@ function StatCard({ label, value, unit, icon: Icon, trend }: {
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
       <div className="flex items-start justify-between mb-3">
         <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider">{label}</div>
-        <div className="w-8 h-8 rounded-lg border border-border bg-muted/50 flex items-center justify-center shrink-0">
-          <Icon className="w-4 h-4 text-muted-foreground" />
+        <div className="w-10 h-10 rounded-lg border border-border bg-muted/60 flex items-center justify-center shrink-0">
+          <Icon className="w-[18px] h-[18px] text-muted-foreground" />
         </div>
       </div>
       <div className="text-2xl font-bold tabular-nums text-foreground">
