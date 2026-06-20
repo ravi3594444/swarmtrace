@@ -12,12 +12,13 @@ import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import type { Trace } from '@/lib/trace-types'
 import { fetchOverview } from '@/lib/api'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Activity, Info, Database } from 'lucide-react'
+import { Activity, Info, Database, ChevronDown } from 'lucide-react'
 
 const chartTooltip = {
   contentStyle: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
   labelStyle: { color: 'var(--foreground)', fontWeight: 600 },
   itemStyle: { color: 'var(--foreground)' },
+  cursor: { stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' },
 }
 
 const FALLBACK_ACTIVITY = [
@@ -26,6 +27,29 @@ const FALLBACK_ACTIVITY = [
 ]
 
 type OverviewEvent = { timestamp: string; type: string; message: string }
+
+function EventRow({ type, message }: { type: string; message: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const isDense = message.length > 64
+  const isAlert = type === 'ERROR' || type === 'WARN'
+
+  return (
+    <button
+      onClick={() => isDense && setExpanded((v) => !v)}
+      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 ${isDense ? 'cursor-pointer' : 'cursor-default'}`}
+    >
+      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase mt-0.5 ${isAlert ? 'bg-red-50 text-destructive border-red-200' : 'bg-muted text-muted-foreground border-border'}`}>
+        {type}
+      </span>
+      <p className={`text-xs text-foreground leading-relaxed min-w-0 flex-1 font-mono ${expanded ? 'whitespace-pre-wrap break-all' : 'truncate'}`}>
+        {message}
+      </p>
+      {isDense && (
+        <ChevronDown className={`w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      )}
+    </button>
+  )
+}
 
 export default function OverviewPage() {
   const { traces, loading, source, isLive } = useSwarmTraces(10000)
@@ -90,11 +114,11 @@ export default function OverviewPage() {
                       <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                  <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
                   <Tooltip {...chartTooltip} />
-                  <Area type="monotone" dataKey="requests" stroke="var(--primary)" strokeWidth={2} fill="url(#colorReq)" dot={false} />
+                  <Area type="monotone" dataKey="requests" stroke="var(--primary)" strokeWidth={2} fill="url(#colorReq)" dot={false} activeDot={{ r: 4, fill: 'var(--primary)', stroke: 'var(--card)', strokeWidth: 2 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
@@ -105,18 +129,13 @@ export default function OverviewPage() {
               <div className="flex items-center gap-2"><Info className="w-4 h-4 text-muted-foreground" /><h3 className="text-sm font-semibold text-foreground">Live Events</h3></div>
               <span className="text-[11px] text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 swarm-pulse" />LIVE</span>
             </div>
-            <div className="divide-y divide-border/50 overflow-y-auto max-h-44">
+            <div className="divide-y divide-border/50 overflow-y-auto max-h-60">
               {(events.length ? events : traces.slice(0, 6).map((t) => ({
                 timestamp: t.timestamp,
                 type: t.error ? 'ERROR' : 'INFO',
                 message: t.error ? `${t.function}: ${t.error}` : `${t.function} completed in ${t.latency_sec.toFixed(2)}s`,
               }))).slice(0, 8).map((e, i) => (
-                <div key={`${e.timestamp}-${i}`} className="flex items-start gap-3 px-4 py-3 hover:bg-muted/30 transition-colors">
-                  <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase mt-0.5 ${e.type === 'ERROR' || e.type === 'WARN' ? 'bg-red-50 text-red-700 border-red-200' : 'bg-muted text-muted-foreground border-border'}`}>
-                    {e.type}
-                  </span>
-                  <p className="text-xs text-foreground leading-relaxed min-w-0 truncate">{e.message}</p>
-                </div>
+                <EventRow key={`${e.timestamp}-${i}`} type={e.type} message={e.message} />
               ))}
               {events.length === 0 && traces.length === 0 && (
                 <div className="px-4 py-8 text-center text-xs text-muted-foreground">No events yet</div>

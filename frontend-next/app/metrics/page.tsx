@@ -24,11 +24,11 @@ const chartTooltip = {
 function MetricCard({ label, value, unit, trend }: { label: string; value: string; unit?: string; trend: string }) {
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
-      <div className="text-xs font-medium text-muted-foreground uppercase tracking-wider mb-3">{label}</div>
-      <div className="text-2xl font-bold tabular-nums text-foreground">
-        {value}{unit && <span className="ml-1 text-sm font-normal text-muted-foreground">{unit}</span>}
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{label}</div>
+      <div className="text-4xl font-bold tabular-nums text-foreground leading-none tracking-tight">
+        {value}{unit && <span className="ml-1.5 text-base font-medium text-muted-foreground">{unit}</span>}
       </div>
-      <div className="mt-2 text-xs text-muted-foreground">{trend}</div>
+      <div className="mt-2.5 text-xs text-muted-foreground">{trend}</div>
     </div>
   )
 }
