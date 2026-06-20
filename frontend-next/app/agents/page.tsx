@@ -8,7 +8,7 @@ import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import { fetchSwarmAgents } from '@/lib/swarm-api'
 import type { Agent } from '@/lib/trace-types'
 import { formatRelativeTime } from '@/lib/api'
-import { Activity, Clock, CheckCircle2, XCircle, Pause, RefreshCw, Search, Database } from 'lucide-react'
+import { Activity, Clock, CheckCircle2, XCircle, Pause, RefreshCw, Search } from 'lucide-react'
 
 function StatusBadge({ status }: { status: Agent['status'] }) {
   if (status === 'RUNNING') return (
@@ -88,16 +88,14 @@ function AgentCard({ agent }: { agent: Agent }) {
 export default function AgentsPage() {
   const [loading, setLoading] = useState(true)
   const [agents, setAgents] = useState<Agent[]>([])
-  const [source, setSource] = useState<'api' | 'demo'>('api')
   const [filter, setFilter] = useState<'ALL' | 'RUNNING' | 'IDLE' | 'ERROR'>('ALL')
   const [search, setSearch] = useState('')
 
   useEffect(() => {
     let mounted = true
-    fetchSwarmAgents().then((r) => {
+    fetchSwarmAgents().then((data) => {
       if (!mounted) return
-      setAgents(r.agents)
-      setSource(r.source)
+      setAgents(data)
       setLoading(false)
     })
     return () => { mounted = false }
@@ -127,11 +125,6 @@ export default function AgentsPage() {
         liveStatus="live"
         actions={
           <div className="flex items-center gap-2">
-            {source === 'demo' && (
-              <span className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
-                <Database className="w-3 h-3" /> DEMO
-              </span>
-            )}
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search agents…"
@@ -172,7 +165,9 @@ export default function AgentsPage() {
         </div>
 
         {filtered.length === 0 && (
-          <div className="rounded-xl border border-border bg-card py-16 text-center text-sm text-muted-foreground shadow-sm">No agents match your filters.</div>
+          <div className="rounded-xl border border-border bg-card py-16 text-center text-sm text-muted-foreground shadow-sm">
+            {agents.length === 0 ? 'No agents registered yet.' : 'No agents match your filters.'}
+          </div>
         )}
       </div>
     </DashboardLayout>

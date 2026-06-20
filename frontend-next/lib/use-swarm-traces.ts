@@ -7,14 +7,12 @@ import { fetchSwarmTraces } from './swarm-api'
 export function useSwarmTraces(pollMs = 8000) {
   const [traces, setTraces] = useState<Trace[]>([])
   const [loading, setLoading] = useState(true)
-  const [source, setSource] = useState<'api' | 'demo' | null>(null)
   const [isLive, setIsLive] = useState(true)
   const interval = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const load = useCallback(async () => {
     const r = await fetchSwarmTraces()
-    setTraces(r.traces)
-    setSource(r.source)
+    setTraces(r)
     setLoading(false)
   }, [])
 
@@ -26,5 +24,5 @@ export function useSwarmTraces(pollMs = 8000) {
     return () => { if (interval.current) clearInterval(interval.current) }
   }, [isLive, load, pollMs])
 
-  return { traces, loading, source, isLive, toggleLive: () => setIsLive((v) => !v) }
+  return { traces, loading, isLive, toggleLive: () => setIsLive((v) => !v) }
 }

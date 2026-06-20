@@ -12,7 +12,7 @@ import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import type { Trace } from '@/lib/trace-types'
 import { fetchOverview } from '@/lib/api'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Activity, Info, Database, ChevronDown } from 'lucide-react'
+import { Activity, Info, ChevronDown } from 'lucide-react'
 
 const chartTooltip = {
   contentStyle: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
@@ -20,11 +20,6 @@ const chartTooltip = {
   itemStyle: { color: 'var(--foreground)' },
   cursor: { stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' },
 }
-
-const FALLBACK_ACTIVITY = [
-  { time: '00:00', requests: 0 }, { time: '06:00', requests: 0 },
-  { time: '12:00', requests: 0 }, { time: '18:00', requests: 0 },
-]
 
 type OverviewEvent = { timestamp: string; type: string; message: string }
 
@@ -52,9 +47,9 @@ function EventRow({ type, message }: { type: string; message: string }) {
 }
 
 export default function OverviewPage() {
-  const { traces, loading, source, isLive } = useSwarmTraces(10000)
+  const { traces, loading, isLive } = useSwarmTraces(10000)
   const [selected, setSelected] = useState<Trace | null>(null)
-  const [activity, setActivity] = useState(FALLBACK_ACTIVITY)
+  const [activity, setActivity] = useState<{ time: string; requests: number }[]>([])
   const [events, setEvents] = useState<OverviewEvent[]>([])
 
   useEffect(() => {
@@ -82,17 +77,10 @@ export default function OverviewPage() {
         description="Live swarm health and execution summary"
         liveStatus={isLive ? 'live' : 'paused'}
         actions={
-          <div className="flex items-center gap-3">
-            {source === 'demo' && (
-              <span className="flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[10px] font-semibold text-amber-700">
-                <Database className="w-3 h-3" /> DEMO DATA
-              </span>
-            )}
-            <span className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{traces.length - errorCount} ok</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{errorCount} errors</span>
-            </span>
-          </div>
+          <span className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{traces.length - errorCount} ok</span>
+            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{errorCount} errors</span>
+          </span>
         }
       />
 
@@ -106,21 +94,25 @@ export default function OverviewPage() {
               <span className="text-[11px] text-muted-foreground">last 24h</span>
             </div>
             <div className="p-4 h-44">
-              <ResponsiveContainer width="100%" height="100%">
-                <AreaChart data={activity} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                  <defs>
-                    <linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.18} />
-                      <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                  <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
-                  <Tooltip {...chartTooltip} />
-                  <Area type="monotone" dataKey="requests" stroke="var(--primary)" strokeWidth={2} fill="url(#colorReq)" dot={false} activeDot={{ r: 4, fill: 'var(--primary)', stroke: 'var(--card)', strokeWidth: 2 }} />
-                </AreaChart>
-              </ResponsiveContainer>
+              {activity.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No activity yet</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={activity} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.18} />
+                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
+                    <Tooltip {...chartTooltip} />
+                    <Area type="monotone" dataKey="requests" stroke="var(--primary)" strokeWidth={2} fill="url(#colorReq)" dot={false} activeDot={{ r: 4, fill: 'var(--primary)', stroke: 'var(--card)', strokeWidth: 2 }} />
+                  </AreaChart>
+                </ResponsiveContainer>
+              )}
             </div>
           </div>
 
