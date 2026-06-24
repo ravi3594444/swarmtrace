@@ -79,18 +79,32 @@ const RealtimeContext = createContext<RealtimeContextValue>({
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [version, setVersion] = useState<Record<string, number>>({})
   const channels = useRef<Record<string, AgentChannel>>({})
-  const sb       = useRef<SupabaseClient | null>(null)
+  const sb        = useRef<SupabaseClient | null>(null)
+  // Track when the cached client was built so we can detect token expiry.
+  // Clerk JWTs expire (~1 h). After expiry the cached client's Authorization
+  // header becomes stale and Realtime subscriptions silently stop receiving
+  // events. We force a rebuild every 45 minutes — well inside the 1 h window.
+  const sbBuiltAt = useRef<number>(0)
+  const SB_TTL_MS = 45 * 60 * 1000
   const { getToken } = useAuth()
 
-  // Build a Supabase client authenticated with the Clerk JWT.
-  // This is required for RLS policies (auth.jwt()->>'sub') to allow
-  // the browser to receive Realtime events filtered to the current user.
+  // Build (or refresh) a Supabase client authenticated with the current Clerk JWT.
   const getClient = useCallback(async (): Promise<SupabaseClient | null> => {
     const url  = process.env.NEXT_PUBLIC_SUPABASE_URL
     const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     if (!url || !anon) return null
 
-    if (sb.current) return sb.current
+    // Return the cached client if it was built recently enough.
+    if (sb.current && Date.now() - sbBuiltAt.current < SB_TTL_MS) return sb.current
+
+    // Cache miss or TTL expired — rebuild with a fresh token.
+    // Tear down existing channels first so they re-subscribe with the new JWT.
+    if (sb.current) {
+      Object.values(channels.current).forEach(c => {
+        if (c.channel) sb.current!.removeChannel(c.channel)
+      })
+      sb.current = null
+    }
 
     try {
       // Native Clerk+Supabase integration (no JWT template needed):
@@ -108,7 +122,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
           : {},
         realtime: { params: { eventsPerSecond: 10 } },
       })
-      sb.current = client
+      sb.current    = client
+      sbBuiltAt.current = Date.now()
       return client
     } catch {
       return null
