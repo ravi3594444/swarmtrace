@@ -100,3 +100,16 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
         return round((input_tokens * inp + output_tokens * out) / 1_000_000, 8)
 
     return 0.0
+
+def warm_cache() -> None:
+    """Kick off a background fetch so the cache is warm before the first agent call.
+
+    Called at module import time. If the fetch fails or the network is
+    unavailable, calculate_cost() falls back to 0.0 — no crash, no block.
+    """
+    threading.Thread(target=_fetch_live, daemon=True, name="swarmtrace-pricing-warm").start()
+
+
+# Pre-warm on import — ensures the first calculate_cost() call hits the cache
+# instead of blocking the traced thread for up to _FETCH_TIMEOUT seconds.
+warm_cache()
