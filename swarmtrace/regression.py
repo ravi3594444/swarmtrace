@@ -51,6 +51,16 @@ Reply with just the number, nothing else."""
     try:
         score = llm(prompt).strip()
         return min(1.0, max(0.0, float(score)))
+    except ValueError:
+        # LLM returned non-numeric output — warn and default to neutral 0.5
+        # so neither a regression nor a false pass is silently reported.
+        import sys
+        print(
+            f"[swarmtrace] warning: similarity LLM returned non-numeric output "
+            f"{score!r:.60} — defaulting to 0.5 (neutral). Check your LLM callable.",
+            file=sys.stderr,
+        )
+        return 0.5
     except Exception:
         return 0.5
 
