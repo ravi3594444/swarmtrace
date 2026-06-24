@@ -176,8 +176,12 @@ export async function POST(req: Request) {
   const apiKey = req.headers.get('X-API-Key')
   if (!apiKey) return jsonResponse(401, { error: 'Missing X-API-Key header' })
 
-  const contentLength = Number(req.headers.get('content-length') || 0)
-  if (contentLength > MAX_BODY_BYTES) return jsonResponse(413, { error: 'Payload too large' })
+  // Read the actual bytes — Content-Length is client-supplied and optional,
+  // so checking the header alone can be bypassed by omitting it entirely.
+  let bodyBytes: ArrayBuffer
+  try { bodyBytes = await req.arrayBuffer() }
+  catch { return jsonResponse(400, { error: 'Could not read request body' }) }
+  if (bodyBytes.byteLength > MAX_BODY_BYTES) return jsonResponse(413, { error: 'Payload too large' })
 
   try {
     const keyHash = await sha256Hex(apiKey)
@@ -208,7 +212,7 @@ export async function POST(req: Request) {
     }
 
     let payload: unknown
-    try { payload = await req.json() }
+    try { payload = JSON.parse(new TextDecoder().decode(bodyBytes)) }
     catch { return jsonResponse(400, { error: 'Body must be valid JSON' }) }
 
     const { row, error } = validateTrace(payload)
