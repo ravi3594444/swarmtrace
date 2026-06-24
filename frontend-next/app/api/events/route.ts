@@ -6,8 +6,14 @@ export const runtime = 'edge'
 // browser via WebSocket — Vercel is completely out of the real-time path.
 //
 // Auth: same X-API-Key header as /api/ingest. Key cache is per-isolate.
-// Rate limit: 500 events / 60s per API key (higher than traces — events are
-// smaller and arrive more frequently during active agent runs).
+// Rate limit: 500 events / 60s per API key.
+//   - Upstash Redis (distributed): enabled when UPSTASH_REDIS_REST_URL is set.
+//   - Per-isolate fallback: used otherwise. Note that Vercel can run many
+//     isolates simultaneously — the effective limit is 500 × n_isolates when
+//     Upstash is not configured.
+
+import { Redis }      from '@upstash/redis'
+import { Ratelimit }  from '@upstash/ratelimit'
 
 const MAX_BODY_BYTES  = 32 * 1024   // 32 KB per event (screenshots compress well)
 const SUPA_TIMEOUT_MS = 3000
@@ -28,10 +34,34 @@ function setCache(hash: string, user_id: string) {
   KEY_CACHE.set(hash, { user_id, expires: Date.now() + CACHE_TTL_MS })
 }
 
+// ── Distributed rate limiter (Upstash Redis) ──────────────────────────────────
+let _upstashLimiter: Ratelimit | null = null
+
+function getUpstashLimiter(): Ratelimit | null {
+  if (_upstashLimiter) return _upstashLimiter
+  const url   = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (!url || !token) return null
+  _upstashLimiter = new Ratelimit({
+    redis:     new Redis({ url, token }),
+    limiter:   Ratelimit.slidingWindow(RATE_LIMIT, '60 s'),
+    analytics: false,
+    prefix:    'st_fov_rl',
+  })
+  return _upstashLimiter
+}
+
+// ── Per-isolate fallback ──────────────────────────────────────────────────────
 interface RateEntry { count: number; windowStart: number }
 const RATE_MAP = new Map<string, RateEntry>()
 
-function checkRate(keyHash: string): boolean {
+async function checkRate(keyHash: string): Promise<boolean> {
+  const limiter = getUpstashLimiter()
+  if (limiter) {
+    const { success } = await limiter.limit(keyHash)
+    return success
+  }
+  // Fallback: per-isolate counter (effective limit = RATE_LIMIT × n_isolates)
   const now = Date.now()
   const e   = RATE_MAP.get(keyHash)
   if (!e || now - e.windowStart > RATE_WINDOW_MS) {
@@ -125,7 +155,7 @@ export async function POST(req: Request) {
   try {
     const keyHash = await sha256Hex(apiKey)
 
-    if (!checkRate(keyHash)) {
+    if (!await checkRate(keyHash)) {
       return new Response(null, { status: 429, headers: { 'Retry-After': '60' } })
     }
 
