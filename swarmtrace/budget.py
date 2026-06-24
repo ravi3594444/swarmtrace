@@ -128,16 +128,30 @@ def budget(max_tokens: int = 10_000, warn_at: float = 0.8, hard_stop: bool = Fal
         if asyncio.iscoroutinefunction(func):
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
-                result = await func(*args, **kwargs)
-                _track(func.__name__, args, result, max_tokens, warn_at, hard_stop)
-                return result
+                result = None
+                error: Optional[BaseException] = None
+                try:
+                    result = await func(*args, **kwargs)
+                    return result
+                except BaseException as exc:
+                    error = exc
+                    raise
+                finally:
+                    # Track even on failure — hard_stop counts errored calls too.
+                    _track(func.__name__, args, result, max_tokens, warn_at, hard_stop)
             return async_wrapper
 
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
-            result = func(*args, **kwargs)
-            _track(func.__name__, args, result, max_tokens, warn_at, hard_stop)
-            return result
+            result = None
+            try:
+                result = func(*args, **kwargs)
+                return result
+            except BaseException:
+                raise
+            finally:
+                # Track even on failure — hard_stop counts errored calls too.
+                _track(func.__name__, args, result, max_tokens, warn_at, hard_stop)
 
         return sync_wrapper
     return decorator
