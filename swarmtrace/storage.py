@@ -193,7 +193,9 @@ def get_by_id(trace_id: str) -> Optional[TraceRow]:
 
 def purge_all() -> None:
     """Wipe every trace row (useful in tests)."""
+    global _write_count
     with _lock:
         conn = _get_conn()
         conn.execute("DELETE FROM traces")
         conn.commit()
+        _write_count = 0
