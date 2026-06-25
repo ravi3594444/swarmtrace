@@ -8,7 +8,7 @@ from swarmtrace.auto_instrument import patch_all
 from swarmtrace.fov import get_events
 from swarmtrace import fov
 
-__version__ = '0.4.1'
+__version__ = '0.4.2'
 __all__ = [
     'observe', 'init',
     'get_traces', 'save_trace',
