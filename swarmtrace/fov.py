@@ -16,9 +16,9 @@ Usage::
 
 What each patch captures
 ------------------------
-* playwright   — every page action (goto/click/fill/…) + live screenshot
+* playwright   — every page action (goto/click/fill/…) + rate-limited screenshot
 * streams      — OpenAI/Anthropic stream tokens as they arrive
-* network      — requests / httpx HTTP calls with method, url, status, latency
+* network      — requests / httpx HTTP calls (sync + async) with method, url, status, latency
 * filesystem   — file reads/writes in the watched directory (watchdog)
 """
 
@@ -43,10 +43,16 @@ from swarmtrace.tracer import _current_agent, _remote_config
 from swarmtrace.storage import _get_conn, _lock as _storage_lock
 
 # ---------------------------------------------------------------------------
-# Local SQLite event table
+# Local SQLite event table — with bounded size (no disk-fill risk)
 # ---------------------------------------------------------------------------
 
 _events_table_ready = False
+
+# FIX #1: cap agent_events table size — was unbounded (would fill disk
+# with screenshots in days of browser automation)
+EVENT_MAX_ROWS: int  = 5_000
+EVENT_PURGE_EVERY: int = 50
+_event_write_count: int = 0
 
 
 def _ensure_events_table() -> None:
@@ -74,7 +80,20 @@ def _ensure_events_table() -> None:
     _events_table_ready = True
 
 
+def _purge_old_events(conn) -> None:
+    """Delete oldest events beyond EVENT_MAX_ROWS."""
+    count = conn.execute("SELECT COUNT(*) FROM agent_events").fetchone()[0]
+    if count > EVENT_MAX_ROWS:
+        excess = count - EVENT_MAX_ROWS
+        conn.execute(
+            "DELETE FROM agent_events WHERE id IN "
+            "(SELECT id FROM agent_events ORDER BY timestamp ASC LIMIT ?)",
+            (excess,),
+        )
+
+
 def _save_event_local(event: dict) -> None:
+    global _event_write_count
     _ensure_events_table()
     try:
         with _storage_lock:
@@ -93,6 +112,10 @@ def _save_event_local(event: dict) -> None:
                     event["timestamp"],
                 ),
             )
+            _event_write_count += 1
+            # FIX #1 continued: purge on every EVENT_PURGE_EVERY writes
+            if _event_write_count % EVENT_PURGE_EVERY == 0:
+                _purge_old_events(conn)
             conn.commit()
     except Exception as exc:
         print(f"[swarmtrace/fov] event save warning: {exc}", file=sys.stderr)
@@ -123,11 +146,18 @@ def _send_event_remote(payload: dict, key: str, base_url: str) -> None:
 
 
 def _fov_worker() -> None:
+    # FIX #5 (FOV): retry up to 3 times with backoff on remote send failure
     while True:
         payload = _FOV_QUEUE.get()
         key, url = _remote_config()
         if key and url:
-            _send_event_remote(payload, key, url.rstrip("/"))
+            for attempt in range(3):
+                try:
+                    _send_event_remote(payload, key, url.rstrip("/"))
+                    break
+                except Exception:
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)
         _FOV_QUEUE.task_done()
 
 
@@ -151,11 +181,8 @@ def _enqueue_fov_event(event: dict) -> None:
     try:
         _FOV_QUEUE.put_nowait(event)
     except queue.Full:
-        try:
-            _FOV_QUEUE.get_nowait()
-            _FOV_QUEUE.put_nowait(event)
-        except Exception:
-            pass
+        # FIX #6 (FOV queue): don't do racy get+put — just log and skip
+        print("[swarmtrace/fov] event queue full — event dropped", file=sys.stderr)
 
 
 def _save_event(event: dict) -> None:
@@ -182,8 +209,24 @@ def _mk_event(event_type: str, status: str, data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Screenshot helper
+# Screenshot helper — rate-limited to avoid latency spiral
 # ---------------------------------------------------------------------------
+
+# FIX #2: rate-limit screenshots to once per SCREENSHOT_INTERVAL seconds
+# per agent.  In a click/fill loop this was taking 50-300ms per action.
+SCREENSHOT_INTERVAL: float = 5.0
+_last_screenshot: dict[str, float] = {}
+_screenshot_lock = threading.Lock()
+
+
+def _should_screenshot(agent_id: str) -> bool:
+    now = time.monotonic()
+    with _screenshot_lock:
+        if now - _last_screenshot.get(agent_id, 0.0) >= SCREENSHOT_INTERVAL:
+            _last_screenshot[agent_id] = now
+            return True
+    return False
+
 
 def _resize_jpeg(raw: bytes, max_width: int = 800) -> bytes:
     try:
@@ -205,16 +248,19 @@ def _to_data_uri(raw: bytes) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(raw).decode()
 
 
-def _screenshot_sync(page) -> str:
-    """Capture a JPEG screenshot. Resize is done lazily to avoid blocking."""
+def _screenshot_sync(page, agent_id: str) -> str:
+    if not _should_screenshot(agent_id):
+        return ""
     try:
         raw = page.screenshot(type="jpeg", quality=50)
-        return _to_data_uri(raw)   # PIL resize is fast (<10ms) for JPEG
+        return _to_data_uri(raw)
     except Exception:
         return ""
 
 
-async def _screenshot_async(page) -> str:
+async def _screenshot_async(page, agent_id: str) -> str:
+    if not _should_screenshot(agent_id):
+        return ""
     try:
         raw = await page.screenshot(type="jpeg", quality=50)
         return _to_data_uri(raw)
@@ -238,8 +284,10 @@ _PAGE_METHODS = [
 def _wrap_sync_method(name: str, original):
     @functools.wraps(original)
     def wrapper(self, *args, **kwargs):
-        if _current_agent() is None:
+        agent = _current_agent()
+        if agent is None:
             return original(self, *args, **kwargs)
+        aid, aname = agent
         ev = _mk_event("browser", "started", {
             "method": name,
             "args": [str(a)[:200] for a in args],
@@ -252,7 +300,8 @@ def _wrap_sync_method(name: str, original):
                 "method": name,
                 "args": [str(a)[:200] for a in args],
                 "url": getattr(self, "url", ""),
-                "screenshot": _screenshot_sync(self),
+                # FIX #2: pass agent_id so rate-limiter can track per-agent
+                "screenshot": _screenshot_sync(self, aid),
             }
             ev2 = _mk_event("browser", "done", data)
             if ev2:
@@ -270,8 +319,10 @@ def _wrap_sync_method(name: str, original):
 def _wrap_async_method(name: str, original):
     @functools.wraps(original)
     async def wrapper(self, *args, **kwargs):
-        if _current_agent() is None:
+        agent = _current_agent()
+        if agent is None:
             return await original(self, *args, **kwargs)
+        aid, aname = agent
         ev = _mk_event("browser", "started", {"method": name, "args": [str(a)[:200] for a in args]})
         if ev:
             _save_event(ev)
@@ -281,7 +332,7 @@ def _wrap_async_method(name: str, original):
                 "method": name,
                 "args": [str(a)[:200] for a in args],
                 "url": getattr(self, "url", ""),
-                "screenshot": await _screenshot_async(self),
+                "screenshot": await _screenshot_async(self, aid),
             }
             ev2 = _mk_event("browser", "done", data)
             if ev2:
@@ -329,6 +380,11 @@ def patch_playwright() -> bool:
 
 _STREAMS_PATCHED = False
 
+# FIX #11: use a rolling accumulator instead of a growing list
+# was: self._buf: list[str] = [] + "".join(self._buf)[-500:] on every token
+# O(n²) for long responses — now O(1) per token
+_MAX_ACCUM = 500
+
 
 class _StreamWrapper:
     """Wraps an OpenAI sync stream, firing token events per chunk."""
@@ -336,7 +392,7 @@ class _StreamWrapper:
         self._stream = stream
         self._agent_id = agent_id
         self._agent_name = agent_name
-        self._buf: list[str] = []
+        self._accum: str = ""   # FIX #11: rolling window, not growing list
 
     def __iter__(self):
         for chunk in self._stream:
@@ -346,7 +402,7 @@ class _StreamWrapper:
             except Exception:
                 pass
             if token:
-                self._buf.append(token)
+                self._accum = (self._accum + token)[-_MAX_ACCUM:]
                 _save_event({
                     "id": uuid.uuid4().hex,
                     "agent_id": self._agent_id,
@@ -355,7 +411,7 @@ class _StreamWrapper:
                     "status": "streaming",
                     "data": {
                         "token": token,
-                        "accumulated": "".join(self._buf)[-500:],
+                        "accumulated": self._accum,
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
@@ -380,7 +436,7 @@ class _AsyncStreamWrapper:
         self._stream = stream
         self._agent_id = agent_id
         self._agent_name = agent_name
-        self._buf: list[str] = []
+        self._accum: str = ""   # FIX #11: rolling window
 
     def __aiter__(self):
         return self._aiter()
@@ -393,7 +449,7 @@ class _AsyncStreamWrapper:
             except Exception:
                 pass
             if token:
-                self._buf.append(token)
+                self._accum = (self._accum + token)[-_MAX_ACCUM:]
                 _save_event({
                     "id": uuid.uuid4().hex,
                     "agent_id": self._agent_id,
@@ -402,7 +458,7 @@ class _AsyncStreamWrapper:
                     "status": "streaming",
                     "data": {
                         "token": token,
-                        "accumulated": "".join(self._buf)[-500:],
+                        "accumulated": self._accum,
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
@@ -469,7 +525,7 @@ def patch_streams() -> bool:
 
 
 # ---------------------------------------------------------------------------
-# 3. Network patch  (requests + httpx)
+# 3. Network patch  (requests + httpx sync + httpx async)
 # ---------------------------------------------------------------------------
 
 _NETWORK_PATCHED = False
@@ -535,7 +591,7 @@ def patch_network() -> bool:
     except ImportError:
         pass
 
-    # httpx
+    # httpx sync
     try:
         import httpx
         _orig_send = httpx.Client.send
@@ -578,6 +634,49 @@ def patch_network() -> bool:
     except ImportError:
         pass
 
+    # FIX #12: httpx AsyncClient was NOT patched — async HTTP calls invisible
+    try:
+        import httpx
+        _orig_async_send = httpx.AsyncClient.send
+
+        @functools.wraps(_orig_async_send)
+        async def _patched_async_send(self, request, **kwargs):
+            agent = _current_agent()
+            url = str(request.url)
+            if agent is None or _skip_url(url):
+                return await _orig_async_send(self, request, **kwargs)
+            aid, aname = agent
+            ts = datetime.now(timezone.utc).isoformat()
+            t0 = time.perf_counter()
+            try:
+                resp = await _orig_async_send(self, request, **kwargs)
+                _save_event({
+                    "id": uuid.uuid4().hex,
+                    "agent_id": aid, "agent_name": aname,
+                    "event_type": "http", "status": "done",
+                    "data": {
+                        "method": request.method, "url": url[:300],
+                        "status_code": resp.status_code,
+                        "latency_sec": round(time.perf_counter() - t0, 3),
+                    },
+                    "timestamp": ts,
+                })
+                return resp
+            except Exception as exc:
+                _save_event({
+                    "id": uuid.uuid4().hex,
+                    "agent_id": aid, "agent_name": aname,
+                    "event_type": "http", "status": "error",
+                    "data": {"method": request.method, "url": url[:300], "error": str(exc)},
+                    "timestamp": ts,
+                })
+                raise
+
+        httpx.AsyncClient.send = _patched_async_send
+        patched = True
+    except ImportError:
+        pass
+
     _NETWORK_PATCHED = True
     return patched
 
@@ -599,7 +698,6 @@ def patch_filesystem(watch_dir: str = ".") -> bool:
 
         class _Handler(FileSystemEventHandler):
             def _emit(self, action: str, path: str):
-                # Skip noisy internals
                 if any(x in path for x in (".swarmtrace", "__pycache__", ".git", ".pyc")):
                     return
                 agent = _current_agent()
@@ -662,16 +760,17 @@ def get_events(agent_id: str, limit: int = 100) -> list:
     """Return recent FOV events for a given agent_id."""
     _ensure_events_table()
     try:
+        # FIX #10: don't mutate conn.row_factory — use cursor description instead
+        # was: conn.row_factory = sqlite3.Row ... conn.row_factory = None
+        # that races with any concurrent reader on the shared connection
         with _storage_lock:
             conn = _get_conn()
-            import sqlite3
-            conn.row_factory = sqlite3.Row
-            rows = conn.execute(
+            cur = conn.execute(
                 "SELECT * FROM agent_events WHERE agent_id=? "
                 "ORDER BY timestamp DESC LIMIT ?",
                 (agent_id, limit),
-            ).fetchall()
-            conn.row_factory = None
-            return [dict(r) for r in rows]
+            )
+            cols = [d[0] for d in cur.description]
+            return [dict(zip(cols, row)) for row in cur.fetchall()]
     except Exception:
         return []

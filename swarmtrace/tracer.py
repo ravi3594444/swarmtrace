@@ -30,22 +30,7 @@ Every traced call has a ``kind``:
 Only ``kind="agent"`` spans are surfaced as agents. Everything else is
 attributed (via ``agent_id`` / ``agent_name``) to the nearest enclosing
 ``kind="agent"`` span — or to itself if there isn't one, which keeps it out
-of the Agents page entirely rather than appearing as a phantom agent. This
-means wrapping an LLM or tool call in ``@observe`` for visibility never turns
-it into a fake "agent" on the dashboard::
-
-    @observe                    # kind="agent" — this run IS an agent
-    def orchestrator(q):
-        research = researcher(q)   # also kind="agent" — its own agent
-        return summarize(research)
-
-    @observe(kind="tool")       # rolls up into the calling agent's stats
-    def search_web(q):
-        ...
-
-    @observe(kind="llm")        # rolls up into the calling agent's stats
-    def call_llm(prompt):
-        ...
+of the Agents page entirely rather than appearing as a phantom agent.
 """
 
 import asyncio
@@ -58,6 +43,7 @@ import sys
 import threading
 import time
 import uuid
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 from urllib.request import Request, urlopen
@@ -80,20 +66,6 @@ def init(
     fov: bool = False,
     fov_watch_dir: str = ".",
 ) -> None:
-    """
-    Configure swarmtrace.
-
-    - ``api_key`` / ``endpoint``: explicit remote-ingest config, taking
-      precedence over SWARMTRACE_API_KEY / SWARMTRACE_ENDPOINT env vars.
-    - ``auto_instrument`` (default ``True``): patch installed LLM clients
-      (OpenAI, Anthropic, Gemini, LiteLLM) so every raw LLM call is traced
-      as ``kind="llm"`` — attributed to the running agent — with zero
-      decorators at the call site. Pass ``False`` to skip.
-    - ``fov`` (default ``False``): activate Field-of-View live monitoring —
-      patches Playwright, streams, requests/httpx, and the filesystem so
-      every agent action surfaces in real time on the dashboard.
-    - ``fov_watch_dir``: directory to watch for filesystem events (default ".").
-    """
     global _api_key, _endpoint
     if api_key is not None:
         _api_key = api_key
@@ -114,8 +86,9 @@ def _remote_config() -> tuple[str, str]:
 
 
 # ---------------------------------------------------------------------------
-# Background sender — a single daemon worker draining a bounded queue,
-# instead of one thread per trace (which does not scale under hot loops).
+# Background sender — daemon worker draining a bounded queue.
+# FIX #5: added retry with exponential backoff (3 attempts) so brief
+# endpoint hiccups don't silently drop traces.
 # ---------------------------------------------------------------------------
 
 _QUEUE_MAX = 1000
@@ -125,17 +98,14 @@ _worker_started = False
 
 
 def _send_remote(payload: dict, key: str, url: str) -> None:
-    try:
-        body = json.dumps(payload).encode()
-        req = Request(
-            f"{url}/ingest",
-            data=body,
-            headers={"Content-Type": "application/json", "X-API-Key": key},
-            method="POST",
-        )
-        urlopen(req, timeout=5)
-    except Exception as exc:
-        print(f"[swarmtrace] remote ingest warning: {exc}", file=sys.stderr)
+    body = json.dumps(payload).encode()
+    req = Request(
+        f"{url}/ingest",
+        data=body,
+        headers={"Content-Type": "application/json", "X-API-Key": key},
+        method="POST",
+    )
+    urlopen(req, timeout=5)
 
 
 def _worker() -> None:
@@ -143,7 +113,16 @@ def _worker() -> None:
         payload = _send_queue.get()
         key, url = _remote_config()
         if key and url:
-            _send_remote(payload, key, url)
+            # FIX #5: retry with backoff instead of fire-and-forget
+            for attempt in range(3):
+                try:
+                    _send_remote(payload, key, url)
+                    break
+                except Exception as exc:
+                    if attempt < 2:
+                        time.sleep(2 ** attempt)   # 1s then 2s
+                    else:
+                        print(f"[swarmtrace] remote ingest failed after 3 attempts: {exc}", file=sys.stderr)
         _send_queue.task_done()
 
 
@@ -165,13 +144,10 @@ def _enqueue_remote(payload: dict) -> None:
     try:
         _send_queue.put_nowait(payload)
     except queue.Full:
-        # Drop the oldest trace to make room — never block the traced code.
-        try:
-            _send_queue.get_nowait()
-            _send_queue.put_nowait(payload)
-        except Exception:
-            pass
-        print("[swarmtrace] ingest queue full — dropped oldest trace", file=sys.stderr)
+        # FIX #6: don't do racy get_nowait()+put_nowait() — just log and drop.
+        # The old approach had a race where two threads both popped an item then
+        # both tried to push, losing 2 traces instead of 1.
+        print("[swarmtrace] ingest queue full — trace dropped", file=sys.stderr)
 
 
 # Thread-safe & async-safe parent tracking
@@ -184,10 +160,6 @@ def _current_parent() -> Optional[str]:
     return _parent_ctx.get()
 
 
-# Thread-safe & async-safe agent tracking — (agent_id, agent_name) of the
-# nearest enclosing kind="agent" span. Used to attribute tool/llm/function
-# spans to the agent that's actually running them, regardless of whether the
-# parent_id chain stays intact end-to-end.
 _agent_ctx: contextvars.ContextVar[Optional[Tuple[str, str]]] = contextvars.ContextVar(
     "agent_ctx", default=None
 )
@@ -199,63 +171,42 @@ def _current_agent() -> Optional[Tuple[str, str]]:
 
 
 # ---------------------------------------------------------------------------
-# Shared record-and-save logic (keeps sync + async wrappers DRY)
+# Shared record-and-save logic
 # ---------------------------------------------------------------------------
 
 _VALID_KINDS  = {"agent", "tool", "llm", "function"}
 _KIND_CHOICES = _VALID_KINDS | {"auto"}
 
+# FIX #3: use a ThreadPoolExecutor for _safe_str instead of spawning a new
+# thread on every single call.  At 100+ traced calls/sec, per-call thread
+# creation was creating thousands of OS threads per second.
+_str_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="st-str")
+
 
 def _resolve_kind(kind: str, enclosing_agent: Optional[Tuple[str, str]]) -> str:
-    """Resolve ``kind="auto"`` at call time.
-
-    - ``"auto"`` + no agent running  → ``"agent"`` (this call IS the agent)
-    - ``"auto"`` + agent already running → ``"function"`` (rolls up into it)
-    - Any explicit kind → returned unchanged
-    """
     if kind != "auto":
         return kind
     return "agent" if enclosing_agent is None else "function"
 
 
 def _safe_str(obj, max_len: int = 4000) -> str:
-    """Convert *obj* to string safely.
-
-    Uses a background thread with a 100 ms deadline so a pathological
-    ``__str__`` (e.g. a huge numpy array) can't stall the traced call.
-    Falls back to repr(type) on timeout or any exception.
-    """
+    """Convert *obj* to string safely using a thread-pool (not a new thread per call)."""
     if obj is None:
         return ""
-    result: list[str] = []
-    exc_holder: list[Exception] = []
-
-    def _do():
-        try:
-            result.append(str(obj)[:max_len])
-        except Exception as e:
-            exc_holder.append(e)
-
-    t = threading.Thread(target=_do, daemon=True)
-    t.start()
-    t.join(timeout=0.1)
-    if result:
-        return result[0]
-    return f"<{type(obj).__name__} (stringify timed out or failed)>"
+    try:
+        fut = _str_pool.submit(lambda: str(obj)[:max_len])
+        return fut.result(timeout=0.1)
+    except FuturesTimeout:
+        return f"<{type(obj).__name__} (stringify timed out)>"
+    except Exception:
+        return f"<{type(obj).__name__} (stringify failed)>"
 
 
 def _build_trace_id() -> str:
-    # Full uuid4 hex (32 chars). Short 8-char IDs are collision-prone at scale.
     return uuid.uuid4().hex
 
 
 def _extract_token_info(result) -> tuple[int, int, float]:
-    """Pull token/cost fields off the result.
-
-    If the LLM library already provides cost_usd, use it directly.
-    Otherwise calculate from the live LiteLLM pricing table using
-    the model name on the result object.
-    """
     if result is None:
         return 0, 0, 0.0
 
@@ -293,7 +244,6 @@ def _flush(
     agent_id: str,
     agent_name: str,
 ) -> None:
-    # Capture up to the first two positional args + any kwargs for the record.
     args_repr = str(args[:2])
     if kwargs:
         args_repr = f"{args_repr} kwargs={list(kwargs.keys())}"
@@ -314,7 +264,6 @@ def _flush(
 
 
 def _safe_flush(*flush_args) -> None:
-    """Flush, but never let a storage/network failure mask the user's exception."""
     try:
         _flush(*flush_args)
     except Exception as exc:
@@ -330,18 +279,8 @@ def observe(func=None, *, kind: str = "auto"):
     Decorator that records every call (sync or async) to the traces DB.
 
     Bare ``@observe`` defaults to ``kind="auto"``:
-    - If no agent is currently running → this call becomes ``"agent"`` (its own dashboard card).
-    - If called from inside another ``@observe``'d function → rolls up as ``"function"``
-      (tokens/cost/errors fold into the parent agent, no extra card).
-
-    This means you can ``@observe`` every function freely — helpers never
-    create phantom agent cards. Only use an explicit kind to override::
-
-        @observe(kind="agent")   # always its own card even when nested
-        def researcher(q): ...
-
-        @observe(kind="tool")    # explicit label, still rolls up
-        def search_web(q): ...
+    - If no agent is currently running → this call becomes ``"agent"``.
+    - If called from inside another ``@observe``'d function → rolls up as ``"function"``.
     """
     if func is None:
         return lambda f: observe(f, kind=kind)
