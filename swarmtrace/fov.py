@@ -16,10 +16,19 @@ Usage::
 
 What each patch captures
 ------------------------
-* playwright   — every page action (goto/click/fill/…) + rate-limited screenshot
+* playwright   — every page action (goto/click/fill/…) + continuous background
+                 screen stream that never blocks browser actions
 * streams      — OpenAI/Anthropic stream tokens as they arrive
 * network      — requests / httpx HTTP calls (sync + async) with method, url, status, latency
 * filesystem   — file reads/writes in the watched directory (watchdog)
+
+Screen streaming
+----------------
+Screenshots are captured by a dedicated background thread (default: every 1 s)
+rather than inline with browser actions.  This means:
+  - Browser actions are never slowed down by screenshot capture
+  - The dashboard gets a continuous live feed of the screen
+  - Configure interval via SWARMTRACE_SCREEN_INTERVAL env var (seconds, default 1.0)
 """
 
 from __future__ import annotations
@@ -209,24 +218,8 @@ def _mk_event(event_type: str, status: str, data: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
-# Screenshot helper — rate-limited to avoid latency spiral
+# Screenshot helpers
 # ---------------------------------------------------------------------------
-
-# FIX #2: rate-limit screenshots to once per SCREENSHOT_INTERVAL seconds
-# per agent.  In a click/fill loop this was taking 50-300ms per action.
-SCREENSHOT_INTERVAL: float = 5.0
-_last_screenshot: dict[str, float] = {}
-_screenshot_lock = threading.Lock()
-
-
-def _should_screenshot(agent_id: str) -> bool:
-    now = time.monotonic()
-    with _screenshot_lock:
-        if now - _last_screenshot.get(agent_id, 0.0) >= SCREENSHOT_INTERVAL:
-            _last_screenshot[agent_id] = now
-            return True
-    return False
-
 
 def _resize_jpeg(raw: bytes, max_width: int = 800) -> bytes:
     try:
@@ -248,9 +241,7 @@ def _to_data_uri(raw: bytes) -> str:
     return "data:image/jpeg;base64," + base64.b64encode(raw).decode()
 
 
-def _screenshot_sync(page, agent_id: str) -> str:
-    if not _should_screenshot(agent_id):
-        return ""
+def _screenshot_sync(page) -> str:
     try:
         raw = page.screenshot(type="jpeg", quality=50)
         return _to_data_uri(raw)
@@ -258,14 +249,100 @@ def _screenshot_sync(page, agent_id: str) -> str:
         return ""
 
 
-async def _screenshot_async(page, agent_id: str) -> str:
-    if not _should_screenshot(agent_id):
-        return ""
+async def _screenshot_async(page) -> str:
     try:
         raw = await page.screenshot(type="jpeg", quality=50)
         return _to_data_uri(raw)
     except Exception:
         return ""
+
+
+# ---------------------------------------------------------------------------
+# Background screen streamer
+#
+# Instead of taking screenshots inline (which blocked every browser action
+# for 50-300ms), a daemon thread polls each registered page at a fixed
+# interval and emits "screen_tick" events.  Browser actions are never slowed.
+#
+# Pages register themselves on first use and are auto-removed when closed.
+# Interval is configurable via SWARMTRACE_SCREEN_INTERVAL (default 1.0 s).
+# ---------------------------------------------------------------------------
+
+import weakref
+
+SCREEN_INTERVAL: float = float(os.environ.get("SWARMTRACE_SCREEN_INTERVAL", "1.0"))
+
+# registry: page_id → (weakref to page, agent_id, agent_name)
+_screen_registry: dict[int, tuple] = {}
+_screen_registry_lock = threading.Lock()
+_screen_streamer_started = False
+
+
+def _register_page(page, agent_id: str, agent_name: str) -> None:
+    """Register a Playwright sync page for background screen streaming."""
+    pid = id(page)
+    with _screen_registry_lock:
+        _screen_registry[pid] = (weakref.ref(page), agent_id, agent_name)
+    _ensure_screen_streamer()
+
+
+def _unregister_page(page) -> None:
+    pid = id(page)
+    with _screen_registry_lock:
+        _screen_registry.pop(pid, None)
+
+
+def _screen_streamer_loop() -> None:
+    """Background thread: capture a screenshot from every registered page each tick."""
+    while True:
+        time.sleep(SCREEN_INTERVAL)
+        with _screen_registry_lock:
+            items = list(_screen_registry.items())
+
+        dead = []
+        for pid, (page_ref, agent_id, agent_name) in items:
+            page = page_ref()
+            if page is None:
+                dead.append(pid)
+                continue
+            try:
+                # Check if page is still open before screenshotting
+                if getattr(page, "is_closed", lambda: False)():
+                    dead.append(pid)
+                    continue
+                shot = _screenshot_sync(page)
+                if shot:
+                    _save_event({
+                        "id": uuid.uuid4().hex,
+                        "agent_id": agent_id,
+                        "agent_name": agent_name,
+                        "event_type": "screen_tick",
+                        "status": "info",
+                        "data": {
+                            "screenshot": shot,
+                            "url": getattr(page, "url", ""),
+                        },
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+            except Exception:
+                dead.append(pid)
+
+        if dead:
+            with _screen_registry_lock:
+                for pid in dead:
+                    _screen_registry.pop(pid, None)
+
+
+def _ensure_screen_streamer() -> None:
+    global _screen_streamer_started
+    if _screen_streamer_started:
+        return
+    threading.Thread(
+        target=_screen_streamer_loop,
+        daemon=True,
+        name="swarmtrace-screen-stream",
+    ).start()
+    _screen_streamer_started = True
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +365,8 @@ def _wrap_sync_method(name: str, original):
         if agent is None:
             return original(self, *args, **kwargs)
         aid, aname = agent
+        # Register this page for background screen streaming (idempotent)
+        _register_page(self, aid, aname)
         ev = _mk_event("browser", "started", {
             "method": name,
             "args": [str(a)[:200] for a in args],
@@ -296,14 +375,12 @@ def _wrap_sync_method(name: str, original):
             _save_event(ev)
         try:
             result = original(self, *args, **kwargs)
-            data = {
+            # No inline screenshot — background streamer handles it every SCREEN_INTERVAL s
+            ev2 = _mk_event("browser", "done", {
                 "method": name,
                 "args": [str(a)[:200] for a in args],
                 "url": getattr(self, "url", ""),
-                # FIX #2: pass agent_id so rate-limiter can track per-agent
-                "screenshot": _screenshot_sync(self, aid),
-            }
-            ev2 = _mk_event("browser", "done", data)
+            })
             if ev2:
                 _save_event(ev2)
             return result
@@ -323,18 +400,18 @@ def _wrap_async_method(name: str, original):
         if agent is None:
             return await original(self, *args, **kwargs)
         aid, aname = agent
+        # Register page for background streaming (sync registry — safe from async)
+        _register_page(self, aid, aname)
         ev = _mk_event("browser", "started", {"method": name, "args": [str(a)[:200] for a in args]})
         if ev:
             _save_event(ev)
         try:
             result = await original(self, *args, **kwargs)
-            data = {
+            ev2 = _mk_event("browser", "done", {
                 "method": name,
                 "args": [str(a)[:200] for a in args],
                 "url": getattr(self, "url", ""),
-                "screenshot": await _screenshot_async(self, aid),
-            }
-            ev2 = _mk_event("browser", "done", data)
+            })
             if ev2:
                 _save_event(ev2)
             return result
