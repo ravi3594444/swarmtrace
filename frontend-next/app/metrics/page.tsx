@@ -107,8 +107,8 @@ export default function MetricsPage() {
                   <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} width={42} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
                   <Tooltip {...chartTooltip} />
                   <Legend wrapperStyle={{ fontSize: 11, color: 'var(--muted-foreground)' }} />
-                  <Bar dataKey="input" name="Input" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                  <Bar dataKey="output" name="Output" fill="var(--primary)" fillOpacity={0.35} radius={[4, 4, 0, 0]} maxBarSize={32} />
+                  <Bar dataKey="input" name="Input tokens" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                  <Bar dataKey="output" name="Output tokens" fill="var(--chart-3)" radius={[4, 4, 0, 0]} maxBarSize={32} />
                 </BarChart>
               </ResponsiveContainer>
             )}

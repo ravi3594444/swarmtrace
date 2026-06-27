@@ -53,16 +53,15 @@ export async function GET() {
     // active_agents = agents with a trace in the last 5 minutes only
     const active_agents = Object.values(byFn).filter(s => s.lastSeen >= fiveMinutesAgo).length
 
-    // ── Real activity — bucket traces into 6-hour UTC windows ─────────────────
-    const hourBuckets: Record<string, number> = {
-      '00:00': 0, '06:00': 0, '12:00': 0, '18:00': 0,
+    // ── Real activity — bucket traces into hourly UTC windows ──────────────────
+    const hourBuckets: Record<string, number> = {}
+    for (let h = 0; h < 24; h++) {
+      hourBuckets[`${String(h).padStart(2, '0')}:00`] = 0
     }
     rows.forEach((r: any) => {
       const hour = new Date(r.timestamp).getUTCHours()
-      if      (hour <  6) hourBuckets['00:00']++
-      else if (hour < 12) hourBuckets['06:00']++
-      else if (hour < 18) hourBuckets['12:00']++
-      else                hourBuckets['18:00']++
+      const key = `${String(hour).padStart(2, '0')}:00`
+      hourBuckets[key] = (hourBuckets[key] ?? 0) + 1
     })
     const activity = Object.entries(hourBuckets).map(([time, requests]) => ({ time, requests }))
 
