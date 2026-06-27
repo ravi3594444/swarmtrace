@@ -10,6 +10,10 @@ export type Trace = {
   input_tokens: number
   output_tokens: number
   cost_usd: number
+  // added in swarmtrace 0.3.0
+  kind?: 'agent' | 'tool' | 'llm' | 'function'
+  agent_id?: string
+  agent_name?: string
 }
 
 export type Agent = {

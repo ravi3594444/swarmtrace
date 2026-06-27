@@ -13,6 +13,9 @@ type ApiSpan = {
   cost: number
   timestamp: string
   error: string | null
+  kind?: string
+  agent_id?: string
+  agent_name?: string
 }
 
 function toTrace(s: ApiSpan): Trace {
@@ -28,6 +31,9 @@ function toTrace(s: ApiSpan): Trace {
     input_tokens: s.tokens_in ?? 0,
     output_tokens: s.tokens_out ?? 0,
     cost_usd: s.cost ?? 0,
+    kind: (s.kind as 'agent' | 'tool' | 'llm' | 'function') ?? undefined,
+    agent_id: s.agent_id,
+    agent_name: s.agent_name,
   }
 }
 
