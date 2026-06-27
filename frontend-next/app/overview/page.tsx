@@ -54,12 +54,16 @@ export default function OverviewPage() {
 
   useEffect(() => {
     let mounted = true
-    fetchOverview().then((d) => {
-      if (!mounted || !d) return
-      if (d.activity?.length) setActivity(d.activity)
-      if (d.events?.length) setEvents(d.events)
-    })
-    return () => { mounted = false }
+    const load = () => {
+      fetchOverview().then((d) => {
+        if (!mounted || !d) return
+        if (d.activity?.length) setActivity(d.activity)
+        if (d.events?.length) setEvents(d.events)
+      })
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => { mounted = false; clearInterval(id) }
   }, [])
 
   if (loading) return (

@@ -93,12 +93,16 @@ export default function AgentsPage() {
 
   useEffect(() => {
     let mounted = true
-    fetchSwarmAgents().then((data) => {
-      if (!mounted) return
-      setAgents(data)
-      setLoading(false)
-    })
-    return () => { mounted = false }
+    const load = () => {
+      fetchSwarmAgents().then((data) => {
+        if (!mounted) return
+        setAgents(data)
+        setLoading(false)
+      })
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => { mounted = false; clearInterval(id) }
   }, [])
 
   if (loading) return (
