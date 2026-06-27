@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useUser } from '@clerk/nextjs'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { Bell, Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Terminal, BookOpen } from 'lucide-react'
@@ -25,6 +26,12 @@ interface BillingInfo {
 
 // ─── Billing Page ─────────────────────────────────────────────────────────────
 function BillingTab() {
+  const [usage, setUsage] = useState<{ traces_used?: number; cost_this_month?: number } | null>(null)
+
+  useEffect(() => {
+    fetchBillingInfo().then((d) => { if (d) setUsage(d) })
+  }, [])
+
   const plans = [
     {
       name: 'Hobby',
@@ -66,15 +73,15 @@ function BillingTab() {
         <p className="text-sm text-on-surface-variant mb-5">You are on the <span className="text-primary font-semibold">Hobby</span> plan.</p>
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Traces this month', value: '—', max: '10,000' },
-            { label: 'API Keys', value: '—', max: '1' },
+            { label: 'Traces this month', value: usage ? String(usage.traces_used ?? 0) : '…', max: '10,000' },
+            { label: 'Cost this month', value: usage ? `$${(usage.cost_this_month ?? 0).toFixed(4)}` : '…', max: null },
             { label: 'Data retention', value: '7 days', max: null },
           ].map(({ label, value, max }) => (
-            <div key={label} className="bg-surface-container-low border border-outline/50 rounded-xl p-4">
-              <p className="text-xs text-on-surface-variant mb-1">{label}</p>
-              <p className="text-lg font-bold text-on-surface">
+            <div key={label} className="bg-muted/40 border border-border rounded-xl p-4">
+              <p className="text-xs text-muted-foreground mb-1">{label}</p>
+              <p className="text-lg font-bold text-foreground">
                 {value}
-                {max && <span className="text-sm font-normal text-on-surface-variant"> / {max}</span>}
+                {max && <span className="text-sm font-normal text-muted-foreground"> / {max}</span>}
               </p>
             </div>
           ))}
@@ -287,7 +294,18 @@ def my_agent(prompt: str) -> str:
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
-  const [profile, setProfile] = useState({ fullName: 'Admin User', email: 'admin@swarmtrace.ai' })
+  const { user } = useUser()
+  const [profile, setProfile] = useState({ fullName: '', email: '' })
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!user) return
+    setProfile({
+      fullName: user.fullName ?? user.firstName ?? '',
+      email: user.primaryEmailAddress?.emailAddress ?? '',
+    })
+  }, [user])
   const [preferences, setPreferences] = useState({ emailNotifications: true, darkMode: false, weeklyReports: false })
   const [saved, setSaved] = useState(false)
 
@@ -404,11 +422,27 @@ export default function SettingsPage() {
     setSaved(false)
   }
 
-  const handleSave = () => {
-    setSaved(true)
-    // No return value — this is a click handler, not a useEffect.
-    // Returning a cleanup fn here does nothing; React won't call it.
-    setTimeout(() => setSaved(false), 3000)
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const res = await fetch('/api/settings/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName: profile.fullName }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setSaveError(d.error ?? 'Failed to save')
+      } else {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 3000)
+      }
+    } catch {
+      setSaveError('Network error — could not save')
+    } finally {
+      setSaving(false)
+    }
   }
 
   const navItems = [
@@ -521,19 +555,29 @@ export default function SettingsPage() {
                   </button>
                 </div>
 
-                <div className="flex justify-end gap-3">
+                <div className="flex justify-end gap-3 flex-wrap">
+                  {saveError && (
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 text-red-600 border border-red-500/30 text-sm font-medium">
+                      <AlertCircle className="w-4 h-4" />
+                      {saveError}
+                    </div>
+                  )}
                   {saved && (
                     <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-600 border border-green-500/30 text-sm font-medium">
                       <Check className="w-4 h-4" />
-                      Changes saved
+                      Saved
                     </div>
                   )}
                   <button
                     onClick={handleSave}
-                    className="flex items-center gap-2 px-6 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
+                    disabled={saving}
+                    className="flex items-center gap-2 px-6 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
                   >
-                    <Save className="w-4 h-4" />
-                    Save Changes
+                    {saving
+                      ? <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                      : <Save className="w-4 h-4" />
+                    }
+                    {saving ? 'Saving…' : 'Save Changes'}
                   </button>
                 </div>
               </>
