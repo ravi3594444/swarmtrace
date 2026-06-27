@@ -8,33 +8,14 @@ import { SmartJson } from '@/components/swarm/SmartJson'
 import { CallChainCrumbs } from '@/components/swarm/CallChainCrumbs'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import type { Trace } from '@/lib/trace-types'
+import { buildSpanTree, countDescendants, hasTreeError, type SpanNode } from '@/lib/span-tree'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import {
   ChevronRight, ChevronDown, X, Clock, Activity, Coins,
   AlertTriangle, Search, Pause, Play,
 } from 'lucide-react'
 
-type SpanNode = Trace & { children: SpanNode[] }
 
-function buildTree(traces: Trace[]): SpanNode[] {
-  const map = new Map<string, SpanNode>()
-  traces.forEach((t) => map.set(t.id, { ...t, children: [] }))
-  const roots: SpanNode[] = []
-  map.forEach((n) => {
-    if (n.parent_id && map.has(n.parent_id)) map.get(n.parent_id)!.children.push(n)
-    else roots.push(n)
-  })
-  map.forEach((n) => n.children.sort((a, b) => a.timestamp.localeCompare(b.timestamp)))
-  roots.sort((a, b) => b.timestamp.localeCompare(a.timestamp))
-  return roots
-}
-
-function countDesc(n: SpanNode): number {
-  return n.children.reduce((s, c) => s + 1 + countDesc(c), 0)
-}
-function treeErr(n: SpanNode): boolean {
-  return !!n.error || n.children.some(treeErr)
-}
 
 function TraceDetail({ trace, allTraces, onClose, onJump }: {
   trace: Trace; allTraces: Trace[]; onClose: () => void; onJump: (t: Trace) => void
@@ -131,10 +112,10 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
 }) {
   const [expanded, setExpanded] = useState(depth === 0)
   const isRoot = depth === 0
-  const hasErr = isRoot ? treeErr(node) : !!node.error
+  const hasErr = isRoot ? hasTreeError(node) : !!node.error
   const isSelected = selected?.id === node.id
   const hasKids = node.children.length > 0
-  const descCount = isRoot ? countDesc(node) : 0
+  const descCount = isRoot ? countDescendants(node) : 0
   const pct = Math.max(3, (node.latency_sec / Math.max(maxLatency, 0.001)) * 100)
   const lat = node.latency_sec >= 1 ? `${node.latency_sec.toFixed(2)}s` : `${Math.round(node.latency_sec * 1000)}ms`
 
@@ -212,7 +193,7 @@ export default function TracesPage() {
     return true
   }), [traces, search, statusFilter])
 
-  const roots = useMemo(() => buildTree(filtered), [filtered])
+  const roots = useMemo(() => buildSpanTree(filtered), [filtered])
   const maxLatency = useMemo(() => Math.max(...filtered.map((t) => t.latency_sec), 0.001), [filtered])
 
   if (loading) return (

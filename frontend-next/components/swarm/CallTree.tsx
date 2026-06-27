@@ -2,24 +2,8 @@
 
 import { useState } from "react";
 import type { Trace } from "@/lib/trace-types";
+import { buildSpanTree, type SpanNode as Node } from "@/lib/span-tree";
 import { ChevronRight, Copy, Check } from "lucide-react";
-
-type Node = Trace & { children: Node[] };
-
-function buildTree(traces: Trace[]): Node[] {
-  const ids = new Set(traces.map((t) => t.id));
-  const map = new Map<string, Node>();
-  traces.forEach((t) => map.set(t.id, { ...t, children: [] }));
-  const roots: Node[] = [];
-  map.forEach((n) => {
-    if (n.parent_id && ids.has(n.parent_id)) {
-      map.get(n.parent_id)!.children.push(n);
-    } else {
-      roots.push(n);
-    }
-  });
-  return roots;
-}
 
 function truncateId(id: string): string {
   return id.length <= 10 ? id : `${id.slice(0, 4)}...${id.slice(-4)}`;
@@ -98,7 +82,7 @@ function TreeNode({
 }
 
 export function CallTree({ traces, onSelect }: { traces: Trace[]; onSelect: (t: Trace) => void }) {
-  const roots = buildTree(traces);
+  const roots = buildSpanTree(traces);
   const maxLatency = Math.max(...traces.map((t) => t.latency_sec), 0.001);
 
   return (
