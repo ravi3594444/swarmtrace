@@ -68,9 +68,9 @@ function BillingTab() {
   return (
     <div className="space-y-8">
       {/* Current usage summary */}
-      <div className="bg-surface-container border border-outline rounded-2xl p-6">
-        <h2 className="text-xl font-semibold text-on-surface mb-1">Current Usage</h2>
-        <p className="text-sm text-on-surface-variant mb-5">You are on the <span className="text-primary font-semibold">Hobby</span> plan.</p>
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="text-xl font-semibold text-foreground mb-1">Current Usage</h2>
+        <p className="text-sm text-muted-foreground mb-5">You are on the <span className="text-primary font-semibold">Hobby</span> plan.</p>
         <div className="grid grid-cols-3 gap-4">
           {[
             { label: 'Traces this month', value: usage ? String(usage.traces_used ?? 0) : '…', max: '10,000' },
@@ -93,10 +93,10 @@ function BillingTab() {
         {plans.map((plan) => (
           <div
             key={plan.name}
-            className={`relative border rounded-2xl p-6 flex flex-col gap-4 transition-all ${
+            className={`relative border rounded-xl p-6 flex flex-col gap-4 transition-all ${
               plan.highlight
                 ? 'border-primary/60 bg-primary/5 shadow-sm shadow-primary/10'
-                : 'border-outline bg-surface-container'
+                : 'border-border bg-card'
             }`}
           >
             {plan.highlight && (
@@ -105,18 +105,18 @@ function BillingTab() {
               </span>
             )}
             <div>
-              <h3 className="text-lg font-bold text-on-surface">{plan.name}</h3>
-              <p className="text-sm text-on-surface-variant mt-0.5">{plan.description}</p>
+              <h3 className="text-lg font-bold text-foreground">{plan.name}</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">{plan.description}</p>
             </div>
             <div>
               {plan.price !== null
-                ? <span className="text-3xl font-bold text-on-surface">${plan.price}<span className="text-sm font-normal text-on-surface-variant"> /{plan.period}</span></span>
-                : <span className="text-2xl font-bold text-on-surface">{plan.period}</span>
+                ? <span className="text-3xl font-bold text-foreground">${plan.price}<span className="text-sm font-normal text-muted-foreground"> /{plan.period}</span></span>
+                : <span className="text-2xl font-bold text-foreground">{plan.period}</span>
               }
             </div>
             <ul className="space-y-2 flex-1">
               {plan.features.map(f => (
-                <li key={f} className="flex items-center gap-2 text-sm text-on-surface-variant">
+                <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
                   <span className="w-4 h-4 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0 text-xs font-bold">✓</span>
                   {f}
                 </li>
@@ -129,10 +129,10 @@ function BillingTab() {
               }}
               className={`w-full py-2.5 rounded-full text-sm font-semibold transition-all ${
                 plan.current
-                  ? 'bg-surface-container-high text-on-surface-variant cursor-default border border-outline'
+                  ? 'bg-muted/60 text-muted-foreground cursor-default border border-border'
                   : plan.highlight
                   ? 'bg-primary text-primary-foreground hover:opacity-90'
-                  : 'border border-outline text-on-surface hover:bg-surface-container-high'
+                  : 'border border-border text-foreground hover:bg-muted/60'
               }`}
             >
               {plan.cta}
@@ -142,8 +142,8 @@ function BillingTab() {
       </div>
 
       {/* FAQ */}
-      <div className="bg-surface-container border border-outline rounded-2xl p-6">
-        <h2 className="text-lg font-semibold text-on-surface mb-4">Billing FAQ</h2>
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4">Billing FAQ</h2>
         <div className="space-y-4">
           {[
             { q: 'When will Pro billing be available?', a: 'Pro plan payments are coming soon via Stripe. You will be notified by email when available.' },
@@ -151,9 +151,9 @@ function BillingTab() {
             { q: 'What happens if I exceed the free limit?', a: 'New traces will be rejected with a 429 response. Your existing data is never deleted.' },
             { q: 'Can I export my data?', a: 'Yes — use the CSV or PDF export on the Metrics page at any time.' },
           ].map(({ q, a }) => (
-            <div key={q} className="border-b border-outline/50 pb-4 last:border-0 last:pb-0">
-              <p className="text-sm font-semibold text-on-surface mb-1">{q}</p>
-              <p className="text-sm text-on-surface-variant">{a}</p>
+            <div key={q} className="border-b border-border/50 pb-4 last:border-0 last:pb-0">
+              <p className="text-sm font-semibold text-foreground mb-1">{q}</p>
+              <p className="text-sm text-muted-foreground">{a}</p>
             </div>
           ))}
         </div>
@@ -177,13 +177,13 @@ function CopyLine({ label, value, mono = true }: { label: string; value: string;
   }
   return (
     <div className="flex items-center gap-2">
-      <span className="text-xs text-on-surface-variant w-28 shrink-0">{label}</span>
-      <code className={`flex-1 px-3 py-1.5 bg-surface-container-low border border-outline rounded-lg text-xs text-on-surface truncate ${mono ? 'font-mono' : ''}`}>
+      <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
+      <code className={`flex-1 px-3 py-1.5 bg-muted/30 border border-border rounded-lg text-xs text-foreground truncate ${mono ? 'font-mono' : ''}`}>
         {value}
       </code>
       <button
         onClick={copy}
-        className="p-1.5 rounded-lg hover:bg-surface-container-high transition-colors text-on-surface-variant hover:text-on-surface shrink-0"
+        className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground shrink-0"
         title="Copy"
       >
         {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
@@ -215,21 +215,21 @@ def my_agent(prompt: str) -> str:
   }
 
   return (
-    <div className="bg-surface-container border border-outline rounded-2xl overflow-hidden">
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
       {/* Header */}
-      <div className="flex items-center gap-3 px-6 py-4 border-b border-outline bg-surface-container-high">
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-border bg-muted/60">
         <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
           <Terminal className="w-4 h-4 text-primary" />
         </div>
         <div>
-          <h2 className="text-sm font-semibold text-on-surface">Quick setup</h2>
-          <p className="text-xs text-on-surface-variant">Two env vars and one decorator — that&apos;s all</p>
+          <h2 className="text-sm font-semibold text-foreground">Quick setup</h2>
+          <p className="text-xs text-muted-foreground">Two env vars and one decorator — that&apos;s all</p>
         </div>
         <a
           href="https://github.com/ravi3594444/swarmtrace#readme"
           target="_blank"
           rel="noreferrer"
-          className="ml-auto flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-on-surface transition-colors"
+          className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
         >
           <BookOpen className="w-3.5 h-3.5" />
           Docs
@@ -239,13 +239,13 @@ def my_agent(prompt: str) -> str:
       <div className="p-6 space-y-5">
         {/* Step 1: install */}
         <div>
-          <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">1 · Install</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">1 · Install</p>
           <CopyLine label="pip install" value="pip install swarmtrace" />
         </div>
 
         {/* Step 2: env vars */}
         <div>
-          <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide mb-2">2 · Set env vars</p>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">2 · Set env vars</p>
           <div className="space-y-2">
             <CopyLine label="SWARMTRACE_API_KEY" value={keyDisplay} />
             <CopyLine label="SWARMTRACE_ENDPOINT" value={endpoint} />
@@ -255,16 +255,16 @@ def my_agent(prompt: str) -> str:
         {/* Step 3: code snippet */}
         <div>
           <div className="flex items-center justify-between mb-2">
-            <p className="text-xs font-semibold text-on-surface-variant uppercase tracking-wide">3 · Use in your code</p>
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">3 · Use in your code</p>
             <button
               onClick={copySnippet}
-              className="flex items-center gap-1.5 text-xs text-on-surface-variant hover:text-on-surface transition-colors"
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
             >
               {copiedSnippet ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
               {copiedSnippet ? 'Copied!' : 'Copy all'}
             </button>
           </div>
-          <pre className="bg-surface-container-low border border-outline rounded-xl p-4 text-xs font-mono text-on-surface overflow-x-auto leading-relaxed whitespace-pre">
+          <pre className="bg-muted/30 border border-border rounded-xl p-4 text-xs font-mono text-foreground overflow-x-auto leading-relaxed whitespace-pre">
 {`import os
 from swarmtrace import observe
 
@@ -273,7 +273,7 @@ os.environ[`}<span className="text-primary">{`"SWARMTRACE_ENDPOINT"`}</span>{`] 
 
 `}<span className="text-primary">{`@observe`}</span>{`
 def my_agent(prompt: str) -> str:
-    `}<span className="text-on-surface-variant">{`# every call traced automatically`}</span>{`
+    `}<span className="text-muted-foreground">{`# every call traced automatically`}</span>{`
     ...`}
           </pre>
         </div>
@@ -476,7 +476,7 @@ export default function SettingsPage() {
                   className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-full font-medium text-sm transition-colors ${
                     activeTab === id
                       ? 'bg-primary text-primary-foreground'
-                      : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
                   }`}
                 >
                   <Icon className="w-4 h-4" />
@@ -492,45 +492,45 @@ export default function SettingsPage() {
             {/* ── General ─────────────────────────────────────────────── */}
             {activeTab === 'general' && (
               <>
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-6">Profile Information</h2>
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <h2 className="text-xl font-semibold text-foreground mb-6">Profile Information</h2>
                   <div className="space-y-5">
                     <div>
-                      <label className="block text-sm font-medium text-on-surface mb-2">Full Name</label>
+                      <label className="block text-sm font-medium text-foreground mb-2">Full Name</label>
                       <input
                         type="text"
                         value={profile.fullName}
                         onChange={(e) => handleProfileChange('fullName', e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-full bg-surface-container-low border border-outline text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
+                        className="w-full px-4 py-2.5 rounded-full bg-muted/30 border border-border text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-on-surface mb-2">Email</label>
+                      <label className="block text-sm font-medium text-foreground mb-2">Email</label>
                       <input
                         type="email"
                         value={profile.email}
                         onChange={(e) => handleProfileChange('email', e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-full bg-surface-container-low border border-outline text-on-surface focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
+                        className="w-full px-4 py-2.5 rounded-full bg-muted/30 border border-border text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
                       />
                     </div>
                   </div>
                 </div>
 
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-6">Preferences</h2>
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <h2 className="text-xl font-semibold text-foreground mb-6">Preferences</h2>
                   <div className="space-y-3">
                     {[
                       { field: 'emailNotifications', label: 'Email Notifications', desc: 'Receive alerts and updates' },
                       { field: 'weeklyReports', label: 'Weekly Reports', desc: 'Get weekly performance summaries' },
                     ].map(({ field, label, desc }) => (
-                      <div key={field} className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline/50 hover:border-outline transition-colors">
+                      <div key={field} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 hover:border-border transition-colors">
                         <div>
-                          <p className="text-sm font-medium text-on-surface">{label}</p>
-                          <p className="text-xs text-on-surface-variant">{desc}</p>
+                          <p className="text-sm font-medium text-foreground">{label}</p>
+                          <p className="text-xs text-muted-foreground">{desc}</p>
                         </div>
                         <button
                           onClick={() => handlePreferenceChange(field)}
-                          className={`relative w-11 h-6 rounded-full transition-colors ${preferences[field as keyof typeof preferences] ? 'bg-primary' : 'bg-outline-variant'}`}
+                          className={`relative w-11 h-6 rounded-full transition-colors ${preferences[field as keyof typeof preferences] ? 'bg-primary' : 'bg-muted'}`}
                         >
                           <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${preferences[field as keyof typeof preferences] ? 'translate-x-5' : 'translate-x-0'}`} />
                         </button>
@@ -539,9 +539,9 @@ export default function SettingsPage() {
                   </div>
                 </div>
 
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-1">Danger Zone</h2>
-                  <p className="text-sm text-on-surface-variant mb-4">Permanently delete your account and all traces. This cannot be undone.</p>
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <h2 className="text-xl font-semibold text-foreground mb-1">Danger Zone</h2>
+                  <p className="text-sm text-muted-foreground mb-4">Permanently delete your account and all traces. This cannot be undone.</p>
                   <button
                     onClick={() => {
                       if (window.confirm('Are you sure? This will permanently delete your account and all data.')) {
@@ -591,7 +591,7 @@ export default function SettingsPage() {
 
                 {/* Error banner */}
                 {apiKeyError && (
-                  <div className="flex items-start gap-3 px-4 py-3 rounded-2xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
+                  <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
                     <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
                     <span>{apiKeyError}</span>
                   </div>
@@ -599,10 +599,10 @@ export default function SettingsPage() {
 
                 {/* Created key reveal */}
                 {createdKey && (
-                  <div className="bg-green-500/10 border border-green-500/30 rounded-2xl p-6">
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-6">
                     <p className="text-sm text-green-600 font-semibold mb-3">✓ API Key Created Successfully</p>
                     <div className="flex items-center gap-2 mb-3">
-                      <code className="flex-1 px-3 py-2 bg-surface-container border border-outline rounded-xl text-on-surface text-xs break-all font-mono">
+                      <code className="flex-1 px-3 py-2 bg-card border border-border rounded-xl text-foreground text-xs break-all font-mono">
                         {createdKey.key}
                       </code>
                       <button
@@ -613,15 +613,15 @@ export default function SettingsPage() {
                         {copiedKey ? 'Copied!' : 'Copy'}
                       </button>
                     </div>
-                    <p className="text-xs text-on-surface-variant">⚠ Save this key now. You won&apos;t be able to see it again.</p>
-                    <button onClick={() => setCreatedKey(null)} className="mt-3 text-xs text-on-surface-variant underline underline-offset-2">Dismiss</button>
+                    <p className="text-xs text-muted-foreground">⚠ Save this key now. You won&apos;t be able to see it again.</p>
+                    <button onClick={() => setCreatedKey(null)} className="mt-3 text-xs text-muted-foreground underline underline-offset-2">Dismiss</button>
                   </div>
                 )}
 
                 {/* Create new key */}
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-2">Create New API Key</h2>
-                  <p className="text-sm text-on-surface-variant mb-5">Use API keys to authenticate requests from your agent code.</p>
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <h2 className="text-xl font-semibold text-foreground mb-2">Create New API Key</h2>
+                  <p className="text-sm text-muted-foreground mb-5">Use API keys to authenticate requests from your agent code.</p>
                   <div className="flex gap-3">
                     <input
                       type="text"
@@ -629,7 +629,7 @@ export default function SettingsPage() {
                       value={newKeyName}
                       onChange={(e) => { setNewKeyName(e.target.value); setApiKeyError(null) }}
                       onKeyDown={(e) => e.key === 'Enter' && !creatingKey && handleCreateApiKey()}
-                      className="flex-1 px-4 py-2.5 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
+                      className="flex-1 px-4 py-2.5 rounded-full bg-muted/30 border border-border text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
                     />
                     <button
                       onClick={handleCreateApiKey}
@@ -647,10 +647,10 @@ export default function SettingsPage() {
                 </div>
 
                 {/* Existing keys */}
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
+                <div className="bg-card border border-border rounded-xl p-6">
                   <div className="flex items-center justify-between mb-5">
-                    <h3 className="text-lg font-semibold text-on-surface">Your API Keys</h3>
-                    <button onClick={loadApiKeys} className="text-xs text-on-surface-variant hover:text-on-surface transition-colors underline underline-offset-2">
+                    <h3 className="text-lg font-semibold text-foreground">Your API Keys</h3>
+                    <button onClick={loadApiKeys} className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
                       Refresh
                     </button>
                   </div>
@@ -658,17 +658,17 @@ export default function SettingsPage() {
                     <SkeletonCard />
                   ) : apiKeys.length === 0 ? (
                     <div className="text-center py-8">
-                      <Key className="w-10 h-10 text-on-surface-variant/40 mx-auto mb-3" />
-                      <p className="text-sm text-on-surface-variant">No API keys yet. Create one above.</p>
+                      <Key className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+                      <p className="text-sm text-muted-foreground">No API keys yet. Create one above.</p>
                     </div>
                   ) : (
                     <div className="space-y-3">
                       {apiKeys.map((key) => (
-                        <div key={key.id} className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline">
+                        <div key={key.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border">
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-on-surface">{key.name}</p>
-                            <p className="text-xs text-on-surface-variant font-mono mt-0.5">{key.prefix}</p>
-                            <p className="text-xs text-on-surface-variant mt-1">
+                            <p className="text-sm font-semibold text-foreground">{key.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono mt-0.5">{key.prefix}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
                               Created {new Date(key.created).toLocaleDateString()}
                               {key.last_used && ` · Last used ${new Date(key.last_used).toLocaleDateString()}`}
                             </p>
@@ -705,12 +705,12 @@ export default function SettingsPage() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {integrations.map((integration) => (
-                      <div key={integration.id} className="bg-surface-container border border-outline rounded-2xl p-6 hover:border-primary/50 transition-colors">
+                      <div key={integration.id} className="bg-card border border-border rounded-xl p-6 hover:border-primary/50 transition-colors">
                         <div className="flex items-start justify-between mb-3">
-                          <h3 className="font-semibold text-on-surface">{integration.name}</h3>
-                          <span className={`w-2.5 h-2.5 mt-1 rounded-full shrink-0 ${integration.connected ? 'bg-green-500' : 'bg-outline-variant'}`} />
+                          <h3 className="font-semibold text-foreground">{integration.name}</h3>
+                          <span className={`w-2.5 h-2.5 mt-1 rounded-full shrink-0 ${integration.connected ? 'bg-green-500' : 'bg-muted'}`} />
                         </div>
-                        <p className="text-sm text-on-surface-variant mb-5 leading-relaxed">{integration.description}</p>
+                        <p className="text-sm text-muted-foreground mb-5 leading-relaxed">{integration.description}</p>
                         <button className={`w-full px-4 py-2 rounded-full text-sm font-medium transition-colors ${
                           integration.connected
                             ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20'
