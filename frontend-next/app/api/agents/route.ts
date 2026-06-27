@@ -44,12 +44,12 @@ export async function GET() {
         )
         const successRate = ((traces.length - errorCount) / traces.length) * 100
 
-        // ACTIVE = had a successful trace in the last 5 min (recently completed, not phantom-running)
-        // ERROR  = latest trace has an error
-        // IDLE   = no recent activity
+        // RUNNING = had a successful trace in the last 5 min
+        // ERROR   = latest trace has an error
+        // IDLE    = no recent activity
         const status = latestEvent.error
           ? 'ERROR'
-          : isRecent ? 'ACTIVE' : 'IDLE'
+          : isRecent ? 'RUNNING' : 'IDLE'
 
         return {
           id,
