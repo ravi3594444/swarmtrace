@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 
 export function DevelopersSection() {
   return (
-    <section className="py-24 bg-gradient-to-b from-muted/10 to-background">
+    <section id="developers" className="py-24 bg-gradient-to-b from-muted/10 to-background">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
         <div className="grid lg:grid-cols-2 gap-16 items-center">
           <div>
