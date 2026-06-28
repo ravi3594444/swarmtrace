@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
@@ -9,10 +9,11 @@ import { CallTree } from '@/components/swarm/CallTree'
 import { TokenChart } from '@/components/swarm/TokenChart'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
 import { fetchOverview } from '@/lib/api'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Activity, Info, ChevronDown } from 'lucide-react'
+import { Activity, ChevronDown, ChevronUp, Info } from 'lucide-react'
 
 const chartTooltip = {
   contentStyle: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
@@ -46,6 +47,42 @@ function EventRow({ type, message }: { type: string; message: string }) {
   )
 }
 
+/** Small agent selector shown above LiveActivity when >1 agent is active */
+function AgentPicker({ agents, selected, onSelect }: {
+  agents: { id: string; name: string }[]
+  selected: string
+  onSelect: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const current = agents.find((a) => a.id === selected)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <span className="max-w-[120px] truncate">{current?.name ?? selected}</span>
+        {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 w-48 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+          {agents.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => { onSelect(a.id); setOpen(false) }}
+              className={`w-full px-3 py-2 text-left text-xs transition-colors hover:bg-muted/60
+                ${a.id === selected ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+            >
+              {a.name}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function OverviewPage() {
   const { traces, loading, isLive } = useSwarmTraces(10000)
   const [selected, setSelected] = useState<Trace | null>(null)
@@ -65,6 +102,28 @@ export default function OverviewPage() {
     const id = setInterval(load, 30_000)
     return () => { mounted = false; clearInterval(id) }
   }, [])
+
+  // Derive unique agents from traces that have agent_id
+  const activeAgents = useMemo(() => {
+    const seen = new Map<string, string>()
+    traces.forEach((t) => {
+      if (t.agent_id && !seen.has(t.agent_id)) {
+        seen.set(t.agent_id, t.agent_name ?? t.agent_id)
+      }
+    })
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
+  }, [traces])
+
+  const [pickedAgent, setPickedAgent] = useState<string>('')
+
+  // Auto-select the most recently active agent
+  useEffect(() => {
+    if (activeAgents.length > 0 && !activeAgents.find((a) => a.id === pickedAgent)) {
+      setPickedAgent(activeAgents[0].id)
+    }
+  }, [activeAgents, pickedAgent])
+
+  const hasRealtime = activeAgents.length > 0 && !!pickedAgent
 
   if (loading) return (
     <DashboardLayout>
@@ -92,10 +151,14 @@ export default function OverviewPage() {
         <StatBar traces={traces} />
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Activity chart — 2/3 width */}
           <div className="xl:col-span-2 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
             <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
-              <div className="flex items-center gap-2"><Activity className="w-4 h-4 text-muted-foreground" /><h3 className="text-sm font-semibold text-foreground">Request Activity</h3></div>
-              <span className="text-[11px] text-muted-foreground">last 24h</span>
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold text-foreground">Request Activity</h3>
+              </div>
+              <span className="text-[11px] text-muted-foreground">last 24h · hourly</span>
             </div>
             <div className="p-4 h-44">
               {activity.length === 0 ? (
@@ -110,7 +173,7 @@ export default function OverviewPage() {
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} />
+                    <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} interval={3} />
                     <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
                     <Tooltip {...chartTooltip} />
                     <Area type="monotone" dataKey="requests" stroke="var(--primary)" strokeWidth={2} fill="url(#colorReq)" dot={false} activeDot={{ r: 4, fill: 'var(--primary)', stroke: 'var(--card)', strokeWidth: 2 }} />
@@ -120,23 +183,46 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
-            <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
-              <div className="flex items-center gap-2"><Info className="w-4 h-4 text-muted-foreground" /><h3 className="text-sm font-semibold text-foreground">Live Events</h3></div>
-              <span className="text-[11px] text-muted-foreground flex items-center gap-1.5"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500 swarm-pulse" />LIVE</span>
-            </div>
-            <div className="divide-y divide-border/50 overflow-y-auto max-h-60">
-              {(events.length ? events : traces.slice(0, 6).map((t) => ({
-                timestamp: t.timestamp,
-                type: t.error ? 'ERROR' : 'INFO',
-                message: t.error ? `${t.function}: ${t.error}` : `${t.function} completed in ${t.latency_sec.toFixed(2)}s`,
-              }))).slice(0, 8).map((e, i) => (
-                <EventRow key={`${e.timestamp}-${i}`} type={e.type} message={e.message} />
-              ))}
-              {events.length === 0 && traces.length === 0 && (
-                <div className="px-4 py-8 text-center text-xs text-muted-foreground">No events yet</div>
+          {/* Live Activity — 1/3 width. Shows FOV realtime events if agent_id is available,
+              falls back to the polled event feed for older SDK traces. */}
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold text-foreground">
+                  {hasRealtime ? 'Live Activity' : 'Live Events'}
+                </h3>
+              </div>
+              {hasRealtime && activeAgents.length > 1 ? (
+                <AgentPicker agents={activeAgents} selected={pickedAgent} onSelect={setPickedAgent} />
+              ) : (
+                <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 swarm-pulse" />LIVE
+                </span>
               )}
             </div>
+
+            {hasRealtime ? (
+              <div className="flex-1 overflow-hidden min-h-0">
+                <LiveActivity
+                  agentId={pickedAgent}
+                  agentName={activeAgents.find((a) => a.id === pickedAgent)?.name}
+                />
+              </div>
+            ) : (
+              <div className="divide-y divide-border/50 overflow-y-auto max-h-60">
+                {(events.length ? events : traces.slice(0, 6).map((t) => ({
+                  timestamp: t.timestamp,
+                  type: t.error ? 'ERROR' : 'INFO',
+                  message: t.error ? `${t.function}: ${t.error}` : `${t.function} completed in ${t.latency_sec.toFixed(2)}s`,
+                }))).slice(0, 8).map((e, i) => (
+                  <EventRow key={`${e.timestamp}-${i}`} type={e.type} message={e.message} />
+                ))}
+                {events.length === 0 && traces.length === 0 && (
+                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">No events yet</div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
