@@ -21,7 +21,8 @@ const nextConfig = {
             key:   'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://clerk.swarmtrace.ai https://*.clerk.accounts.dev",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://clerk.swarmtrace.ai https://*.clerk.accounts.dev",
+              "worker-src 'self' blob:",
               "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
               "font-src 'self' https://cdn.jsdelivr.net",
               "img-src 'self' data: blob: https:",
