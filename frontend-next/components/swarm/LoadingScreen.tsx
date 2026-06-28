@@ -1,6 +1,11 @@
 'use client'
 
 import { DotLottieReact } from '@lottiefiles/dotlottie-react'
+import { DotLottie } from '@lottiefiles/dotlottie-web'
+
+// Point the renderer at our self-hosted WASM so it never hits cdn.jsdelivr.net
+// (which would be blocked by connect-src CSP)
+DotLottie.setWasmUrl('/dotlottie-player.wasm')
 
 export function SwarmLoadingScreen({ message = 'Loading...' }: { message?: string }) {
   return (
