@@ -10,7 +10,7 @@ import { SkeletonCard } from '@/components/skeleton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
-interface Integration { id: string; name: string; description: string; connected: boolean }
+interface Integration { id: string; name: string; description: string; connected: boolean; requires?: string | null }
 interface BillingInfo {
   plan?: string
   price?: number
@@ -324,6 +324,7 @@ export default function SettingsPage() {
   // Integrations state
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [loadingIntegrations, setLoadingIntegrations] = useState(false)
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
   // Load API keys when tab changes
   const loadApiKeys = useCallback(async () => {
@@ -411,6 +412,28 @@ export default function SettingsPage() {
       setApiKeyError('Failed to revoke key.')
     } finally {
       setRevokingId(null)
+    }
+  }
+
+  const handleToggleIntegration = async (id: string, currentlyConnected: boolean) => {
+    setTogglingId(id)
+    const next = !currentlyConnected
+    // Optimistic update
+    setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: next } : i))
+    try {
+      const res = await fetch('/api/settings/integrations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, connected: next }),
+      })
+      if (!res.ok) {
+        // Revert on failure
+        setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: currentlyConnected } : i))
+      }
+    } catch {
+      setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: currentlyConnected } : i))
+    } finally {
+      setTogglingId(null)
     }
   }
 
@@ -707,18 +730,31 @@ export default function SettingsPage() {
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {integrations.map((integration) => (
-                      <div key={integration.id} className="bg-card border border-border rounded-xl p-6 hover:border-primary/50 transition-colors">
+                      <div key={integration.id} className="bg-card border border-border rounded-xl p-6 hover:border-primary/50 transition-colors flex flex-col">
                         <div className="flex items-start justify-between mb-3">
                           <h3 className="font-semibold text-foreground">{integration.name}</h3>
                           <span className={`w-2.5 h-2.5 mt-1 rounded-full shrink-0 ${integration.connected ? 'bg-green-500' : 'bg-muted'}`} />
                         </div>
-                        <p className="text-sm text-muted-foreground mb-5 leading-relaxed">{integration.description}</p>
-                        <button className={`w-full px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                          integration.connected
-                            ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20'
-                            : 'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20'
-                        }`}>
-                          {integration.connected ? 'Disconnect' : 'Connect'}
+                        <p className="text-sm text-muted-foreground leading-relaxed">{integration.description}</p>
+                        {integration.requires && (
+                          <p className="text-xs text-muted-foreground/70 mt-1.5 italic">{integration.requires}</p>
+                        )}
+                        <div className="flex-1" />
+                        <button
+                          onClick={() => handleToggleIntegration(integration.id, integration.connected)}
+                          disabled={togglingId === integration.id}
+                          className={`mt-5 w-full px-4 py-2 rounded-full text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
+                            integration.connected
+                              ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20'
+                              : 'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20'
+                          }`}
+                        >
+                          {togglingId === integration.id
+                            ? <div className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                            : null}
+                          {togglingId === integration.id
+                            ? (integration.connected ? 'Disconnecting…' : 'Connecting…')
+                            : (integration.connected ? 'Disconnect' : 'Connect')}
                         </button>
                       </div>
                     ))}
