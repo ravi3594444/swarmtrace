@@ -176,18 +176,20 @@ function CopyLine({ label, value, mono = true }: { label: string; value: string;
     setTimeout(() => setCopied(false), 2000)
   }
   return (
-    <div className="flex items-center gap-2">
-      <span className="text-xs text-muted-foreground w-28 shrink-0">{label}</span>
-      <code className={`flex-1 px-3 py-1.5 bg-muted/30 border border-border rounded-lg text-xs text-foreground truncate ${mono ? 'font-mono' : ''}`}>
-        {value}
-      </code>
-      <button
-        onClick={copy}
-        className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground shrink-0"
-        title="Copy"
-      >
-        {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
-      </button>
+    <div className="space-y-1.5">
+      <span className="block text-xs font-mono font-medium text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <code className={`flex-1 min-w-0 px-3 py-1.5 bg-muted/30 border border-border rounded-lg text-xs text-foreground truncate ${mono ? 'font-mono' : ''}`}>
+          {value}
+        </code>
+        <button
+          onClick={copy}
+          className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground shrink-0"
+          title="Copy"
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
+      </div>
     </div>
   )
 }
@@ -587,7 +589,7 @@ export default function SettingsPage() {
             {activeTab === 'api' && (
               <div className="space-y-6">
                 {/* Quick Setup */}
-                <QuickSetup apiKeyPlaceholder={createdKey?.key || apiKeys[0]?.prefix?.replace('...', '') + '…'} />
+                <QuickSetup apiKeyPlaceholder={createdKey?.key || (apiKeys[0]?.prefix ? apiKeys[0].prefix.replace('...', '') + '…' : undefined)} />
 
                 {/* Error banner */}
                 {apiKeyError && (
