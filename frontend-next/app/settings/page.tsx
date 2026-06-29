@@ -5,8 +5,9 @@ import { useUser } from '@clerk/nextjs'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { Bell, Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Terminal, BookOpen } from 'lucide-react'
-import { fetchApiKeys, createApiKey, revokeApiKey, fetchIntegrations, fetchBillingInfo } from '@/lib/api'
+import { fetchApiKeys, createApiKey, revokeApiKey, fetchBillingInfo } from '@/lib/api'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
+import { SkeletonCard } from '@/components/skeleton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
@@ -322,10 +323,16 @@ export default function SettingsPage() {
   const [copiedKey, setCopiedKey] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
 
-  // Integrations state
+  const { refresh: refreshIntegrationsCtx, integrations: ctxIntegrations, loading: loadingIntegrations } = useIntegrations()
+
+  // Local copy of integrations for optimistic toggle UI
   const [integrations, setIntegrations] = useState<Integration[]>([])
-  const [loadingIntegrations, setLoadingIntegrations] = useState(false)
   const [togglingId, setTogglingId] = useState<string | null>(null)
+
+  // Seed local state from context whenever context updates
+  useEffect(() => {
+    if (ctxIntegrations.length > 0) setIntegrations(ctxIntegrations)
+  }, [ctxIntegrations])
 
   // Load API keys when tab changes
   const loadApiKeys = useCallback(async () => {
@@ -349,22 +356,6 @@ export default function SettingsPage() {
   useEffect(() => {
     if (activeTab === 'api') loadApiKeys()
   }, [activeTab, loadApiKeys])
-
-  useEffect(() => {
-    if (activeTab === 'integrations') {
-      const load = async () => {
-        setLoadingIntegrations(true)
-        const result = await fetchIntegrations()
-        setIntegrations(result?.integrations || [
-          { id: 'slack', name: 'Slack', description: 'Send notifications to Slack', connected: true },
-          { id: 'pagerduty', name: 'PagerDuty', description: 'Alert escalation', connected: false },
-          { id: 'datadog', name: 'Datadog', description: 'Metrics and monitoring', connected: true },
-        ])
-        setLoadingIntegrations(false)
-      }
-      load()
-    }
-  }, [activeTab])
 
   // Create API key with full error feedback
   const handleCreateApiKey = async () => {

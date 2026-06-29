@@ -54,7 +54,7 @@ function RegressionMonitorPanel({ data }: { data: MetricsData | null }) {
           {[
             { label: 'Traces analysed', value: data?.all_time?.traces?.toLocaleString() ?? '0' },
             { label: 'Regressions detected', value: '0' },
-            { label: 'Functions monitored', value: data?.all_time?.traces ? String(Math.min(data.all_time.traces, 50)) : '0' },
+            { label: 'Status', value: 'Active' },
           ].map(({ label, value }) => (
             <div key={label} className="bg-muted/30 rounded-xl p-3 border border-border">
               <p className="text-xs text-muted-foreground mb-1">{label}</p>

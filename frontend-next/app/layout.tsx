@@ -71,9 +71,9 @@ export default function RootLayout({
           >
             <IntegrationsProvider>
               {children}
+              <Analytics />
             </IntegrationsProvider>
           </ThemeProvider>
-          <Analytics />
         </body>
       </html>
     </ClerkProvider>
