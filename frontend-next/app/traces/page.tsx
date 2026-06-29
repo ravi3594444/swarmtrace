@@ -12,9 +12,10 @@ import { TraceTable } from '@/components/swarm/TraceTable'
 import type { Trace } from '@/lib/trace-types'
 import { buildSpanTree, countDescendants, hasTreeError, type SpanNode } from '@/lib/span-tree'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
+import { useIntegrations } from '@/contexts/IntegrationsContext'
 import {
   ChevronRight, ChevronDown, X, Clock, Activity, Coins,
-  AlertTriangle, Search, Pause, Play, GitBranch, Table2, BarChart2,
+  AlertTriangle, Search, Pause, Play, GitBranch, Table2, BarChart2, Wrench, Globe,
 } from 'lucide-react'
 
 type ViewMode = 'tree' | 'table' | 'waterfall'
@@ -185,9 +186,82 @@ const VIEW_BUTTONS: { mode: ViewMode; icon: typeof GitBranch; label: string }[] 
   { mode: 'waterfall', icon: BarChart2, label: 'Waterfall' },
 ]
 
+// ── Integration Panels ────────────────────────────────────────────────────────
+
+function ToolAttentionPanel({ traces }: { traces: Trace[] }) {
+  const tools = useMemo(() => {
+    const map = new Map<string, { calls: number; totalLatency: number; errors: number }>()
+    for (const t of traces) {
+      if (t.kind !== 'tool') continue
+      const e = map.get(t.function) || { calls: 0, totalLatency: 0, errors: 0 }
+      e.calls++; e.totalLatency += t.latency_sec; if (t.error) e.errors++
+      map.set(t.function, e)
+    }
+    return Array.from(map.entries())
+      .map(([name, s]) => ({ name, calls: s.calls, avgLatency: s.totalLatency / s.calls, errors: s.errors }))
+      .sort((a, b) => b.calls - a.calls)
+      .slice(0, 6)
+  }, [traces])
+
+  const maxCalls = tools[0]?.calls || 1
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden mb-5">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
+        <Wrench className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Tool Attention</h3>
+        <span className="ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />ACTIVE
+        </span>
+        <span className="ml-auto text-[11px] text-muted-foreground">kind=tool spans only</span>
+      </div>
+      <div className="p-4">
+        {tools.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-3">
+            No tool spans recorded yet. Decorate tool functions with <code className="font-mono text-xs bg-muted px-1 rounded">@observe(kind=&quot;tool&quot;)</code>.
+          </p>
+        ) : (
+          <div className="space-y-2.5">
+            {tools.map(t => (
+              <div key={t.name} className="flex items-center gap-3">
+                <span className="text-xs font-mono text-foreground truncate w-40 shrink-0">{t.name}</span>
+                <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                  <div className="h-full rounded-full bg-primary" style={{ width: `${(t.calls / maxCalls) * 100}%` }} />
+                </div>
+                <span className="text-xs text-muted-foreground w-16 text-right shrink-0">{t.calls} calls</span>
+                <span className="text-xs text-muted-foreground w-16 text-right shrink-0">{t.avgLatency.toFixed(2)}s avg</span>
+                {t.errors > 0 && (
+                  <span className="text-xs text-red-500 shrink-0">{t.errors} err</span>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function ScrapingBanner({ count }: { count: number }) {
+  return (
+    <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-primary/5 border border-primary/20 mb-4 text-sm">
+      <Globe className="w-4 h-4 text-primary shrink-0" />
+      <span className="text-foreground">
+        <span className="font-semibold text-primary">{count}</span> scraping trace{count !== 1 ? 's' : ''} found
+      </span>
+      <span className="text-xs text-muted-foreground ml-1">— Scrapling integration active</span>
+    </div>
+  )
+}
+
 export default function TracesPage() {
   const { traces, loading, isLive, toggleLive } = useSwarmTraces(8000)
   const [selected, setSelected] = useState<Trace | null>(null)
+  const { isEnabled } = useIntegrations()
+  const scrapingCount = useMemo(
+    () => traces.filter(t => t.kind === 'scraping' || t.function.toLowerCase().includes('scrap')).length,
+    [traces]
+  )
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OK' | 'ERROR'>('ALL')
   const [view, setView] = useState<ViewMode>('tree')
@@ -259,6 +333,14 @@ export default function TracesPage() {
           </div>
         }
       />
+
+      {/* Integration Panels */}
+      {(isEnabled('tool-attention') || (isEnabled('scrapling') && scrapingCount > 0)) && (
+        <div className="px-5 pt-4">
+          {isEnabled('scrapling') && scrapingCount > 0 && <ScrapingBanner count={scrapingCount} />}
+          {isEnabled('tool-attention') && <ToolAttentionPanel traces={traces} />}
+        </div>
+      )}
 
       {/* Waterfall — full width, no side panel */}
       {view === 'waterfall' && (

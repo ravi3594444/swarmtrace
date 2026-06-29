@@ -13,7 +13,8 @@ import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
 import { fetchOverview } from '@/lib/api'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Activity, ChevronDown, ChevronUp, Info } from 'lucide-react'
+import { Activity, ChevronDown, ChevronUp, Info, Coins, TrendingDown } from 'lucide-react'
+import { useIntegrations } from '@/contexts/IntegrationsContext'
 
 const chartTooltip = {
   contentStyle: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
@@ -83,8 +84,124 @@ function AgentPicker({ agents, selected, onSelect }: {
   )
 }
 
+// ── Integration Panels ────────────────────────────────────────────────────────
+
+function TokenBudgetPanel({ traces }: { traces: Trace[] }) {
+  const agentTokens = useMemo(() => {
+    const map = new Map<string, { name: string; input: number; output: number; calls: number }>()
+    for (const t of traces) {
+      const key = t.agent_id || t.agent_name || ''
+      if (!key) continue
+      const e = map.get(key) || { name: t.agent_name || key, input: 0, output: 0, calls: 0 }
+      e.input += t.input_tokens; e.output += t.output_tokens; e.calls++
+      map.set(key, e)
+    }
+    return Array.from(map.values()).sort((a, b) => (b.input + b.output) - (a.input + a.output))
+  }, [traces])
+
+  const maxTotal = agentTokens[0] ? agentTokens[0].input + agentTokens[0].output : 1
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
+        <Coins className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Token Budget Monitor</h3>
+        <span className="ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />ACTIVE
+        </span>
+        <span className="ml-auto text-[11px] text-muted-foreground">per agent · all time</span>
+      </div>
+      <div className="p-4">
+        {agentTokens.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No agent token data yet — tag your agents with <code className="font-mono text-xs bg-muted px-1 rounded">agent_name</code> in the SDK.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {agentTokens.slice(0, 5).map(a => {
+              const total = a.input + a.output
+              const pct = Math.round((total / maxTotal) * 100)
+              return (
+                <div key={a.name}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-foreground truncate max-w-[60%]">{a.name}</span>
+                    <span className="text-xs text-muted-foreground">{total.toLocaleString()} tokens</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex gap-3 mt-0.5">
+                    <span className="text-[10px] text-muted-foreground">↑ {a.input.toLocaleString()} in</span>
+                    <span className="text-[10px] text-muted-foreground">↓ {a.output.toLocaleString()} out</span>
+                    <span className="text-[10px] text-muted-foreground">{a.calls} calls</span>
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RegressionPanel({ traces }: { traces: Trace[] }) {
+  // Group by function and flag high-variance latency as potential regressions
+  const riskFns = useMemo(() => {
+    const map = new Map<string, number[]>()
+    for (const t of traces) {
+      const arr = map.get(t.function) || []
+      arr.push(t.latency_sec)
+      map.set(t.function, arr)
+    }
+    return Array.from(map.entries())
+      .filter(([, lats]) => lats.length >= 3)
+      .map(([fn, lats]) => {
+        const avg = lats.reduce((a, b) => a + b, 0) / lats.length
+        const variance = lats.reduce((a, b) => a + (b - avg) ** 2, 0) / lats.length
+        const cv = avg > 0 ? Math.sqrt(variance) / avg : 0
+        return { fn, cv, avg, calls: lats.length }
+      })
+      .filter(r => r.cv > 0.4)
+      .sort((a, b) => b.cv - a.cv)
+      .slice(0, 3)
+  }, [traces])
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
+        <TrendingDown className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Regression Monitor</h3>
+        <span className={`ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${riskFns.length > 0 ? 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' : 'bg-green-500/10 text-green-600 border-green-500/20'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${riskFns.length > 0 ? 'bg-yellow-500' : 'bg-green-500'}`} />
+          {riskFns.length > 0 ? `${riskFns.length} AT RISK` : 'ALL CLEAR'}
+        </span>
+      </div>
+      <div className="p-4">
+        {riskFns.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-3">No latency regressions detected across {traces.length} traces.</p>
+        ) : (
+          <div className="space-y-2">
+            {riskFns.map(r => (
+              <div key={r.fn} className="flex items-center justify-between p-2.5 bg-yellow-500/5 border border-yellow-500/20 rounded-lg">
+                <div className="min-w-0">
+                  <p className="text-xs font-mono font-medium text-foreground truncate">{r.fn}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{r.calls} calls · avg {r.avg.toFixed(2)}s</p>
+                </div>
+                <span className="text-xs font-semibold text-yellow-600 ml-3 shrink-0">CV {(r.cv * 100).toFixed(0)}%</span>
+              </div>
+            ))}
+            <p className="text-[10px] text-muted-foreground pt-1">High coefficient of variation (CV &gt; 40%) signals unstable latency.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
 export default function OverviewPage() {
   const { traces, loading, isLive } = useSwarmTraces(10000)
+  const { isEnabled } = useIntegrations()
   const [selected, setSelected] = useState<Trace | null>(null)
   const [activity, setActivity] = useState<{ time: string; requests: number }[]>([])
   const [events, setEvents] = useState<OverviewEvent[]>([])
@@ -225,6 +342,14 @@ export default function OverviewPage() {
             )}
           </div>
         </div>
+
+        {/* Integration Panels — only rendered when integrations are enabled */}
+        {(isEnabled('token-budget') || isEnabled('regression-detector')) && (
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+            {isEnabled('token-budget')        && <TokenBudgetPanel traces={traces} />}
+            {isEnabled('regression-detector') && <RegressionPanel  traces={traces} />}
+          </div>
+        )}
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
           <CallTree traces={traces} onSelect={setSelected} />

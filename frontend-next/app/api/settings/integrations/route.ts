@@ -1,58 +1,39 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
+import { supaRequest } from '@/lib/supabase'
 
-// In-memory store for connected state (replace with Supabase persist when ready)
-const connectedState: Record<string, boolean> = {
-  'swarmtrace-observe': true,
-  'token-budget': true,
-  'tool-attention': false,
-  'scrapling': false,
-  'regression-detector': false,
-}
-
-const INTEGRATIONS = [
-  {
-    id: 'swarmtrace-observe',
-    name: 'swarmtrace @observe',
-    description: 'Auto-traces all decorated functions',
-    requires: null,
-  },
-  {
-    id: 'token-budget',
-    name: 'Token Budget',
-    description: 'Monitors token limits per agent',
-    requires: null,
-  },
-  {
-    id: 'tool-attention',
-    name: 'Tool Attention',
-    description: 'Highlights tools contributing most to agent decisions',
-    requires: 'sentence-transformers + faiss',
-  },
-  {
-    id: 'scrapling',
-    name: 'Scrapling',
-    description: 'Captures and traces web scraping agent runs',
-    requires: null,
-  },
-  {
-    id: 'regression-detector',
-    name: 'Regression Detector',
-    description: 'LLM-based output regression detection across agent runs',
-    requires: 'Optional: any LLM callable (or litai + LIGHTNING_API_KEY)',
-  },
+const INTEGRATIONS_META = [
+  { id: 'swarmtrace-observe', name: 'swarmtrace @observe',   description: 'Auto-traces all decorated functions',                             requires: null,                                                          default_connected: true  },
+  { id: 'token-budget',       name: 'Token Budget',          description: 'Monitors token limits per agent',                                  requires: null,                                                          default_connected: true  },
+  { id: 'tool-attention',     name: 'Tool Attention',        description: 'Highlights tools contributing most to agent decisions',            requires: 'sentence-transformers + faiss',                               default_connected: false },
+  { id: 'scrapling',          name: 'Scrapling',             description: 'Captures and traces web scraping agent runs',                      requires: null,                                                          default_connected: false },
+  { id: 'regression-detector', name: 'Regression Detector', description: 'LLM-based output regression detection across agent runs',          requires: 'Optional: any LLM callable (or litai + LIGHTNING_API_KEY)',  default_connected: false },
 ]
 
 export async function GET() {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  return NextResponse.json({
-    integrations: INTEGRATIONS.map(i => ({
-      ...i,
-      connected: connectedState[i.id] ?? false,
-    })),
-  })
+  let savedRows: Array<{ integration_id: string; connected: boolean }> = []
+  try {
+    savedRows = await supaRequest(
+      `user_integrations?user_id=eq.${encodeURIComponent(userId)}&select=integration_id,connected`
+    ) || []
+  } catch {
+    // table may not exist yet — fall back to defaults
+  }
+
+  const savedMap = new Map(savedRows.map(r => [r.integration_id, r.connected]))
+
+  const integrations = INTEGRATIONS_META.map(meta => ({
+    id:          meta.id,
+    name:        meta.name,
+    description: meta.description,
+    requires:    meta.requires,
+    connected:   savedMap.has(meta.id) ? savedMap.get(meta.id)! : meta.default_connected,
+  }))
+
+  return NextResponse.json({ integrations })
 }
 
 export async function PATCH(request: Request) {
@@ -64,9 +45,22 @@ export async function PATCH(request: Request) {
     if (!id || typeof connected !== 'boolean') {
       return NextResponse.json({ error: 'Missing id or connected' }, { status: 400 })
     }
-    connectedState[id] = connected
+
+    await supaRequest('user_integrations', {
+      method:  'POST',
+      headers: { Prefer: 'resolution=merge-duplicates' },
+      body: JSON.stringify({
+        user_id:        userId,
+        integration_id: id,
+        connected,
+        connected_at: connected ? new Date().toISOString() : null,
+        updated_at:   new Date().toISOString(),
+      }),
+    })
+
     return NextResponse.json({ id, connected, ok: true })
-  } catch {
-    return NextResponse.json({ error: 'Invalid body' }, { status: 400 })
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : 'Failed to save'
+    return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
