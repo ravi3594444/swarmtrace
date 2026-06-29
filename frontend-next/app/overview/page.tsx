@@ -179,7 +179,11 @@ function RegressionPanel({ traces }: { traces: Trace[] }) {
       </div>
       <div className="p-4">
         {riskFns.length === 0 ? (
-          <p className="text-sm text-muted-foreground text-center py-3">No latency regressions detected across {traces.length} traces.</p>
+          <p className="text-sm text-muted-foreground text-center py-3">
+            {traces.length === 0
+              ? 'No traces yet — run some agent calls to start monitoring latency.'
+              : `No regressions detected across ${traces.length} trace${traces.length !== 1 ? 's' : ''}.`}
+          </p>
         ) : (
           <div className="space-y-2">
             {riskFns.map(r => (
@@ -345,7 +349,7 @@ export default function OverviewPage() {
 
         {/* Integration Panels — only rendered when integrations are enabled */}
         {(isEnabled('token-budget') || isEnabled('regression-detector')) && (
-          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className={`grid grid-cols-1 gap-6 ${isEnabled('token-budget') && isEnabled('regression-detector') ? 'xl:grid-cols-2' : ''}`}>
             {isEnabled('token-budget')        && <TokenBudgetPanel traces={traces} />}
             {isEnabled('regression-detector') && <RegressionPanel  traces={traces} />}
           </div>
