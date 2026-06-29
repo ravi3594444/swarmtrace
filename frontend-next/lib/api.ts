@@ -82,15 +82,6 @@ export async function fetchBillingInfo() {
   }
 }
 
-export async function fetchIntegrations() {
-  try {
-    const res = await fetch('/api/settings/integrations')
-    return res.ok ? res.json() : null
-  } catch {
-    return null
-  }
-}
-
 export function formatTime(isoString: string): string {
   try {
     const date = new Date(isoString)
