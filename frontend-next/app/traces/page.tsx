@@ -334,8 +334,8 @@ export default function TracesPage() {
         }
       />
 
-      {/* Integration Panels */}
-      {(isEnabled('tool-attention') || (isEnabled('scrapling') && scrapingCount > 0)) && (
+      {/* Integration Panels — table/waterfall only; tree view uses full viewport height */}
+      {view !== 'tree' && (isEnabled('tool-attention') || (isEnabled('scrapling') && scrapingCount > 0)) && (
         <div className="px-6 pt-6">
           {isEnabled('scrapling') && scrapingCount > 0 && <ScrapingBanner count={scrapingCount} />}
           {isEnabled('tool-attention') && <ToolAttentionPanel traces={traces} />}
