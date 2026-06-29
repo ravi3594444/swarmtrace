@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import { ClerkProvider } from "@clerk/nextjs"
 import { ThemeProvider } from "@/components/theme-provider"
+import { IntegrationsProvider } from "@/contexts/IntegrationsContext"
 import "./globals.css"
 
 
@@ -68,7 +69,9 @@ export default function RootLayout({
             defaultTheme="light"
             storageKey="swarmtrace-theme"
           >
-            {children}
+            <IntegrationsProvider>
+              {children}
+            </IntegrationsProvider>
           </ThemeProvider>
           <Analytics />
         </body>

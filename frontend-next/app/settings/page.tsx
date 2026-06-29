@@ -6,7 +6,7 @@ import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { Bell, Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Terminal, BookOpen } from 'lucide-react'
 import { fetchApiKeys, createApiKey, revokeApiKey, fetchIntegrations, fetchBillingInfo } from '@/lib/api'
-import { SkeletonCard } from '@/components/skeleton'
+import { useIntegrations } from '@/contexts/IntegrationsContext'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
@@ -297,6 +297,7 @@ def my_agent(prompt: str) -> str:
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
   const { user } = useUser()
+  const { refresh: refreshIntegrationsCtx } = useIntegrations()
   const [profile, setProfile] = useState({ fullName: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
@@ -429,6 +430,9 @@ export default function SettingsPage() {
       if (!res.ok) {
         // Revert on failure
         setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: currentlyConnected } : i))
+      } else {
+        // Sync global context so other dashboard pages reflect the change
+        refreshIntegrationsCtx()
       }
     } catch {
       setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: currentlyConnected } : i))
