@@ -1,6 +1,6 @@
 'use client'
 
-import { createContext, useContext, useEffect, useState, useCallback } from 'react'
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from 'react'
 
 export type Integration = {
   id: string
@@ -24,7 +24,7 @@ const IntegrationsContext = createContext<IntegrationsContextValue>({
   refresh: async () => {},
 })
 
-export function IntegrationsProvider({ children }: { children: React.ReactNode }) {
+export function IntegrationsProvider({ children }: { children: ReactNode }) {
   const [integrations, setIntegrations] = useState<Integration[]>([])
   const [loading, setLoading] = useState(true)
 
