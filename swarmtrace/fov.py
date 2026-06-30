@@ -273,6 +273,7 @@ SCREEN_INTERVAL: float = float(os.environ.get("SWARMTRACE_SCREEN_INTERVAL", "1.0
 # registry: page_id → (weakref to page, agent_id, agent_name)
 _screen_registry: dict[int, tuple] = {}
 _screen_registry_lock = threading.Lock()
+_screen_streamer_lock = threading.Lock()
 _screen_streamer_started = False
 
 
@@ -335,12 +336,14 @@ def _ensure_screen_streamer() -> None:
     global _screen_streamer_started
     if _screen_streamer_started:
         return
-    threading.Thread(
-        target=_screen_streamer_loop,
-        daemon=True,
-        name="swarmtrace-screen-stream",
-    ).start()
-    _screen_streamer_started = True
+    with _screen_streamer_lock:
+        if not _screen_streamer_started:
+            threading.Thread(
+                target=_screen_streamer_loop,
+                daemon=True,
+                name="swarmtrace-screen-stream",
+            ).start()
+            _screen_streamer_started = True
 
 
 # ---------------------------------------------------------------------------

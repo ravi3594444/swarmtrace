@@ -38,7 +38,14 @@ def score_similarity(output_a: str, output_b: str, llm=None) -> float:
 
     ``llm`` is any callable that takes a prompt string and returns a string.
     Defaults to litai routed via LIGHTNING_API_KEY.
+
+    Never raises: a failure calling ``llm`` and a non-numeric/unparsable
+    response are handled as two separate, independent failure modes, each
+    falling back to 0.5 (neutral) — so neither a flaky scorer nor a bad
+    response can ever crash ``compare()``.
     """
+    import sys
+
     if llm is None:
         llm = _get_llm()
     prompt = f"""Compare these two AI outputs and return ONLY a number between 0.0 and 1.0.
@@ -48,20 +55,33 @@ Output A: {output_a[:300]}
 Output B: {output_b[:300]}
 
 Reply with just the number, nothing else."""
+
+    # Isolated from the parsing step below: if the user-supplied llm callable
+    # raises (network/SDK error, bad args, even a ValueError of its own),
+    # `score` is never assigned — so this except can't reference it and
+    # can't crash with UnboundLocalError the way the parsing failure below
+    # legitimately can reference a real (just non-numeric) value.
     try:
-        score = llm(prompt).strip()
-        return min(1.0, max(0.0, float(score)))
-    except ValueError:
-        # LLM returned non-numeric output — warn and default to neutral 0.5
-        # so neither a regression nor a false pass is silently reported.
-        import sys
+        raw = llm(prompt)
+    except Exception as exc:
         print(
-            f"[swarmtrace] warning: similarity LLM returned non-numeric output "
-            f"{score!r:.60} — defaulting to 0.5 (neutral). Check your LLM callable.",
+            f"[swarmtrace] warning: similarity LLM call failed ({exc!r}) "
+            f"— defaulting to 0.5 (neutral).",
             file=sys.stderr,
         )
         return 0.5
+
+    try:
+        return min(1.0, max(0.0, float(raw.strip())))
     except Exception:
+        # Non-numeric (or non-string/None) output — warn and default to
+        # neutral 0.5 so neither a regression nor a false pass is silently
+        # reported.
+        print(
+            f"[swarmtrace] warning: similarity LLM returned non-numeric output "
+            f"{raw!r:.60} — defaulting to 0.5 (neutral). Check your LLM callable.",
+            file=sys.stderr,
+        )
         return 0.5
 
 
