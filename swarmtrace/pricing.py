@@ -2,10 +2,14 @@
 Live model pricing — fetched from LiteLLM's community-maintained registry.
 Falls back to cached data (or zero) if the fetch fails or times out.
 
-Thread-safety: a module-level lock ensures only one thread fetches at a time;
-all others get the cached value immediately. The fetch happens on the
-background sender thread (via swarmtrace.tracer._enqueue_pricing_refresh), never
-on the agent's hot path.
+Thread-safety / hot-path guarantee: ``calculate_cost()`` (called inline from
+``tracer._extract_token_info`` and ``auto_instrument._record_async``, both on
+the calling thread) NEVER performs network I/O itself. It only ever reads the
+in-memory cache. Whenever that cache is empty or stale, a refresh is kicked
+off on a dedicated daemon thread (``_refresh_in_progress`` + ``_refresh_lock``
+ensure at most one fetch runs at a time) and the call returns immediately
+with whatever is currently cached (possibly empty, possibly stale-but-usable)
+rather than waiting on the network.
 """
 
 from __future__ import annotations
@@ -24,7 +28,9 @@ _FETCH_TIMEOUT = 5         # seconds; 3 was too tight for cold starts
 
 _cache: dict = {}
 _cache_ts: float = 0.0
-_cache_lock = threading.Lock()          # ensures only one fetch at a time
+_cache_lock = threading.Lock()          # protects reads/writes of _cache/_cache_ts
+_refresh_lock = threading.Lock()        # guards the "launch a refresh thread" decision
+_refresh_in_progress = False            # ensures only one fetch thread runs at a time
 _CUSTOM: dict[str, tuple[float, float]] = {}
 
 
@@ -32,36 +38,57 @@ def _needs_refresh() -> bool:
     return not _cache or (time.time() - _cache_ts) >= _CACHE_TTL
 
 
-def _fetch_live() -> dict:
-    """Return the pricing table, fetching at most once per TTL window.
-
-    Safe to call from any thread: the lock prevents thundering-herd fetches.
-    If the fetch fails for any reason (network, timeout, parse error) the
-    existing cache is returned unchanged — callers get stale-but-correct
-    data rather than a 0-cost false positive.
+def _background_fetch() -> None:
+    """Runs on its own daemon thread — this is the ONLY place that does
+    network I/O. Never called directly from the hot path.
     """
-    global _cache, _cache_ts
-
-    # Fast path — no lock needed for a stale-read check.
-    if not _needs_refresh():
-        return _cache
-
-    # Slow path — acquire lock so only one thread fetches.
-    with _cache_lock:
-        # Re-check after acquiring: another thread may have refreshed already.
-        if not _needs_refresh():
-            return _cache
-        try:
-            with urllib.request.urlopen(_LIVE_URL, timeout=_FETCH_TIMEOUT) as r:
-                data = json.loads(r.read().decode())
+    global _cache, _cache_ts, _refresh_in_progress
+    try:
+        with urllib.request.urlopen(_LIVE_URL, timeout=_FETCH_TIMEOUT) as r:
+            data = json.loads(r.read().decode())
+        with _cache_lock:
             _cache = data
             _cache_ts = time.time()
-        except Exception:
-            # Update timestamp so we don't hammer the URL on every call when
-            # the network is down — wait the full TTL before trying again.
+    except Exception:
+        # Update timestamp so we don't hammer the URL on every call when the
+        # network is down — wait the full TTL before trying again.
+        with _cache_lock:
             if not _cache_ts:
                 _cache_ts = time.time()
-    return _cache
+    finally:
+        with _refresh_lock:
+            _refresh_in_progress = False
+
+
+def _maybe_trigger_refresh() -> None:
+    """Kick off a background refresh if the cache is empty/stale and no
+    refresh is already in flight. Returns immediately either way — this
+    function never blocks on network I/O, only ever on a brief in-memory
+    lock, so it's safe to call from the hot path on every traced call.
+    """
+    global _refresh_in_progress
+    if not _needs_refresh():
+        return
+    with _refresh_lock:
+        if _refresh_in_progress or not _needs_refresh():
+            return
+        _refresh_in_progress = True
+        threading.Thread(
+            target=_background_fetch, daemon=True, name="swarmtrace-pricing-refresh"
+        ).start()
+
+
+def _fetch_live() -> dict:
+    """Return the pricing table immediately from cache.
+
+    Never performs network I/O on the calling thread. If the cache is empty
+    or stale, a background refresh is triggered (at most one in flight at a
+    time) and the current cache — possibly empty, possibly stale-but-usable —
+    is returned right away.
+    """
+    _maybe_trigger_refresh()
+    with _cache_lock:
+        return _cache
 
 
 def set_model_pricing(model: str, input_per_million: float, output_per_million: float) -> None:
@@ -107,7 +134,7 @@ def warm_cache() -> None:
     Called at module import time. If the fetch fails or the network is
     unavailable, calculate_cost() falls back to 0.0 — no crash, no block.
     """
-    threading.Thread(target=_fetch_live, daemon=True, name="swarmtrace-pricing-warm").start()
+    _maybe_trigger_refresh()
 
 
 # Pre-warm on import — ensures the first calculate_cost() call hits the cache
