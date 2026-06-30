@@ -7,7 +7,7 @@ This module provides tools for analyzing swarm trace data.
 import json
 import random
 import time
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 
 class TraceAnalyzer:
     """Class for analyzing swarm trace data."""

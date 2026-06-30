@@ -7,7 +7,7 @@ This module collects and processes metrics from swarm trace data.
 import time
 import json
 import random
-from typing import Dict, List, Any, Optional
+from typing import Dict, List, Any
 
 class MetricsCollector:
     """Class for collecting and processing swarm metrics."""

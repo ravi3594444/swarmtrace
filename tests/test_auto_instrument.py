@@ -133,6 +133,15 @@ def test_patch_openai_records_error_with_zero_tokens(records, monkeypatch):
 # Anthropic
 # ---------------------------------------------------------------------------
 
+def _has_anthropic() -> bool:
+    try:
+        import anthropic  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+
 def _fake_message(model="claude-3-haiku-20240307", input_tokens=7, output_tokens=12):
     from anthropic.types import Message, Usage
 
@@ -147,6 +156,10 @@ def _fake_message(model="claude-3-haiku-20240307", input_tokens=7, output_tokens
     )
 
 
+@pytest.mark.skipif(
+    not _has_anthropic(),
+    reason="anthropic package not installed",
+)
 def test_patch_anthropic_records_llm_trace(records, monkeypatch):
     from anthropic import Anthropic
     from anthropic.resources.messages import Messages

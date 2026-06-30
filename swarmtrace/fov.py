@@ -42,8 +42,8 @@ import sys
 import threading
 import time
 import uuid
+import weakref
 from datetime import datetime, timezone
-from typing import Optional
 
 # ── context from tracer ──────────────────────────────────────────────────────
 from swarmtrace.tracer import _current_agent, _remote_config
@@ -267,8 +267,6 @@ async def _screenshot_async(page) -> str:
 # Pages register themselves on first use and are auto-removed when closed.
 # Interval is configurable via SWARMTRACE_SCREEN_INTERVAL (default 1.0 s).
 # ---------------------------------------------------------------------------
-
-import weakref
 
 SCREEN_INTERVAL: float = float(os.environ.get("SWARMTRACE_SCREEN_INTERVAL", "1.0"))
 

@@ -16,9 +16,145 @@ import { useIntegrations } from '@/contexts/IntegrationsContext'
 import {
   ChevronRight, ChevronDown, X, Clock, Activity, Coins,
   AlertTriangle, Search, Pause, Play, GitBranch, Table2, BarChart2, Wrench, Globe,
+  Tag, Download, FileJson, FileText,
 } from 'lucide-react'
 
 type ViewMode = 'tree' | 'table' | 'waterfall'
+
+// ── Export helpers ─────────────────────────────────────────────────────────────
+
+function exportJSON(traces: Trace[]) {
+  const blob = new Blob([JSON.stringify(traces, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `swarmtrace-traces-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportCSV(traces: Trace[]) {
+  const headers = ['id', 'parent_id', 'function', 'kind', 'agent_name', 'timestamp',
+    'latency_sec', 'input_tokens', 'output_tokens', 'cost_usd', 'error']
+  const escape = (v: unknown) => {
+    const s = v == null ? '' : String(v)
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const rows = [
+    headers.join(','),
+    ...traces.map(t => headers.map(h => escape((t as Record<string, unknown>)[h])).join(',')),
+  ]
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `swarmtrace-traces-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function ExportMenu({ traces }: { traces: Trace[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm"
+      >
+        <Download className="w-3.5 h-3.5" />
+        Export
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+          <button
+            onClick={() => { exportJSON(traces); setOpen(false) }}
+            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
+          >
+            <FileJson className="w-3.5 h-3.5 text-primary" /> Export JSON
+          </button>
+          <button
+            onClick={() => { exportCSV(traces); setOpen(false) }}
+            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5 text-primary" /> Export CSV
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Tag filter bar ─────────────────────────────────────────────────────────────
+
+/**
+ * Derives "tags" from trace fields: kind, agent_name, and any function prefix
+ * (e.g. "search_web" → tag "search"). Users can click to toggle tag filters.
+ */
+function TagFilterBar({
+  traces,
+  activeTags,
+  onToggle,
+  onClear,
+}: {
+  traces: Trace[]
+  activeTags: Set<string>
+  onToggle: (tag: string) => void
+  onClear: () => void
+}) {
+  // Collect all unique tags from kind + agent_name
+  const allTags = useMemo(() => {
+    const counts = new Map<string, number>()
+    for (const t of traces) {
+      const tags: string[] = []
+      if (t.kind && t.kind !== 'function') tags.push(`kind:${t.kind}`)
+      if (t.agent_name) tags.push(`agent:${t.agent_name}`)
+      for (const tag of tags) {
+        counts.set(tag, (counts.get(tag) ?? 0) + 1)
+      }
+    }
+    return Array.from(counts.entries())
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 20)
+      .map(([tag, count]) => ({ tag, count }))
+  }, [traces])
+
+  if (allTags.length === 0) return null
+
+  return (
+    <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/10 flex-wrap">
+      <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
+      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">Tags:</span>
+      {allTags.map(({ tag, count }) => {
+        const active = activeTags.has(tag)
+        const [prefix, label] = tag.split(':')
+        return (
+          <button
+            key={tag}
+            onClick={() => onToggle(tag)}
+            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all
+              ${active
+                ? 'bg-primary text-primary-foreground border-primary'
+                : 'bg-card text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'}`}
+          >
+            <span className="opacity-60">{prefix}:</span>
+            <span>{label}</span>
+            <span className={`ml-0.5 ${active ? 'opacity-70' : 'opacity-40'}`}>({count})</span>
+          </button>
+        )
+      })}
+      {activeTags.size > 0 && (
+        <button
+          onClick={onClear}
+          className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <X className="w-2.5 h-2.5" /> Clear
+        </button>
+      )}
+    </div>
+  )
+}
 
 function TraceDetail({ trace, allTraces, onClose, onJump }: {
   trace: Trace; allTraces: Trace[]; onClose: () => void; onJump: (t: Trace) => void
@@ -51,9 +187,9 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
 
         <div className="grid grid-cols-3 gap-2">
           {[
-            { label: 'Latency', value: `${trace.latency_sec.toFixed(3)}s`, icon: Clock },
-            { label: 'Tokens', value: (trace.input_tokens + trace.output_tokens).toLocaleString(), icon: Activity },
-            { label: 'Cost', value: `$${trace.cost_usd.toFixed(5)}`, icon: Coins },
+            { label: 'Latency', value: `${(trace.latency_sec ?? 0).toFixed(3)}s`, icon: Clock },
+            { label: 'Tokens', value: ((trace.input_tokens ?? 0) + (trace.output_tokens ?? 0)).toLocaleString(), icon: Activity },
+            { label: 'Cost', value: `$${(trace.cost_usd ?? 0).toFixed(5)}`, icon: Coins },
           ].map(({ label, value, icon: Icon }) => (
             <div key={label} className="rounded-xl border border-border bg-muted/30 p-2.5 text-center">
               <Icon className="w-3 h-3 text-muted-foreground mx-auto mb-1" />
@@ -69,6 +205,25 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
             {ok ? 'SUCCESS' : 'ERROR'}
           </span>
         </div>
+
+        {/* Tags row */}
+        {(trace.kind || trace.agent_name) && (
+          <div>
+            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Tags</div>
+            <div className="flex flex-wrap gap-1.5">
+              {trace.kind && (
+                <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  kind:{trace.kind}
+                </span>
+              )}
+              {trace.agent_name && (
+                <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                  agent:{trace.agent_name}
+                </span>
+              )}
+            </div>
+          </div>
+        )}
 
         <div>
           <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Call Chain</div>
@@ -92,10 +247,10 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
               ['Span ID', trace.id],
               ['Parent ID', trace.parent_id ?? '(root span)'],
               ['Timestamp', new Date(trace.timestamp).toLocaleString()],
-              ['Input tokens', trace.input_tokens.toLocaleString()],
-              ['Output tokens', trace.output_tokens.toLocaleString()],
-              ['Total tokens', (trace.input_tokens + trace.output_tokens).toLocaleString()],
-              ['Cost (USD)', `$${trace.cost_usd.toFixed(6)}`],
+              ['Input tokens', (trace.input_tokens ?? 0).toLocaleString()],
+              ['Output tokens', (trace.output_tokens ?? 0).toLocaleString()],
+              ['Total tokens', ((trace.input_tokens ?? 0) + (trace.output_tokens ?? 0)).toLocaleString()],
+              ['Cost (USD)', `$${(trace.cost_usd ?? 0).toFixed(6)}`],
             ] as [string, string][]).map(([k, v]) => (
               <div key={k} className="flex items-start justify-between gap-4 px-3 py-2 border-b border-border/40 last:border-0">
                 <span className="text-xs text-muted-foreground shrink-0">{k}</span>
@@ -119,8 +274,9 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
   const isSelected = selected?.id === node.id
   const hasKids = node.children.length > 0
   const descCount = isRoot ? countDescendants(node) : 0
-  const pct = Math.max(3, (node.latency_sec / Math.max(maxLatency, 0.001)) * 100)
-  const lat = node.latency_sec >= 1 ? `${node.latency_sec.toFixed(2)}s` : `${Math.round(node.latency_sec * 1000)}ms`
+  const nodeLat = node.latency_sec ?? 0
+  const pct = Math.max(3, (nodeLat / Math.max(maxLatency, 0.001)) * 100)
+  const lat = nodeLat >= 1 ? `${nodeLat.toFixed(2)}s` : `${Math.round(nodeLat * 1000)}ms`
 
   return (
     <div className={isRoot ? 'border-b border-border' : ''}>
@@ -148,6 +304,13 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
           {node.function}
         </span>
 
+        {/* Kind badge */}
+        {node.kind && node.kind !== 'function' && (
+          <span className="hidden lg:inline-block text-[9px] font-bold uppercase rounded-full px-1.5 py-0.5 border border-border bg-muted/40 text-muted-foreground shrink-0">
+            {node.kind}
+          </span>
+        )}
+
         {isRoot && descCount > 0 && (
           <span className="font-mono text-[10px] text-muted-foreground/50 shrink-0 hidden lg:block">+{descCount}</span>
         )}
@@ -162,10 +325,10 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
 
         <span className="font-mono text-[11px] tabular-nums text-muted-foreground shrink-0 w-14 text-right">{lat}</span>
         <span className="font-mono text-[11px] tabular-nums text-muted-foreground shrink-0 w-14 text-right hidden xl:block">
-          {(node.input_tokens + node.output_tokens).toLocaleString()}
+          {((node.input_tokens ?? 0) + (node.output_tokens ?? 0)).toLocaleString()}
         </span>
         <span className="font-mono text-[11px] tabular-nums text-foreground font-semibold shrink-0 w-16 text-right">
-          ${node.cost_usd.toFixed(4)}
+          ${(node.cost_usd ?? 0).toFixed(4)}
         </span>
 
         <span className={`text-[9px] font-bold uppercase rounded-full px-1.5 py-0.5 border shrink-0 ${hasErr ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
@@ -194,7 +357,7 @@ function ToolAttentionPanel({ traces }: { traces: Trace[] }) {
     for (const t of traces) {
       if (t.kind !== 'tool') continue
       const e = map.get(t.function) || { calls: 0, totalLatency: 0, errors: 0 }
-      e.calls++; e.totalLatency += t.latency_sec; if (t.error) e.errors++
+      e.calls++; e.totalLatency += t.latency_sec ?? 0; if (t.error) e.errors++
       map.set(t.function, e)
     }
     return Array.from(map.entries())
@@ -259,25 +422,51 @@ export default function TracesPage() {
   const [selected, setSelected] = useState<Trace | null>(null)
   const { isEnabled } = useIntegrations()
   const scrapingCount = useMemo(
-    () => traces.filter(t => t.kind === 'scraping' || t.function.toLowerCase().includes('scrap')).length,
+    // The scraper records traces with kind="tool" and function="scrape"
+    // (see swarmtrace/scraper.py), so we identify scraping spans by the
+    // function name. The kind === 'scraping' check was a placeholder for
+    // a kind value that never existed in the type union.
+    () => traces.filter(t => t.function.toLowerCase().includes('scrap')).length,
     [traces]
   )
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OK' | 'ERROR'>('ALL')
   const [view, setView] = useState<ViewMode>('tree')
 
+  // ── Tag-based filtering ──────────────────────────────────────────────────────
+  const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
+
+  const toggleTag = (tag: string) => {
+    setActiveTags(prev => {
+      const next = new Set(prev)
+      if (next.has(tag)) next.delete(tag)
+      else next.add(tag)
+      return next
+    })
+  }
+
+  const clearTags = () => setActiveTags(new Set())
+
   const filtered = useMemo(() => traces.filter((t) => {
     if (statusFilter === 'OK' && t.error) return false
     if (statusFilter === 'ERROR' && !t.error) return false
     if (search) {
       const q = search.toLowerCase()
-      return t.function.toLowerCase().includes(q) || t.id.toLowerCase().includes(q)
+      if (!t.function.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q)) return false
+    }
+    // Tag filtering: trace must match ALL active tags
+    if (activeTags.size > 0) {
+      for (const tag of activeTags) {
+        const [prefix, value] = tag.split(':')
+        if (prefix === 'kind' && t.kind !== value) return false
+        if (prefix === 'agent' && t.agent_name !== value) return false
+      }
     }
     return true
-  }), [traces, search, statusFilter])
+  }), [traces, search, statusFilter, activeTags])
 
   const roots = useMemo(() => buildSpanTree(filtered), [filtered])
-  const maxLatency = useMemo(() => Math.max(...filtered.map((t) => t.latency_sec), 0.001), [filtered])
+  const maxLatency = useMemo(() => filtered.reduce((m, t) => Math.max(m, t.latency_sec ?? 0), 0.001), [filtered])
 
   if (loading) return (
     <DashboardLayout>
@@ -330,8 +519,17 @@ export default function TracesPage() {
               {isLive ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
               {isLive ? 'Pause' : 'Resume'}
             </button>
+            <ExportMenu traces={filtered} />
           </div>
         }
+      />
+
+      {/* Tag filter bar — always visible when tags exist */}
+      <TagFilterBar
+        traces={traces}
+        activeTags={activeTags}
+        onToggle={toggleTag}
+        onClear={clearTags}
       />
 
       {/* Integration Panels — table/waterfall only; tree view uses full viewport height */}
@@ -377,6 +575,9 @@ export default function TracesPage() {
                     <span className="font-semibold text-foreground tabular-nums">{filtered.length}</span> spans
                     {errorCount > 0 && <span className="ml-2 text-red-600 font-medium">· {errorCount} error{errorCount > 1 ? 's' : ''}</span>}
                     {filtered.length !== traces.length && <span className="ml-1 text-muted-foreground/60">(of {traces.length})</span>}
+                    {activeTags.size > 0 && (
+                      <span className="ml-2 text-primary font-medium">· {activeTags.size} tag filter{activeTags.size > 1 ? 's' : ''} active</span>
+                    )}
                   </span>
                 </div>
 
@@ -384,6 +585,7 @@ export default function TracesPage() {
                   <div className="w-4 shrink-0" />
                   <div className="w-1.5 shrink-0" />
                   <div className="flex-1">Span / Function</div>
+                  <div className="w-12 text-right hidden lg:block">Kind</div>
                   <div className="w-16 text-right hidden lg:block">ID</div>
                   <div className="w-14 hidden xl:block" />
                   <div className="w-14 text-right">Latency</div>

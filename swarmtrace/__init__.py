@@ -7,6 +7,7 @@ from swarmtrace.pricing import set_model_pricing
 from swarmtrace.auto_instrument import patch_all
 from swarmtrace.fov import get_events
 from swarmtrace import fov
+from swarmtrace import alerts
 
 __version__ = '0.4.4'
 __all__ = [
@@ -19,4 +20,5 @@ __all__ = [
     'patch_all',
     'get_events',
     'fov',
+    'alerts',
 ]

@@ -3,6 +3,8 @@ Persistent SQLite storage for swarmtrace.
 
 Design notes:
 - WAL mode + NORMAL synchronous for write throughput without data loss risk.
+- busy_timeout=5000 ms so concurrent writers wait instead of raising
+  OperationalError: database is locked.
 - Thread-safe via a module-level lock (one shared connection, reused).
 - Auto-purge oldest rows when DB exceeds MAX_ROWS to keep it bounded.
 - Periodic WAL checkpoint to prevent WAL file from growing unboundedly.
@@ -21,9 +23,13 @@ DB_PATH = os.environ.get("SWARMTRACE_DB_PATH", os.path.expanduser("~/.swarmtrace
 MAX_ROWS: int = 10_000
 PURGE_EVERY: int = 100      # Only COUNT(*) every N writes
 
-# FIX #4: checkpoint WAL periodically so the WAL file doesn't grow unboundedly.
+# Checkpoint WAL periodically so the WAL file doesn't grow unboundedly.
 # Without this, a 24/7 process can accumulate hundreds of MB in the WAL file.
 CHECKPOINT_EVERY: int = 500
+
+# How long (ms) SQLite will wait for a lock before raising OperationalError.
+# 5 s is generous enough for any realistic write burst.
+BUSY_TIMEOUT_MS: int = 5_000
 
 TraceRow = Tuple  # (id, parent_id, function, args, output,
                   #  latency_sec, error, timestamp,
@@ -54,6 +60,8 @@ def _get_conn() -> sqlite3.Connection:
 
     if _conn is None:
         _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        # busy_timeout: wait up to BUSY_TIMEOUT_MS before raising "database is locked"
+        _conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         _conn.execute("PRAGMA journal_mode=WAL")
         _conn.execute("PRAGMA synchronous=NORMAL")
         _conn.execute("""
@@ -138,7 +146,7 @@ def save_trace(
             _write_count += 1
             if _write_count % PURGE_EVERY == 0:
                 _purge_old_rows(conn)
-            # FIX #4: periodic WAL checkpoint — keeps WAL file from growing to hundreds of MB
+            # Periodic WAL checkpoint — keeps WAL file from growing to hundreds of MB
             if _write_count % CHECKPOINT_EVERY == 0:
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
             conn.commit()

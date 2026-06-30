@@ -6,7 +6,7 @@ token counting, and performance monitoring.
 """
 
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from dataclasses import dataclass
 
 @dataclass

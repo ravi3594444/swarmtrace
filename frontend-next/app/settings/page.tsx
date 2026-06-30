@@ -297,7 +297,6 @@ def my_agent(prompt: str) -> str:
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
   const { user } = useUser()
-  const { refresh: refreshIntegrationsCtx } = useIntegrations()
   const [profile, setProfile] = useState({ fullName: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
