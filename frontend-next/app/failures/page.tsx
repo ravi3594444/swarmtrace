@@ -103,7 +103,7 @@ export default function FailuresPage() {
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{t.id.slice(0, 10)}</td>
                     <td className="px-4 py-3 text-sm font-medium text-foreground">{t.function}</td>
                     <td className="px-4 py-3 text-xs text-red-600 max-w-xs truncate">{t.error}</td>
-                    <td className="px-4 py-3 text-xs font-mono tabular-nums text-right">{t.latency_sec.toFixed(2)}s</td>
+                    <td className="px-4 py-3 text-xs font-mono tabular-nums text-right">{(t.latency_sec ?? 0).toFixed(2)}s</td>
                     <td className="px-4 py-3 text-xs text-muted-foreground">{formatTime(t.timestamp)}</td>
                   </tr>
                 ))}

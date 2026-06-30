@@ -168,5 +168,114 @@ def main_replay():
     replay(sys.argv[1])
 
 
+# ---------- alerts ----------
+
+def _alerts_list(limit: int = 20) -> None:
+    from swarmtrace.alerts import list_alerts
+    try:
+        from rich.console import Console
+        from rich.table import Table
+        console = Console()
+        rows = list_alerts(limit=limit)
+        if not rows:
+            console.print("[yellow]No alerts fired yet.[/yellow]")
+            return
+        t = Table(title=f"swarmtrace — Last {len(rows)} alerts", border_style="cyan")
+        t.add_column("Fired",     style="cyan",   width=22)
+        t.add_column("Severity",  width=10)
+        t.add_column("Rule",      style="green",  width=22)
+        t.add_column("Agent",     style="magenta", width=20)
+        t.add_column("Message",   width=80)
+        t.add_column("Ack",       width=5)
+        for a in rows:
+            sev = a["severity"].upper()
+            sev_styled = {
+                "INFO":     "[blue]INFO[/blue]",
+                "WARNING":  "[yellow]WARN[/yellow]",
+                "CRITICAL": "[red]CRIT[/red]",
+            }.get(sev, sev)
+            acked = "[green]✓[/green]" if a.get("acked") else "·"
+            t.add_row(a["fired_at"][:19], sev_styled, a["rule"], a.get("agent_name") or "—", a["message"], acked)
+        console.print(t)
+    except ImportError:
+        for a in list_alerts(limit=limit):
+            print(f"{a['fired_at']}  [{a['severity']:8}] {a['rule']:22} {a.get('agent_name') or '—':20} {a['message']}")
+
+
+def _alerts_test() -> None:
+    """Run the rule engine once over the current traces and report any new alerts."""
+    from swarmtrace.alerts import evaluate_now
+    try:
+        from rich.console import Console
+        console = Console()
+    except ImportError:
+        console = None
+    try:
+        fired = evaluate_now()
+    except Exception as exc:
+        print(f"[swarmtrace] alert evaluation failed: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if not fired:
+        msg = "No rules tripped. All clear. ✅"
+        if console:
+            console.print(f"[green]{msg}[/green]")
+        else:
+            print(msg)
+        return
+    for a in fired:
+        line = f"[{a.severity.upper():8}] {a.rule:22} {a.agent_name or '':20} {a.message}"
+        if console:
+            console.print(line)
+        else:
+            print(line)
+    print(f"\n{len(fired)} alert(s) fired.")
+
+
+def _alerts_ack(alert_id: str) -> None:
+    from swarmtrace.alerts import acknowledge
+    if acknowledge(alert_id):
+        print(f"✓ Acknowledged {alert_id}")
+    else:
+        print(f"Alert {alert_id} not found.")
+        sys.exit(1)
+
+
+def main_alerts():
+    """
+    swarmtrace alerts <subcommand> [...]
+
+    Subcommands:
+      list [--limit N]  Show recent alerts (default 20)
+      test              Run the rule engine once over the current traces
+      ack <alert_id>    Mark an alert as acknowledged
+    """
+    args = sys.argv[1:]
+    if not args or args[0] in ("-h", "--help"):
+        print(main_alerts.__doc__)
+        return
+    sub = args[0]
+    rest = args[1:]
+    if sub == "list":
+        limit = 20
+        for i, a in enumerate(rest):
+            if a == "--limit" and i + 1 < len(rest):
+                try:
+                    limit = int(rest[i + 1])
+                except ValueError:
+                    pass
+        _alerts_list(limit=limit)
+    elif sub == "test":
+        _alerts_test()
+    elif sub == "ack":
+        if len(rest) < 1:
+            print("Usage: swarmtrace alerts ack <alert_id>")
+            sys.exit(1)
+        _alerts_ack(rest[0])
+    else:
+        print(f"Unknown subcommand: {sub}")
+        print(main_alerts.__doc__)
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     view()

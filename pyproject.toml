@@ -27,6 +27,7 @@ all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy
 swarmtrace = "swarmtrace.cli:view"
 swarmtrace-export = "swarmtrace.export:main"
 swarmtrace-replay = "swarmtrace.cli:main_replay"
+swarmtrace-alerts = "swarmtrace.cli:main_alerts"
 
 [tool.setuptools]
 packages = ["swarmtrace"]

@@ -65,6 +65,8 @@ def init(
     auto_instrument: bool = True,
     fov: bool = False,
     fov_watch_dir: str = ".",
+    alerts: bool = False,
+    alert_interval_seconds: int = 60,
 ) -> None:
     global _api_key, _endpoint
     if api_key is not None:
@@ -77,6 +79,9 @@ def init(
     if fov:
         from swarmtrace.fov import patch_all as fov_patch_all
         fov_patch_all(watch_dir=fov_watch_dir)
+    if alerts:
+        from swarmtrace.alerts import start as _alerts_start
+        _alerts_start(interval_seconds=alert_interval_seconds)
 
 
 def _remote_config() -> tuple[str, str]:
@@ -109,21 +114,44 @@ def _send_remote(payload: dict, key: str, url: str) -> None:
 
 
 def _worker() -> None:
+    """Background sender thread.
+
+    Error boundary: any unexpected exception (e.g. a bug in _remote_config,
+    a corrupt payload, or an OS-level error) is caught at the outer loop so
+    the thread never dies silently.  task_done() is called in a finally block
+    so the queue's join() never deadlocks even when an item raises.
+    """
+    _RESTART_DELAY = 1.0   # seconds to wait before restarting after a crash
+
     while True:
-        payload = _send_queue.get()
-        key, url = _remote_config()
-        if key and url:
-            # FIX #5: retry with backoff instead of fire-and-forget
-            for attempt in range(3):
+        payload: Optional[dict] = None
+        try:
+            payload = _send_queue.get()
+            key, url = _remote_config()
+            if key and url:
+                # Retry with exponential backoff (3 attempts)
+                for attempt in range(3):
+                    try:
+                        _send_remote(payload, key, url)
+                        break
+                    except Exception as exc:
+                        if attempt < 2:
+                            time.sleep(2 ** attempt)   # 1 s then 2 s
+                        else:
+                            print(
+                                f"[swarmtrace] remote ingest failed after 3 attempts: {exc}",
+                                file=sys.stderr,
+                            )
+        except Exception as exc:
+            # Outer error boundary — log and keep the thread alive.
+            print(f"[swarmtrace] worker error (thread continues): {exc}", file=sys.stderr)
+        finally:
+            # Always mark the item done so queue.join() never deadlocks.
+            if payload is not None:
                 try:
-                    _send_remote(payload, key, url)
-                    break
-                except Exception as exc:
-                    if attempt < 2:
-                        time.sleep(2 ** attempt)   # 1s then 2s
-                    else:
-                        print(f"[swarmtrace] remote ingest failed after 3 attempts: {exc}", file=sys.stderr)
-        _send_queue.task_done()
+                    _send_queue.task_done()
+                except Exception:
+                    pass
 
 
 def _ensure_worker() -> None:

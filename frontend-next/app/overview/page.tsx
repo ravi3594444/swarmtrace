@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
@@ -13,7 +13,10 @@ import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
 import { fetchOverview } from '@/lib/api'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
-import { Activity, ChevronDown, ChevronUp, Info, Coins, TrendingDown } from 'lucide-react'
+import {
+  Activity, ChevronDown, ChevronUp, Info, Coins, TrendingDown,
+  Download, FileJson, FileText, TrendingUp, GitCompare, X, CheckCircle, AlertCircle,
+} from 'lucide-react'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
 
 const chartTooltip = {
@@ -84,22 +87,309 @@ function AgentPicker({ agents, selected, onSelect }: {
   )
 }
 
+// ── Export helpers ─────────────────────────────────────────────────────────────
+
+function exportJSON(traces: Trace[]) {
+  const blob = new Blob([JSON.stringify(traces, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `swarmtrace-export-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportCSV(traces: Trace[]) {
+  const headers = ['id', 'parent_id', 'function', 'kind', 'agent_name', 'timestamp',
+    'latency_sec', 'input_tokens', 'output_tokens', 'cost_usd', 'error']
+  const escape = (v: unknown) => {
+    const s = v == null ? '' : String(v)
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const rows = [
+    headers.join(','),
+    ...traces.map(t => headers.map(h => escape((t as Record<string, unknown>)[h])).join(',')),
+  ]
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `swarmtrace-export-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function ExportMenu({ traces }: { traces: Trace[] }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm"
+      >
+        <Download className="w-3.5 h-3.5" />
+        Export
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-30 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+          <button
+            onClick={() => { exportJSON(traces); setOpen(false) }}
+            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
+          >
+            <FileJson className="w-3.5 h-3.5 text-primary" /> Export JSON
+          </button>
+          <button
+            onClick={() => { exportCSV(traces); setOpen(false) }}
+            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5 text-primary" /> Export CSV
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Cost Projection Widget ─────────────────────────────────────────────────────
+
+function CostProjectionWidget({ traces }: { traces: Trace[] }) {
+  const { hourly, daily, monthly, windowHours } = useMemo(() => {
+    if (traces.length === 0) return { hourly: 0, daily: 0, monthly: 0, windowHours: 0 }
+    const now = Date.now()
+    const oldest = Math.min(...traces.map(t => new Date(t.timestamp).getTime()))
+    const windowMs = Math.max(now - oldest, 60_000) // at least 1 min
+    const windowHours = windowMs / 3_600_000
+    const totalCost = traces.reduce((s, t) => s + (t.cost_usd ?? 0), 0)
+    const hourly = totalCost / windowHours
+    return {
+      hourly,
+      daily: hourly * 24,
+      monthly: hourly * 24 * 30,
+      windowHours,
+    }
+  }, [traces])
+
+  const fmt = (v: number) =>
+    v < 0.01 ? `$${v.toFixed(6)}` : v < 1 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
+        <TrendingUp className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Cost Projection</h3>
+        <span className="ml-auto text-[11px] text-muted-foreground">
+          based on last {windowHours < 1 ? `${Math.round(windowHours * 60)}m` : `${windowHours.toFixed(1)}h`}
+        </span>
+      </div>
+      <div className="p-4">
+        {traces.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No traces yet — run some agent calls to see cost projections.
+          </p>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Per Hour', value: fmt(hourly), sub: 'current rate' },
+              { label: 'Per Day', value: fmt(daily), sub: '24h projection' },
+              { label: 'Per Month', value: fmt(monthly), sub: '30d projection' },
+            ].map(({ label, value, sub }) => (
+              <div key={label} className="rounded-lg border border-border bg-muted/20 p-3 text-center">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                <div className="font-mono text-sm font-bold text-foreground">{value}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{sub}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ── Trace Diff / Regression Compare View ──────────────────────────────────────
+
+function TraceDiffPanel({ traces }: { traces: Trace[] }) {
+  const [fnFilter, setFnFilter] = useState('')
+  const [baseId, setBaseId] = useState('')
+  const [candId, setCandId] = useState('')
+  const [open, setOpen] = useState(false)
+
+  // Unique function names for the filter
+  const fnNames = useMemo(() => {
+    const s = new Set(traces.map(t => t.function))
+    return Array.from(s).sort()
+  }, [traces])
+
+  const candidates = useMemo(() =>
+    traces.filter(t => !fnFilter || t.function === fnFilter),
+    [traces, fnFilter])
+
+  const base = traces.find(t => t.id === baseId)
+  const cand = traces.find(t => t.id === candId)
+
+  const similarity = useMemo(() => {
+    if (!base || !cand) return null
+    const a = (base.output ?? '').toLowerCase()
+    const b = (cand.output ?? '').toLowerCase()
+    if (!a && !b) return 1
+    if (!a || !b) return 0
+    // Jaccard similarity on word sets as a lightweight client-side heuristic
+    const setA = new Set(a.split(/\s+/))
+    const setB = new Set(b.split(/\s+/))
+    const inter = [...setA].filter(w => setB.has(w)).length
+    const union = new Set([...setA, ...setB]).size
+    return union === 0 ? 1 : inter / union
+  }, [base, cand])
+
+  const latDiff = base && cand
+    ? ((cand.latency_sec ?? 0) - (base.latency_sec ?? 0))
+    : null
+
+  const costDiff = base && cand
+    ? ((cand.cost_usd ?? 0) - (base.cost_usd ?? 0))
+    : null
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 w-full border-b border-border bg-muted/30 px-4 py-3 text-left"
+      >
+        <GitCompare className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Trace Diff</h3>
+        <span className="ml-1.5 text-[10px] text-muted-foreground">regression.compare() in UI</span>
+        <ChevronDown className={`w-3.5 h-3.5 ml-auto text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="p-4 space-y-4">
+          {/* Function filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground shrink-0">Function:</label>
+            <select
+              value={fnFilter}
+              onChange={e => { setFnFilter(e.target.value); setBaseId(''); setCandId('') }}
+              className="flex-1 h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">All functions</option>
+              {fnNames.map(fn => <option key={fn} value={fn}>{fn}</option>)}
+            </select>
+          </div>
+
+          {/* Span selectors */}
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { label: 'Baseline span', value: baseId, set: setBaseId },
+              { label: 'Candidate span', value: candId, set: setCandId },
+            ] as const).map(({ label, value, set }) => (
+              <div key={label}>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                <select
+                  value={value}
+                  onChange={e => set(e.target.value)}
+                  className="w-full h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">— pick a span —</option>
+                  {candidates.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.function} · {t.id.slice(0, 8)} · {new Date(t.timestamp).toLocaleTimeString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          {/* Diff result */}
+          {base && cand && (
+            <div className="space-y-3">
+              {/* Metrics comparison */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  {
+                    label: 'Similarity',
+                    value: similarity != null ? `${(similarity * 100).toFixed(0)}%` : '—',
+                    ok: similarity != null && similarity >= 0.6,
+                    icon: similarity != null && similarity >= 0.6 ? CheckCircle : AlertCircle,
+                  },
+                  {
+                    label: 'Latency Δ',
+                    value: latDiff != null ? `${latDiff >= 0 ? '+' : ''}${latDiff.toFixed(3)}s` : '—',
+                    ok: latDiff != null && latDiff <= 0,
+                    icon: latDiff != null && latDiff <= 0 ? CheckCircle : AlertCircle,
+                  },
+                  {
+                    label: 'Cost Δ',
+                    value: costDiff != null ? `${costDiff >= 0 ? '+' : ''}$${Math.abs(costDiff).toFixed(6)}` : '—',
+                    ok: costDiff != null && costDiff <= 0,
+                    icon: costDiff != null && costDiff <= 0 ? CheckCircle : AlertCircle,
+                  },
+                ].map(({ label, value, ok, icon: Icon }) => (
+                  <div key={label} className={`rounded-lg border p-2.5 text-center ${ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                    <Icon className={`w-3.5 h-3.5 mx-auto mb-1 ${ok ? 'text-emerald-600' : 'text-red-500'}`} />
+                    <div className={`font-mono text-xs font-bold ${ok ? 'text-emerald-700' : 'text-red-600'}`}>{value}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Side-by-side output diff */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Baseline output', content: base.output, err: base.error },
+                  { label: 'Candidate output', content: cand.output, err: cand.error },
+                ].map(({ label, content, err }) => (
+                  <div key={label}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                    <pre className={`rounded-lg border p-2.5 text-[10px] font-mono leading-relaxed overflow-auto max-h-40 whitespace-pre-wrap break-all
+                      ${err ? 'border-red-200 bg-red-50 text-red-700' : 'border-border bg-muted/20 text-foreground'}`}>
+                      {err ? `ERROR: ${err}` : (content || '(empty)')}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+
+              {/* Regression verdict */}
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold
+                ${similarity != null && similarity < 0.6
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                {similarity != null && similarity < 0.6
+                  ? <><AlertCircle className="w-3.5 h-3.5" /> Regression detected — similarity below 60% threshold</>
+                  : <><CheckCircle className="w-3.5 h-3.5" /> No regression — outputs are sufficiently similar</>}
+              </div>
+            </div>
+          )}
+
+          {!base && !cand && (
+            <p className="text-xs text-muted-foreground text-center py-2">
+              Select a baseline and candidate span above to compare outputs, latency, and cost.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ── Integration Panels ────────────────────────────────────────────────────────
 
 function TokenBudgetPanel({ traces }: { traces: Trace[] }) {
   const agentTokens = useMemo(() => {
-    const map = new Map<string, { name: string; input: number; output: number; calls: number }>()
+    const map = new Map<string, { id: string; name: string; input: number; output: number; calls: number }>()
     for (const t of traces) {
       const key = t.agent_id || t.agent_name || ''
       if (!key) continue
-      const e = map.get(key) || { name: t.agent_name || key, input: 0, output: 0, calls: 0 }
-      e.input += t.input_tokens; e.output += t.output_tokens; e.calls++
+      const e = map.get(key) || { id: key, name: t.agent_name || key, input: 0, output: 0, calls: 0 }
+      e.input += t.input_tokens ?? 0; e.output += t.output_tokens ?? 0; e.calls++
       map.set(key, e)
     }
     return Array.from(map.values()).sort((a, b) => (b.input + b.output) - (a.input + a.output))
   }, [traces])
 
-  const maxTotal = agentTokens[0] ? agentTokens[0].input + agentTokens[0].output : 1
+  const maxTotal = Math.max(1, agentTokens[0] ? agentTokens[0].input + agentTokens[0].output : 0)
 
   return (
     <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
@@ -122,7 +412,7 @@ function TokenBudgetPanel({ traces }: { traces: Trace[] }) {
               const total = a.input + a.output
               const pct = Math.round((total / maxTotal) * 100)
               return (
-                <div key={a.name}>
+                <div key={a.id}>
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-medium text-foreground truncate max-w-[60%]">{a.name}</span>
                     <span className="text-xs text-muted-foreground">{total.toLocaleString()} tokens</span>
@@ -150,6 +440,7 @@ function RegressionPanel({ traces }: { traces: Trace[] }) {
   const riskFns = useMemo(() => {
     const map = new Map<string, number[]>()
     for (const t of traces) {
+      if (t.latency_sec == null) continue
       const arr = map.get(t.function) || []
       arr.push(t.latency_sec)
       map.set(t.function, arr)
@@ -261,10 +552,13 @@ export default function OverviewPage() {
         description="Live swarm health and execution summary"
         liveStatus={isLive ? 'live' : 'paused'}
         actions={
-          <span className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{traces.length - errorCount} ok</span>
-            <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{errorCount} errors</span>
-          </span>
+          <div className="flex items-center gap-3">
+            <span className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{traces.length - errorCount} ok</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{errorCount} errors</span>
+            </span>
+            <ExportMenu traces={traces} />
+          </div>
         }
       />
 
@@ -335,7 +629,7 @@ export default function OverviewPage() {
                 {(events.length ? events : traces.slice(0, 6).map((t) => ({
                   timestamp: t.timestamp,
                   type: t.error ? 'ERROR' : 'INFO',
-                  message: t.error ? `${t.function}: ${t.error}` : `${t.function} completed in ${t.latency_sec.toFixed(2)}s`,
+                  message: t.error ? `${t.function}: ${t.error}` : `${t.function} completed in ${(t.latency_sec ?? 0).toFixed(2)}s`,
                 }))).slice(0, 8).map((e, i) => (
                   <EventRow key={`${e.timestamp}-${i}`} type={e.type} message={e.message} />
                 ))}
@@ -346,6 +640,12 @@ export default function OverviewPage() {
             )}
           </div>
         </div>
+
+        {/* Cost Projection Widget — always visible */}
+        <CostProjectionWidget traces={traces} />
+
+        {/* Trace Diff / Regression Compare */}
+        <TraceDiffPanel traces={traces} />
 
         {/* Integration Panels — only rendered when integrations are enabled */}
         {(isEnabled('token-budget') || isEnabled('regression-detector')) && (
