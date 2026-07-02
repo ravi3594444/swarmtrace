@@ -82,8 +82,20 @@ export async function supaUserRequest(
   // function downstream of a route handler / server action. The route already
   // called it once for userId; calling it again here for getToken() returns
   // the same cached auth context (no extra work).
-  const { getToken } = await auth()
-  const token = await getToken().catch(() => null)
+  //
+  // Wrap the whole JWT-acquisition in a try/catch so ANY failure (auth()
+  // throwing, getToken() rejecting, Clerk context not hydrated, edge-runtime
+  // quirks) falls through to the service-role fallback instead of 500ing the
+  // route. The route's own try/catch would otherwise convert this into a 500
+  // — defeating the whole "graceful fallback" design. A warn is logged in the
+  // fallback branch below so the failure is still visible.
+  let token: string | null = null
+  try {
+    const { getToken } = await auth()
+    token = await getToken().catch(() => null)
+  } catch {
+    token = null
+  }
 
   // Read the anon key lazily so env var changes (e.g. operator fixes a
   // missing NEXT_PUBLIC_SUPABASE_ANON_KEY after deploy) are picked up without
