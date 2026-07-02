@@ -10,8 +10,11 @@ import type { Trace } from '@/lib/trace-types'
 import { AlertTriangle, Bug, TrendingDown } from 'lucide-react'
 
 function formatTime(iso: string) {
+  // Use UTC to match TraceTable.tsx — otherwise the same trace shows
+  // different times on /traces (UTC) vs /failures (local), which looks
+  // like a bug to the user.
   const d = new Date(iso)
-  return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`
+  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')}`
 }
 
 export default function FailuresPage() {

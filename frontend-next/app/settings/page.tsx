@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useUser } from '@clerk/nextjs'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
-import { Bell, Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Terminal, BookOpen } from 'lucide-react'
+import { Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Terminal, BookOpen } from 'lucide-react'
 import { fetchApiKeys, createApiKey, revokeApiKey, fetchBillingInfo } from '@/lib/api'
 import { useIntegrations, type Integration } from '@/contexts/IntegrationsContext'
 import { SkeletonCard } from '@/components/skeleton'
@@ -464,11 +464,6 @@ export default function SettingsPage() {
       <PageHeader
         title="Settings"
         description="Manage your account and preferences"
-        actions={
-          <button className="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-accent transition-colors">
-            <Bell className="w-4 h-4 text-muted-foreground" />
-          </button>
-        }
       />
       <div className="p-5 space-y-6">
 
