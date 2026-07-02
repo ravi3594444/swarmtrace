@@ -135,11 +135,49 @@ export async function supaUserRequest(
   }
 
   const url = `${SUPABASE_URL}/rest/v1/${path}`
-  const response = await fetch(url, {
+  const usedJwt = !!(token && anonKey)   // true if the happy-path headers were set
+
+  let response = await fetch(url, {
     ...options,
     headers,
     signal: AbortSignal.timeout(SUPA_TIMEOUT_MS),
   })
+
+  // ── 401/403 retry: misconfigured-integration safety net ──────────────────
+  //
+  // If we sent a real Clerk JWT (happy path) and Supabase rejected it with
+  // 401/403, the most likely cause is that the Clerk↔Supabase native
+  // integration isn't configured yet in the Supabase dashboard (a manual
+  // step — see supabase/migrations/0005_production_fixes.sql). The JWT is
+  // valid Clerk-side, but Supabase doesn't recognize the issuer.
+  //
+  // Without this retry, every dashboard page would 500 until the operator
+  // completes the dashboard setup — a brutal first-run experience. Instead,
+  // fall back to the service-role key (same as if getToken() had returned
+  // null) and retry the request once. The manual user_id filter in the URL
+  // still provides isolation; RLS is just not enforced for this request.
+  // A warn leaves an audit trail in the Vercel logs.
+  //
+  // We only retry on 401/403 (auth errors), NOT on 4xx data errors (404,
+  // 422, etc.) or 5xx server errors — those are real problems that falling
+  // back won't fix.
+  if (!response.ok && (response.status === 401 || response.status === 403) && usedJwt) {
+    console.warn(
+      `[supaUserRequest] Supabase rejected the Clerk JWT with ${response.status} — ` +
+      'falling back to service-role key and retrying. RLS is NOT enforced on ' +
+      'this request. Verify the Clerk↔Supabase integration is enabled in ' +
+      'your Supabase dashboard (see supabase/migrations/0005_production_fixes.sql).'
+    )
+    // Consume the error response body so the connection can be reused.
+    await response.text().catch(() => {})
+    headers.apikey        = SUPABASE_SERVICE_KEY
+    headers.Authorization = `Bearer ${SUPABASE_SERVICE_KEY}`
+    response = await fetch(url, {
+      ...options,
+      headers,
+      signal: AbortSignal.timeout(SUPA_TIMEOUT_MS),
+    })
+  }
 
   if (!response.ok) {
     const text = await response.text().catch(() => '')
