@@ -158,10 +158,21 @@ function getEndpoint() {
 
 function CopyLine({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
   const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState(false)
   const copy = async () => {
-    await navigator.clipboard.writeText(value)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+    // navigator.clipboard.writeText() rejects when: page is served over
+    // HTTP (non-localhost), clipboard permission denied, or browser doesn't
+    // support it. Without try/catch, the await throws, setCopied never runs,
+    // and the user sees nothing happen.
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setCopyError(false)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopyError(true)
+      setTimeout(() => setCopyError(false), 3000)
+    }
   }
   return (
     <div className="space-y-1.5">
@@ -173,7 +184,7 @@ function CopyLine({ label, value, mono = true }: { label: string; value: string;
         <button
           onClick={copy}
           className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground shrink-0"
-          title="Copy"
+          title={copyError ? 'Copy failed — select the text and press Ctrl+C' : 'Copy'}
         >
           {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
         </button>
@@ -199,9 +210,14 @@ def my_agent(prompt: str) -> str:
     ...`
 
   const copySnippet = async () => {
-    await navigator.clipboard.writeText(snippet)
-    setCopiedSnippet(true)
-    setTimeout(() => setCopiedSnippet(false), 2000)
+    try {
+      await navigator.clipboard.writeText(snippet)
+      setCopiedSnippet(true)
+      setTimeout(() => setCopiedSnippet(false), 2000)
+    } catch {
+      // Non-secure context or permission denied — user can select manually.
+      // The snippet is visible in the <pre> below for manual copy.
+    }
   }
 
   return (
@@ -371,11 +387,20 @@ export default function SettingsPage() {
     }
   }
 
+  const [copiedKeyErr, setCopiedKeyErr] = useState(false)
   const handleCopyKey = async () => {
     if (!createdKey?.key) return
-    await navigator.clipboard.writeText(createdKey.key)
-    setCopiedKey(true)
-    setTimeout(() => setCopiedKey(false), 2000)
+    try {
+      await navigator.clipboard.writeText(createdKey.key)
+      setCopiedKey(true)
+      setCopiedKeyErr(false)
+      setTimeout(() => setCopiedKey(false), 2000)
+    } catch {
+      // Clipboard API rejects in non-secure contexts or on permission denial.
+      // The key is shown in a readonly input the user can select manually.
+      setCopiedKeyErr(true)
+      setTimeout(() => setCopiedKeyErr(false), 3000)
+    }
   }
 
   const handleRevokeKey = async (id: string) => {
@@ -609,10 +634,11 @@ export default function SettingsPage() {
                       </code>
                       <button
                         onClick={handleCopyKey}
+                        title={copiedKeyErr ? 'Copy failed — select the key text and press Ctrl+C' : 'Copy to clipboard'}
                         className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/20 border border-green-500/30 text-green-600 hover:bg-green-500/30 transition-colors text-xs font-medium"
                       >
                         {copiedKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                        {copiedKey ? 'Copied!' : 'Copy'}
+                        {copiedKey ? 'Copied!' : copiedKeyErr ? 'Copy failed' : 'Copy'}
                       </button>
                     </div>
                     <p className="text-xs text-muted-foreground">⚠ Save this key now. You won&apos;t be able to see it again.</p>
