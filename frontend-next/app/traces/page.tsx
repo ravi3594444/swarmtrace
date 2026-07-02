@@ -24,6 +24,10 @@ type ViewMode = 'tree' | 'table' | 'waterfall'
 // ── Export helpers ─────────────────────────────────────────────────────────────
 
 function exportJSON(traces: Trace[]) {
+  // Guard against empty data — without this, the user could download a
+  // file containing just "[]" (no traces). The menu button is also
+  // disabled when there's no data, but this is belt-and-suspenders.
+  if (traces.length === 0) return
   const blob = new Blob([JSON.stringify(traces, null, 2)], { type: 'application/json' })
   const url = URL.createObjectURL(blob)
   const a = document.createElement('a')
@@ -34,6 +38,9 @@ function exportJSON(traces: Trace[]) {
 }
 
 function exportCSV(traces: Trace[]) {
+  // Guard against empty data — without this, the user could download a
+  // CSV containing only the header row (no data rows).
+  if (traces.length === 0) return
   const headers = ['id', 'parent_id', 'function', 'kind', 'agent_name', 'timestamp',
     'latency_sec', 'input_tokens', 'output_tokens', 'cost_usd', 'error']
   const escape = (v: unknown) => {
@@ -56,17 +63,20 @@ function exportCSV(traces: Trace[]) {
 
 function ExportMenu({ traces }: { traces: Trace[] }) {
   const [open, setOpen] = useState(false)
+  const hasTraces = traces.length > 0
   return (
     <div className="relative">
       <button
         onClick={() => setOpen(v => !v)}
-        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm"
+        disabled={!hasTraces}
+        title={hasTraces ? 'Export traces' : 'No traces to export yet'}
+        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
       >
         <Download className="w-3.5 h-3.5" />
         Export
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
-      {open && (
+      {open && hasTraces && (
         <div className="absolute right-0 top-full mt-1 z-30 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
           <button
             onClick={() => { exportJSON(traces); setOpen(false) }}
