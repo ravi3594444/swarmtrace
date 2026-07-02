@@ -54,6 +54,7 @@ interface AgentChannel {
   channel: RealtimeChannel
   events: AgentEvent[]
   connected: boolean
+  error: string | null    // non-null if the history fetch or subscription failed
   subscribers: number   // ref-count so we know when to *stop* garbage-collecting
 }
 
@@ -62,6 +63,7 @@ interface RealtimeContextValue {
   unsubscribe: (agentId: string) => void
   getEvents:   (agentId: string) => AgentEvent[]
   isConnected: (agentId: string) => boolean
+  getError:    (agentId: string) => string | null
   // notifies components when events for a specific agent change
   version:     Record<string, number>
 }
@@ -75,6 +77,7 @@ const RealtimeContext = createContext<RealtimeContextValue>({
   unsubscribe: () => {},
   getEvents:   () => [],
   isConnected: () => false,
+  getError:    () => null,
   version:     {},
 })
 
@@ -156,18 +159,34 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
   const openChannel = useCallback(async (agentId: string) => {
     const client = await getClient()
-    if (!client) return
+    if (!client) {
+      if (channels.current[agentId]) {
+        channels.current[agentId].error =
+          'Realtime unavailable — Supabase client could not be initialized.'
+        bump(agentId)
+      }
+      return
+    }
 
-    // Load recent history first
-    const { data } = await client
+    // Load recent history first. Destructure { data, error } — without
+    // surfacing the error, a failed fetch (RLS denial, missing table,
+    // network) leaves events=[] silently and the user sees "Waiting for
+    // agent activity…" forever with no indication the feed is broken.
+    const { data, error } = await client
       .from('agent_events')
       .select('*')
       .eq('agent_id', agentId)
       .order('timestamp', { ascending: false })
       .limit(50)
 
-    if (data && channels.current[agentId]) {
-      channels.current[agentId].events = (data as AgentEvent[]).reverse()
+    if (channels.current[agentId]) {
+      if (error) {
+        channels.current[agentId].error =
+          `Couldn't load agent events: ${error.message}`
+      } else if (data) {
+        channels.current[agentId].events = (data as AgentEvent[]).reverse()
+        channels.current[agentId].error = null
+      }
       bump(agentId)
     }
 
@@ -215,6 +234,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       channel: null as unknown as RealtimeChannel,  // filled by openChannel
       events: [],
       connected: false,
+      error: null,
       subscribers: 1,
     }
     openChannel(agentId)
@@ -231,9 +251,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
   const getEvents   = useCallback((agentId: string) => channels.current[agentId]?.events ?? [], [])
   const isConnected = useCallback((agentId: string) => channels.current[agentId]?.connected ?? false, [])
+  const getError    = useCallback((agentId: string) => channels.current[agentId]?.error ?? null, [])
 
   return (
-    <RealtimeContext.Provider value={{ subscribe, unsubscribe, getEvents, isConnected, version }}>
+    <RealtimeContext.Provider value={{ subscribe, unsubscribe, getEvents, isConnected, getError, version }}>
       {children}
     </RealtimeContext.Provider>
   )
@@ -244,9 +265,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 /**
  * useAgentEvents(agentId)
  *
- * Returns { events, connected } for the given agent. Re-renders only when
- * that specific agent receives a new event, not on any global event.
- * The underlying Supabase channel is NOT torn down when the component unmounts.
+ * Returns { events, connected, error } for the given agent. Re-renders only
+ * when that specific agent receives a new event or error, not on any global
+ * event. The underlying Supabase channel is NOT torn down when the component
+ * unmounts.
  */
 export function useAgentEvents(agentId: string) {
   const ctx = useContext(RealtimeContext)
@@ -263,5 +285,6 @@ export function useAgentEvents(agentId: string) {
   return {
     events:    ctx.getEvents(agentId),
     connected: ctx.isConnected(agentId),
+    error:     ctx.getError(agentId),
   }
 }
