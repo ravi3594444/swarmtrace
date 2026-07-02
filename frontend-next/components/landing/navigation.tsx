@@ -2,6 +2,7 @@
 
 import { Button } from "@/components/ui/button"
 import { useState } from "react"
+import Link from "next/link"
 import { Menu, X } from "lucide-react"
 
 const navLinks = [
@@ -44,10 +45,10 @@ export function Navigation() {
 
           <div className="hidden md:flex items-center gap-4">
             <Button variant="outline" size="sm" asChild>
-              <a href="/sign-in">Sign In</a>
+              <Link href="/sign-in">Sign In</Link>
             </Button>
             <Button size="sm" asChild>
-              <a href="/sign-up">Get Started</a>
+              <Link href="/sign-up">Get Started</Link>
             </Button>
           </div>
 
@@ -76,10 +77,10 @@ export function Navigation() {
               ))}
               <div className="flex flex-col gap-2 pt-4 border-t border-border/20">
                 <Button variant="outline" size="sm" asChild>
-                  <a href="/sign-in">Sign In</a>
+                  <Link href="/sign-in">Sign In</Link>
                 </Button>
                 <Button size="sm" asChild>
-                  <a href="/sign-up">Get Started</a>
+                  <Link href="/sign-up">Get Started</Link>
                 </Button>
               </div>
             </div>

@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
@@ -15,7 +15,7 @@ import { fetchOverview } from '@/lib/api'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import {
   Activity, ChevronDown, ChevronUp, Info, Coins, TrendingDown,
-  Download, FileJson, FileText, TrendingUp, GitCompare, X, CheckCircle, AlertCircle,
+  Download, FileJson, FileText, TrendingUp, GitCompare, CheckCircle, AlertCircle,
 } from 'lucide-react'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
 

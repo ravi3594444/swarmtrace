@@ -11,18 +11,6 @@ import { SkeletonCard } from '@/components/skeleton'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
-interface BillingInfo {
-  plan?: string
-  price?: number
-  // API returns these field names:
-  traces_used?: number
-  traces_limit?: number
-  cost_this_month?: number
-  next_billing?: string
-  // Fallback fields:
-  nextBilling?: string
-  paymentMethod?: string
-}
 
 // ─── Billing Page ─────────────────────────────────────────────────────────────
 function BillingTab() {
@@ -375,8 +363,9 @@ export default function SettingsPage() {
       } else {
         setApiKeyError('Failed to create API key. The API may be unavailable — check your backend connection.')
       }
-    } catch (err: any) {
-      setApiKeyError(`Error creating key: ${err?.message || 'Unknown error'}`)
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      setApiKeyError(`Error creating key: ${message}`)
     } finally {
       setCreatingKey(false)
     }

@@ -3,16 +3,24 @@ import { NextResponse } from 'next/server'
 import { supaRequest } from '../../../../lib/supabase'
 import crypto from 'crypto'
 
+interface ApiKeyRow {
+  id: string
+  name: string
+  created_at: string
+  last_used: string | null
+  key_prefix: string
+}
+
 export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const keys = await supaRequest(
+    const keys = (await supaRequest(
       `api_keys?user_id=eq.${encodeURIComponent(userId)}&revoked=eq.false&order=created_at.desc`
-    )
+    )) as ApiKeyRow[]
     return NextResponse.json({
-      keys: keys.map((k: any) => ({
+      keys: keys.map((k) => ({
         id: k.id,
         name: k.name,
         created: k.created_at,

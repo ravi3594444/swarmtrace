@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaRequest } from '../../../lib/supabase'
+import type { DailyMetricRow } from '../../../lib/trace-types'
 
 export async function GET() {
   const { userId } = (await auth())
@@ -8,9 +9,9 @@ export async function GET() {
 
   try {
     // One tiny table — one row per day per user. No scanning 5000 traces.
-    const rows = await supaRequest(
+    const rows = (await supaRequest(
       `daily_metrics?user_id=eq.${encodeURIComponent(userId)}&order=date.desc&limit=90`
-    )
+    )) as DailyMetricRow[]
 
     if (!rows || rows.length === 0) {
       return NextResponse.json({
@@ -27,20 +28,20 @@ export async function GET() {
     const day7Ago   = new Date(now); day7Ago.setUTCDate(now.getUTCDate() - 7)
     const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
 
-    const agg = (subset: any[]) => ({
-      cost:       parseFloat(subset.reduce((a: number, r: any) => a + (r.total_cost ?? r.cost_usd ?? 0), 0).toFixed(6)),
-      tokens_in:  subset.reduce((a: number, r: any) => a + (r.input_tokens || 0), 0),
-      tokens_out: subset.reduce((a: number, r: any) => a + (r.output_tokens || 0), 0),
-      traces:     subset.reduce((a: number, r: any) => a + (r.trace_count || 0), 0),
+    const agg = (subset: DailyMetricRow[]) => ({
+      cost:       parseFloat(subset.reduce((a, r) => a + (r.total_cost ?? r.cost_usd ?? 0), 0).toFixed(6)),
+      tokens_in:  subset.reduce((a, r) => a + (r.input_tokens || 0), 0),
+      tokens_out: subset.reduce((a, r) => a + (r.output_tokens || 0), 0),
+      traces:     subset.reduce((a, r) => a + (r.trace_count || 0), 0),
     })
 
     return NextResponse.json({
-      today:       agg(rows.filter((r: any) => r.date === todayStr)),
-      last_7_days: agg(rows.filter((r: any) => new Date(r.date) >= day7Ago)),
-      this_month:  agg(rows.filter((r: any) => r.date >= monthStart)),
+      today:       agg(rows.filter((r) => r.date === todayStr)),
+      last_7_days: agg(rows.filter((r) => new Date(r.date) >= day7Ago)),
+      this_month:  agg(rows.filter((r) => r.date >= monthStart)),
       all_time:    agg(rows),
       // chart: one point per day — frontend picks the period to display
-      chart: rows.map((r: any) => ({
+      chart: rows.map((r) => ({
         date:   r.date,
         cost:   r.cost_usd      || 0,
         input:  r.input_tokens  || 0,

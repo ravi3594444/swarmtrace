@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 import { AnimatedSphere } from "./animated-sphere";
@@ -89,7 +90,7 @@ export function HeroSection() {
             className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full"
             asChild
           >
-            <a href="/sign-up">Get Started Free</a>
+            <Link href="/sign-up">Get Started Free</Link>
           </Button>
           <Button
             size="lg"
