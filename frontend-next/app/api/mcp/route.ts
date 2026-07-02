@@ -22,6 +22,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { z } from 'zod'
+import { Redis } from '@upstash/redis'
+import { Ratelimit } from '@upstash/ratelimit'
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL!
@@ -64,6 +66,53 @@ async function supaRpc(fn: string, params: Record<string, unknown>) {
   }
 }
 
+// ── Rate limiter (Upstash Redis with per-isolate fallback) ──────────────────
+// Same pattern as /api/ingest and /api/events. 120 requests / 60s per API key.
+// Falls back to per-isolate Map when UPSTASH_REDIS_REST_URL is not set.
+// To enable: add UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN to Vercel env.
+const RATE_LIMIT     = 120
+const RATE_WINDOW_MS = 60_000
+
+let _upstashLimiter: Ratelimit | null = null
+
+function getUpstashLimiter(): Ratelimit | null {
+  if (_upstashLimiter) return _upstashLimiter
+  const url   = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (!url || !token) return null
+  _upstashLimiter = new Ratelimit({
+    redis:     new Redis({ url, token }),
+    limiter:   Ratelimit.slidingWindow(RATE_LIMIT, '60 s'),
+    analytics: false,
+    prefix:    'st_mcp_rl',
+  })
+  return _upstashLimiter
+}
+
+interface RateEntry { count: number; windowStart: number }
+const RATE_MAP = new Map<string, RateEntry>()
+
+function checkRateLocal(keyHash: string): boolean {
+  const now   = Date.now()
+  const entry = RATE_MAP.get(keyHash)
+  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+    RATE_MAP.set(keyHash, { count: 1, windowStart: now })
+    return true
+  }
+  if (entry.count >= RATE_LIMIT) return false
+  entry.count++
+  return true
+}
+
+async function checkRate(keyHash: string): Promise<boolean> {
+  const limiter = getUpstashLimiter()
+  if (limiter) {
+    const { success } = await limiter.limit(keyHash)
+    return success
+  }
+  return checkRateLocal(keyHash)
+}
+
 // ── API key → user_id resolution ─────────────────────────────────────────────
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
@@ -72,8 +121,9 @@ async function sha256Hex(input: string): Promise<string> {
     .join('')
 }
 
-async function resolveApiKey(apiKey: string): Promise<string | null> {
-  const keyHash = await sha256Hex(apiKey)
+// Accepts a pre-computed keyHash (same one used for rate limiting) so we
+// don't hash the API key twice per request.
+async function resolveApiKeyByKeyHash(keyHash: string): Promise<string | null> {
   const rows: Array<{ user_id: string }> = await supa(
     `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`
   )
@@ -294,9 +344,24 @@ async function handleMcp(req: Request): Promise<Response> {
     )
   }
 
+  const keyHash = await sha256Hex(apiKey)
+
+  // ── Rate limit check (before DB lookup — cheap, fast) ──────────────────
+  // Same pattern as /api/ingest. 120 requests / 60s per API key.
+  if (!await checkRate(keyHash)) {
+    return new Response(null, {
+      status: 429,
+      headers: {
+        'Retry-After':       '60',
+        'X-RateLimit-Limit':  String(RATE_LIMIT),
+        'X-RateLimit-Window': '60s',
+      },
+    })
+  }
+
   let userId: string | null = null
   try {
-    userId = await resolveApiKey(apiKey)
+    userId = await resolveApiKeyByKeyHash(keyHash)
   } catch {
     return new Response(
       JSON.stringify({ error: 'Auth check failed' }),
