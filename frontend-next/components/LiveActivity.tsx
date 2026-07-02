@@ -109,7 +109,7 @@ export default function LiveActivity({ agentId, agentName }: Props) {
   // useAgentEvents reads from the shared RealtimeProvider — the channel stays
   // open even when this component unmounts (page navigation). On return, events
   // that arrived during navigation are already in the store.
-  const { events, connected } = useAgentEvents(agentId)
+  const { events, connected, error } = useAgentEvents(agentId)
 
   const [filter, setFilter]   = useState<string>('all')
   const bottomRef  = useRef<HTMLDivElement>(null)
@@ -161,7 +161,12 @@ export default function LiveActivity({ agentId, agentName }: Props) {
 
       {/* Event list */}
       <div className="flex-1 overflow-y-auto py-1">
-        {filtered.length === 0 ? (
+        {error ? (
+          <div className="flex flex-col items-center justify-center h-full text-center px-6">
+            <p className="text-sm text-red-400 font-medium">Couldn&apos;t load agent activity</p>
+            <p className="text-xs text-zinc-600 mt-1 max-w-xs">{error}</p>
+          </div>
+        ) : filtered.length === 0 ? (
           <div className="flex items-center justify-center h-full text-zinc-600 text-sm">
             {connected ? 'Waiting for agent activity…' : 'Connecting to Supabase Realtime…'}
           </div>
