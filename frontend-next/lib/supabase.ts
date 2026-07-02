@@ -9,9 +9,13 @@ const SUPA_TIMEOUT_MS      = 5_000
 //   - agent_events inserts in /api/events
 //   - api_keys CRUD in /api/settings/api-keys
 //
-// ⚠️  NEVER use for user-facing reads (traces, agents, overview, metrics).
-//     Use supaUserRequest() for those — it forwards the Clerk JWT so RLS
-//     tenant isolation is enforced at the DB level.
+// ⚠️  Currently used for ALL Supabase access, including user-facing reads
+//     (traces, agents, overview, metrics) — every route relies solely on
+//     the caller manually adding a `user_id=eq.${userId}` filter to `path`
+//     for tenant isolation, since the service-role key bypasses Postgres
+//     RLS unconditionally. supaUserRequest() below was intended to add a
+//     real RLS-enforced DB-level backstop but does not yet do so (see its
+//     own note) and is not currently called anywhere.
 export async function supaRequest(path: string, options: RequestInit = {}) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     throw new Error('Supabase environment variables are missing on this server instance.')
@@ -64,10 +68,17 @@ export async function supaUserRequest(
   const url = `${SUPABASE_URL}/rest/v1/${path}`
   const headers = {
     apikey:          SUPABASE_SERVICE_KEY,
-    // Deliberately NOT using the service key as the Bearer token here —
-    // we want RLS to evaluate auth.jwt()->>'sub', which requires the user JWT.
-    // For now we pass the userId directly as a claim-safe bearer so queries
-    // include the user_id filter. Full per-user JWT support can be added later.
+    // NOTE (correction, not yet fixed): this still authenticates with the
+    // service-role key below, same as supaRequest(). The service role
+    // bypasses Postgres RLS unconditionally regardless of any other
+    // header — so despite the function name and the x-swarmtrace-user-id
+    // header, this does NOT currently enforce RLS or provide any DB-level
+    // isolation beyond the manual `user_id=eq.` filter the caller builds
+    // into `path`. A real fix needs a per-user Clerk JWT (e.g. via the
+    // native Clerk↔Supabase JWKS integration already used client-side in
+    // contexts/RealtimeContext.tsx) passed as the Bearer token instead of
+    // SUPABASE_SERVICE_KEY. This function is also currently uncalled
+    // anywhere in the codebase — every route still uses supaRequest().
     Authorization:  `Bearer ${SUPABASE_SERVICE_KEY}`,
     'Content-Type': 'application/json',
     Prefer:         'return=representation',

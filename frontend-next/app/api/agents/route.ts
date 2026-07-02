@@ -1,15 +1,16 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaRequest } from '../../../lib/supabase'
+import type { Trace } from '../../../lib/trace-types'
 
 export async function GET() {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const rows = await supaRequest(
+    const rows = (await supaRequest(
       `traces?user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=500`
-    )
+    )) as Trace[]
 
     // ── Identify "agents" ──────────────────────────────────────────────────
     // swarmtrace >= 0.3.0 stamps every span with a `kind`
@@ -25,22 +26,22 @@ export async function GET() {
     // if it contains the kind='agent' span that defines it; a lone
     // tool/llm/function call with no enclosing agent (agent_id === its own
     // id, kind !== 'agent') never becomes a phantom agent.
-    const groups: Record<string, any[]> = {}
-    rows.forEach((r: any) => { (groups[r.agent_id] ||= []).push(r) })
+    const groups: Record<string, Trace[]> = {}
+    rows.forEach((r) => { (groups[r.agent_id!] ||= []).push(r) })
 
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
 
     const agents = Object.entries(groups)
-      .filter(([id, traces]) => traces.some((t: any) => t.kind === 'agent' && t.id === id))
+      .filter(([id, traces]) => traces.some((t) => t.kind === 'agent' && t.id === id))
       .map(([id, traces]) => {
-        const runs        = traces.filter((t: any) => t.kind === 'agent' && t.id === id)
+        const runs        = traces.filter((t) => t.kind === 'agent' && t.id === id)
         const latestRun   = runs[0]
         const latestEvent = traces[0]
         const isRecent    = latestEvent.timestamp >= fiveMinutesAgo
 
-        const errorCount  = traces.filter((t: any) => t.error).length
+        const errorCount  = traces.filter((t) => t.error).length
         const tokens      = traces.reduce(
-          (acc: number, t: any) => acc + (t.input_tokens || 0) + (t.output_tokens || 0), 0
+          (acc, t) => acc + (t.input_tokens || 0) + (t.output_tokens || 0), 0
         )
         const successRate = ((traces.length - errorCount) / traces.length) * 100
 

@@ -5,16 +5,20 @@
  * page navigations. Lives in DashboardLayout (above every dashboard page) so
  * channels survive route changes.
  *
- * Auth: uses Clerk's getToken({ template: 'supabase' }) to get a JWT that
- * Supabase recognises. This is required for RLS policies (which check
- * auth.jwt()->>'sub') to allow the browser to receive Realtime events.
- * Without this, all postgres_changes subscriptions are silently empty.
+ * Auth: uses Clerk's getToken() (no template) to get the standard Clerk
+ * session token. Supabase validates it via Clerk's public JWKS endpoint —
+ * no shared secrets, no JWT template, no downtime on secret rotation. This
+ * is required for RLS policies (which check auth.jwt()->>'sub') to allow
+ * the browser to receive Realtime events. Without this, all
+ * postgres_changes subscriptions are silently empty.
  *
- * Setup required (one-time, in dashboards — not in code):
- *   1. Clerk dashboard → JWT Templates → New → Supabase → copy signing secret
- *   2. Supabase dashboard → Project Settings → API → JWT Secret → paste it
- * Once done, every Realtime subscription here will correctly filter to the
- * current user's data via RLS.
+ * Setup required (one-time, in each dashboard — not in code):
+ *   1. Clerk Dashboard → Integrations → Supabase → copy your Clerk Domain
+ *   2. Supabase Dashboard → Authentication → Providers → Clerk → paste
+ *      domain + enable
+ * See supabase/migrations/0005_production_fixes.sql for the matching RLS
+ * setup. Once done, every Realtime subscription here correctly filters to
+ * the current user's data via RLS.
  */
 
 import {
@@ -76,16 +80,19 @@ const RealtimeContext = createContext<RealtimeContextValue>({
 
 // ── Provider ─────────────────────────────────────────────────────────────────
 
+// Cached Supabase client TTL. Clerk JWTs expire (~1 h); after expiry the
+// cached client's Authorization header goes stale and Realtime
+// subscriptions silently stop receiving events, so we force a rebuild every
+// 45 minutes — well inside the 1 h window. Module-scope constant (not
+// component state) so it's stable across renders with no deps-array upkeep.
+const SB_TTL_MS = 45 * 60 * 1000
+
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [version, setVersion] = useState<Record<string, number>>({})
   const channels = useRef<Record<string, AgentChannel>>({})
   const sb        = useRef<SupabaseClient | null>(null)
   // Track when the cached client was built so we can detect token expiry.
-  // Clerk JWTs expire (~1 h). After expiry the cached client's Authorization
-  // header becomes stale and Realtime subscriptions silently stop receiving
-  // events. We force a rebuild every 45 minutes — well inside the 1 h window.
   const sbBuiltAt = useRef<number>(0)
-  const SB_TTL_MS = 45 * 60 * 1000
   const { getToken } = useAuth()
 
   // Build (or refresh) a Supabase client authenticated with the current Clerk JWT.
@@ -251,7 +258,6 @@ export function useAgentEvents(agentId: string) {
 
   // Derive stable values. ctx.version[agentId] bumps when events change,
   // triggering a re-render here but nowhere else.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const _tick = ctx.version[agentId]
 
   return {

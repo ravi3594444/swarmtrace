@@ -1,17 +1,18 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaRequest } from '../../../lib/supabase'
+import type { Trace } from '../../../lib/trace-types'
 
 export async function GET() {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const rows = await supaRequest(
+    const rows = (await supaRequest(
       `traces?user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=500`
-    )
+    )) as Trace[]
     return NextResponse.json({
-      traces: rows.map((r: any) => ({
+      traces: rows.map((r) => ({
         id: r.id,
         parent_id: r.parent_id,
         function: r.function,

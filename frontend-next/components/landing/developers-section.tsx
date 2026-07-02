@@ -45,7 +45,7 @@ export function DevelopersSection() {
               <div className="ml-4 text-muted-foreground"># Your agent logic here</div>
               <div className="ml-4 text-blue-400">return</div> <div className="text-green-300">result</div>
 
-              <div className="text-muted-foreground pt-4"># That's it! 🎉</div>
+              <div className="text-muted-foreground pt-4"># That&apos;s it! 🎉</div>
               <div className="text-muted-foreground"># All traces are automatically captured</div>
             </div>
           </div>

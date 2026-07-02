@@ -12,6 +12,25 @@ function formatTime(iso: string) {
   return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
 }
 
+function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
+  if (!active) return <ArrowUpDown className="w-3 h-3 opacity-25" />;
+  return asc ? <ArrowUp className="w-3 h-3 text-foreground" /> : <ArrowDown className="w-3 h-3 text-foreground" />;
+}
+
+function SortableHeader({ k, sortKey, asc, onToggle, children }: {
+  k: SortKey;
+  sortKey: SortKey;
+  asc: boolean;
+  onToggle: (k: SortKey) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <th onClick={() => onToggle(k)} className="px-4 py-3 cursor-pointer select-none text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors text-left">
+      <span className="flex items-center gap-1">{children}<SortIcon active={sortKey === k} asc={asc} /></span>
+    </th>
+  );
+}
+
 export function TraceTable({ traces, onSelect, showErrors = false, newIds, selected }: {
   traces: Trace[];
   onSelect: (t: Trace) => void;
@@ -34,19 +53,6 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
 
   const toggle = (k: SortKey) => { if (k === sortKey) setAsc(!asc); else { setSortKey(k); setAsc(true); } };
 
-  function SortIcon({ k }: { k: SortKey }) {
-    if (sortKey !== k) return <ArrowUpDown className="w-3 h-3 opacity-25" />;
-    return asc ? <ArrowUp className="w-3 h-3 text-foreground" /> : <ArrowDown className="w-3 h-3 text-foreground" />;
-  }
-
-  function H({ k, children }: { k: SortKey; children: React.ReactNode }) {
-    return (
-      <th onClick={() => toggle(k)} className="px-4 py-3 cursor-pointer select-none text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors text-left">
-        <span className="flex items-center gap-1">{children}<SortIcon k={k} /></span>
-      </th>
-    );
-  }
-
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
       <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
@@ -57,14 +63,14 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
         <table className="w-full">
           <thead className="border-b border-border bg-muted/20">
             <tr>
-              <H k="id">ID</H>
-              <H k="function">Function</H>
-              <H k="latency_sec">Latency</H>
-              <H k="input_tokens">In</H>
-              <H k="output_tokens">Out</H>
-              <H k="cost_usd">Cost</H>
+              <SortableHeader k="id" sortKey={sortKey} asc={asc} onToggle={toggle}>ID</SortableHeader>
+              <SortableHeader k="function" sortKey={sortKey} asc={asc} onToggle={toggle}>Function</SortableHeader>
+              <SortableHeader k="latency_sec" sortKey={sortKey} asc={asc} onToggle={toggle}>Latency</SortableHeader>
+              <SortableHeader k="input_tokens" sortKey={sortKey} asc={asc} onToggle={toggle}>In</SortableHeader>
+              <SortableHeader k="output_tokens" sortKey={sortKey} asc={asc} onToggle={toggle}>Out</SortableHeader>
+              <SortableHeader k="cost_usd" sortKey={sortKey} asc={asc} onToggle={toggle}>Cost</SortableHeader>
               <th className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-center">Status</th>
-              <H k="timestamp">Time</H>
+              <SortableHeader k="timestamp" sortKey={sortKey} asc={asc} onToggle={toggle}>Time</SortableHeader>
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
