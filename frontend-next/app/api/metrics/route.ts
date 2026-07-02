@@ -1,6 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaRequest } from '../../../lib/supabase'
+import { supaUserRequest } from '../../../lib/supabase'
 import type { DailyMetricRow } from '../../../lib/trace-types'
 
 export async function GET() {
@@ -9,8 +9,12 @@ export async function GET() {
 
   try {
     // One tiny table — one row per day per user. No scanning 5000 traces.
-    const rows = (await supaRequest(
-      `daily_metrics?user_id=eq.${encodeURIComponent(userId)}&order=date.desc&limit=90`
+    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
+    // JWT in the Authorization header). The user_id filter in the URL is
+    // now defence-in-depth, not the only guard.
+    const rows = (await supaUserRequest(
+      `daily_metrics?user_id=eq.${encodeURIComponent(userId)}&order=date.desc&limit=90`,
+      userId
     )) as DailyMetricRow[]
 
     if (!rows || rows.length === 0) {

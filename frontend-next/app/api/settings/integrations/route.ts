@@ -1,6 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaRequest } from '@/lib/supabase'
+import { supaRequest, supaUserRequest } from '@/lib/supabase'
 
 const INTEGRATIONS_META = [
   { id: 'swarmtrace-observe', name: 'swarmtrace @observe',   description: 'Auto-traces all decorated functions',                             requires: null,                                                          default_connected: true  },
@@ -16,8 +16,12 @@ export async function GET() {
 
   let savedRows: Array<{ integration_id: string; connected: boolean }> = []
   try {
-    savedRows = await supaRequest(
-      `user_integrations?user_id=eq.${encodeURIComponent(userId)}&select=integration_id,connected`
+    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
+    // JWT in the Authorization header). The user_id filter in the URL is
+    // now defence-in-depth, not the only guard.
+    savedRows = await supaUserRequest(
+      `user_integrations?user_id=eq.${encodeURIComponent(userId)}&select=integration_id,connected`,
+      userId
     ) || []
   } catch {
     // table may not exist yet — fall back to defaults
