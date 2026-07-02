@@ -13,11 +13,18 @@ function CopyId({ id }: { id: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
-      onClick={(e) => {
+      onClick={async (e) => {
         e.stopPropagation();
-        navigator.clipboard.writeText(id);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 1200);
+        // Wrap in try/catch — clipboard API rejects in non-secure contexts
+        // (HTTP non-localhost) or on permission denial. Without this, the
+        // unhandled rejection is logged and setCopied never runs.
+        try {
+          await navigator.clipboard.writeText(id);
+          setCopied(true);
+          setTimeout(() => setCopied(false), 1200);
+        } catch {
+          // Silently ignore — the id text is visible for manual copy.
+        }
       }}
       title={copied ? "Copied!" : `Copy ${id}`}
       className="shrink-0 flex items-center gap-1 rounded px-1 py-0.5 -mx-1 text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
