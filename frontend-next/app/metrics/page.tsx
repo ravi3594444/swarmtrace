@@ -92,6 +92,10 @@ export default function MetricsPage() {
 
   const exportCSV = () => {
     const chart = data?.chart ?? []
+    // Guard against empty data — without this, the user could download a
+    // CSV containing only the header row (no data rows). The button is also
+    // disabled when there's no data, but this is a belt-and-suspenders check.
+    if (chart.length === 0) return
     const rows = chart.map((r) => `${r.date},${r.input},${r.output},${r.cost},${r.traces}`).join('\n')
     const blob = new Blob(['date,input_tokens,output_tokens,cost_usd,traces\n' + rows], { type: 'text/csv' })
     const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'swarmtrace-metrics.csv' })
@@ -108,6 +112,7 @@ export default function MetricsPage() {
   const allTime = data?.all_time ?? { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 }
   const totalTokens = allTime.tokens_in + allTime.tokens_out
   const last7 = data?.last_7_days
+  const hasChartData = chart.length > 0
 
   return (
     <DashboardLayout>
@@ -115,7 +120,12 @@ export default function MetricsPage() {
         title="Metrics"
         description="Token usage, cost, and throughput analytics"
         actions={
-          <button onClick={exportCSV} className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shadow-sm">
+          <button
+            onClick={exportCSV}
+            disabled={!hasChartData}
+            title={hasChartData ? 'Export daily metrics as CSV' : 'No metrics to export yet'}
+            className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground disabled:hover:bg-card"
+          >
             <Download className="w-3.5 h-3.5" />Export CSV
           </button>
         }
