@@ -107,27 +107,45 @@ function buildMcpServer(userId: string): McpServer {
     },
     async (params) => {
       try {
-        const row = {
-          id:            params.id,
-          function:      params.function,
-          timestamp:     params.timestamp,
-          latency_sec:   params.latency_sec,
-          input_tokens:  params.input_tokens ?? 0,
-          output_tokens: params.output_tokens ?? 0,
-          cost_usd:      params.cost_usd ?? 0,
-          args:          params.args    ?? '',
-          output:        params.output  ?? '',
-          error:         params.error   ?? null,
-          parent_id:     params.parent_id ?? null,
-          user_id:       userId,
-        }
+        // ── Idempotent upsert (NOT a plain INSERT) ──────────────────────────
+        // MCP clients (Claude Desktop, Cursor, etc.) retry on transient network
+        // errors. A plain INSERT would hit a 409 unique violation on the retry
+        // → 500 to the client. The upsert_trace RPC (defined in
+        // supabase/migrations/0005_production_fixes.sql) does
+        // ON CONFLICT (user_id, id) DO UPDATE, so retries are safe.
+        // This matches /api/ingest's behavior exactly.
+        //
+        // kind/agent_id/agent_name default the same way /api/ingest does:
+        // kind='agent', agent_id=id, agent_name=function. Without these, the
+        // trace would be NULL in those columns and invisible on the /api/agents
+        // page (which filters kind='agent' and groups by agent_id). See
+        // supabase/migrations/0003_trace_kind.sql for the column definitions.
+        const kind      = 'agent'
+        const agentId   = params.id
+        const agentName = params.function
 
-        await supa('traces', { method: 'POST', body: JSON.stringify(row) })
+        await supaRpc('upsert_trace', {
+          p_id:            params.id,
+          p_user_id:       userId,
+          p_parent_id:     params.parent_id ?? null,
+          p_function:      params.function,
+          p_args:          params.args    ?? '',
+          p_output:        params.output  ?? '',
+          p_latency_sec:   params.latency_sec,
+          p_error:         params.error   ?? null,
+          p_timestamp:     params.timestamp,
+          p_input_tokens:  params.input_tokens  ?? 0,
+          p_output_tokens: params.output_tokens ?? 0,
+          p_cost_usd:      params.cost_usd      ?? 0,
+          p_kind:          kind,
+          p_agent_id:      agentId,
+          p_agent_name:    agentName,
+        })
         await supaRpc('increment_daily_metrics', {
           p_user_id:       userId,
-          p_cost:          row.cost_usd,
-          p_input_tokens:  row.input_tokens,
-          p_output_tokens: row.output_tokens,
+          p_cost:          params.cost_usd      ?? 0,
+          p_input_tokens:  params.input_tokens  ?? 0,
+          p_output_tokens: params.output_tokens ?? 0,
         })
 
         return {
