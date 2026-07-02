@@ -19,6 +19,14 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
+  // Lock body scroll while the drawer is open — matches UsageBreakdownDrawer
+  // and prevents the background page from scrolling behind the drawer.
+  useEffect(() => {
+    if (!trace) return;
+    document.body.style.overflow = "hidden";
+    return () => { document.body.style.overflow = ""; };
+  }, [trace]);
+
   if (!trace) return null;
   const ok       = !trace.error;
   const parent   = trace.parent_id ? allTraces.find((t) => t.id === trace.parent_id) : null;
@@ -27,13 +35,18 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
   return (
     <div className="fixed inset-0 z-50">
       <div className="absolute inset-0 bg-foreground/10 backdrop-blur-sm" onClick={onClose} />
-      <aside className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-border bg-card shadow-2xl fade-slide-in">
+      <aside
+        role="dialog"
+        aria-modal="true"
+        aria-label={`Trace detail: ${trace.function}`}
+        className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-border bg-card shadow-2xl fade-slide-in"
+      >
         <header className="flex items-start justify-between border-b border-border px-5 py-4 bg-muted/20">
           <div className="min-w-0">
             <div className="text-base font-semibold truncate text-foreground">{trace.function}</div>
             <div className="mt-0.5 text-xs text-muted-foreground">{trace.id}</div>
           </div>
-          <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ml-3 shrink-0">
+          <button onClick={onClose} aria-label="Close detail drawer" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ml-3 shrink-0">
             <X className="w-4 h-4" />
           </button>
         </header>
