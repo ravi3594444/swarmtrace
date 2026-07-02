@@ -312,7 +312,9 @@ export default function SettingsPage() {
       email: user.primaryEmailAddress?.emailAddress ?? '',
     })
   }, [user])
-  const [preferences, setPreferences] = useState({ emailNotifications: true, darkMode: false, weeklyReports: false })
+  // Preferences are read-only defaults until backend persistence is added
+  // ("Coming soon" badge in the UI). No setter needed — toggles are disabled.
+  const [preferences] = useState({ emailNotifications: true, darkMode: false, weeklyReports: false })
   const [saved, setSaved] = useState(false)
 
   // API Keys state
@@ -324,6 +326,7 @@ export default function SettingsPage() {
   const [creatingKey, setCreatingKey] = useState(false)
   const [copiedKey, setCopiedKey] = useState(false)
   const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [integrationError, setIntegrationError] = useState<string | null>(null)
 
   const { refresh: refreshIntegrationsCtx, integrations: ctxIntegrations, loading: loadingIntegrations } = useIntegrations()
 
@@ -421,6 +424,7 @@ export default function SettingsPage() {
 
   const handleToggleIntegration = async (id: string, currentlyConnected: boolean) => {
     setTogglingId(id)
+    setIntegrationError(null)
     const next = !currentlyConnected
     // Optimistic update
     setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: next } : i))
@@ -433,12 +437,14 @@ export default function SettingsPage() {
       if (!res.ok) {
         // Revert on failure
         setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: currentlyConnected } : i))
+        setIntegrationError(`Failed to ${next ? 'connect' : 'disconnect'} integration. Please try again.`)
       } else {
         // Sync global context so other dashboard pages reflect the change
         refreshIntegrationsCtx()
       }
     } catch {
       setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: currentlyConnected } : i))
+      setIntegrationError('Network error — could not update integration. Please try again.')
     } finally {
       setTogglingId(null)
     }
@@ -449,10 +455,9 @@ export default function SettingsPage() {
     setSaved(false)
   }
 
-  const handlePreferenceChange = (field: string) => {
-    setPreferences(prev => ({ ...prev, [field]: !prev[field as keyof typeof preferences] }))
-    setSaved(false)
-  }
+  // handlePreferenceChange removed — preferences toggles are disabled
+  // ("Coming soon") until backend persistence is added. The state is kept
+  // so the toggle positions render correctly from their defaults.
 
   const handleSave = async () => {
     setSaving(true)
@@ -532,32 +537,49 @@ export default function SettingsPage() {
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-foreground mb-2">Email</label>
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        Email
+                        <span className="ml-2 text-[10px] font-normal text-muted-foreground/70 uppercase tracking-wider">
+                          Managed by Clerk
+                        </span>
+                      </label>
                       <input
                         type="email"
                         value={profile.email}
-                        onChange={(e) => handleProfileChange('email', e.target.value)}
-                        className="w-full px-4 py-2.5 rounded-full bg-muted/30 border border-border text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
+                        readOnly
+                        aria-readonly="true"
+                        className="w-full px-4 py-2.5 rounded-full bg-muted/30 border border-border text-muted-foreground cursor-not-allowed focus:outline-none"
+                        title="Email is managed by your Clerk account and cannot be changed here."
                       />
+                      <p className="mt-1.5 text-[11px] text-muted-foreground">
+                        Email changes require verification — manage via your Clerk account settings.
+                      </p>
                     </div>
                   </div>
                 </div>
 
                 <div className="bg-card border border-border rounded-xl p-6">
-                  <h2 className="text-xl font-semibold text-foreground mb-6">Preferences</h2>
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-semibold text-foreground">Preferences</h2>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full bg-muted text-muted-foreground border border-border">
+                      Coming soon
+                    </span>
+                  </div>
                   <div className="space-y-3">
                     {[
                       { field: 'emailNotifications', label: 'Email Notifications', desc: 'Receive alerts and updates' },
                       { field: 'weeklyReports', label: 'Weekly Reports', desc: 'Get weekly performance summaries' },
                     ].map(({ field, label, desc }) => (
-                      <div key={field} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 hover:border-border transition-colors">
+                      <div key={field} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 opacity-60">
                         <div>
                           <p className="text-sm font-medium text-foreground">{label}</p>
                           <p className="text-xs text-muted-foreground">{desc}</p>
                         </div>
                         <button
-                          onClick={() => handlePreferenceChange(field)}
-                          className={`relative w-11 h-6 rounded-full transition-colors ${preferences[field as keyof typeof preferences] ? 'bg-primary' : 'bg-muted'}`}
+                          disabled
+                          aria-disabled="true"
+                          title="Not yet available"
+                          className={`relative w-11 h-6 rounded-full transition-colors cursor-not-allowed ${preferences[field as keyof typeof preferences] ? 'bg-primary' : 'bg-muted'}`}
                         >
                           <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${preferences[field as keyof typeof preferences] ? 'translate-x-5' : 'translate-x-0'}`} />
                         </button>
@@ -726,9 +748,33 @@ export default function SettingsPage() {
             {/* ── Integrations ─────────────────────────────────────────── */}
             {activeTab === 'integrations' && (
               <div className="space-y-6">
+                {integrationError && (
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{integrationError}</span>
+                    <button
+                      onClick={() => setIntegrationError(null)}
+                      className="ml-auto text-red-500 hover:text-red-700 shrink-0"
+                      aria-label="Dismiss"
+                    >
+                      ×
+                    </button>
+                  </div>
+                )}
                 {loadingIntegrations ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {Array(3).fill(0).map((_, i) => <SkeletonCard key={i} />)}
+                  </div>
+                ) : integrations.length === 0 ? (
+                  <div className="rounded-xl border border-border bg-card py-16 text-center">
+                    <p className="text-sm font-medium text-foreground">Couldn&apos;t load integrations</p>
+                    <p className="text-xs text-muted-foreground mt-1 mb-4">This may be a temporary network issue.</p>
+                    <button
+                      onClick={() => refreshIntegrationsCtx()}
+                      className="px-4 py-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 text-sm font-medium transition-colors"
+                    >
+                      Retry
+                    </button>
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
