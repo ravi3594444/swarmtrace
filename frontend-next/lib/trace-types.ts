@@ -27,3 +27,16 @@ export type Agent = {
   success_rate: string
   current_task: string
 }
+
+// Row shape of public.daily_metrics (see supabase/migrations/0002_daily_metrics.sql).
+export type DailyMetricRow = {
+  date: string
+  cost_usd: number
+  input_tokens: number
+  output_tokens: number
+  trace_count: number
+  // Not a real column in the current schema — some callers defensively
+  // check `total_cost ?? cost_usd` anyway; kept optional so that pattern
+  // still type-checks without implying the column actually exists.
+  total_cost?: number
+}

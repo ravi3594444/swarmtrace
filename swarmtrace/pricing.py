@@ -50,11 +50,15 @@ def _background_fetch() -> None:
             _cache = data
             _cache_ts = time.time()
     except Exception:
-        # Update timestamp so we don't hammer the URL on every call when the
-        # network is down — wait the full TTL before trying again.
+        # Back off for the full TTL before trying again, regardless of
+        # whether we've succeeded before. Without the unconditional update
+        # here, a fetch that fails *after* an earlier success would leave
+        # _cache_ts at its old (now-stale) value, so _needs_refresh() stays
+        # True and every subsequent hot-path call re-triggers a new
+        # background fetch attempt — hammering a dead network indefinitely
+        # instead of waiting the hour.
         with _cache_lock:
-            if not _cache_ts:
-                _cache_ts = time.time()
+            _cache_ts = time.time()
     finally:
         with _refresh_lock:
             _refresh_in_progress = False

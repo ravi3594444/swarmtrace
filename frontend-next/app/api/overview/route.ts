@@ -1,15 +1,16 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaRequest } from '../../../lib/supabase'
+import type { Trace } from '../../../lib/trace-types'
 
 export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const rows = await supaRequest(
+    const rows = (await supaRequest(
       `traces?user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=500`
-    )
+    )) as Trace[]
 
     if (!rows || rows.length === 0) {
       return NextResponse.json({
@@ -23,15 +24,15 @@ export async function GET() {
       })
     }
 
-    const errorCount = rows.filter((r: any) => r.error).length
+    const errorCount = rows.filter((r) => r.error).length
 
     const total_throughput = rows.reduce(
-      (acc: number, r: any) => acc + (r.input_tokens || 0) + (r.output_tokens || 0), 0
+      (acc, r) => acc + (r.input_tokens || 0) + (r.output_tokens || 0), 0
     )
 
     const avg_latency_ms = rows.length > 0
       ? Math.round(
-          (rows.reduce((acc: number, r: any) => acc + (r.latency_sec || 0), 0) / rows.length) * 1000
+          (rows.reduce((acc, r) => acc + (r.latency_sec || 0), 0) / rows.length) * 1000
         )
       : 0
 
@@ -43,7 +44,7 @@ export async function GET() {
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
 
     const byFn: Record<string, { total: number; errors: number; lastSeen: string }> = {}
-    rows.forEach((r: any) => {
+    rows.forEach((r) => {
       const s = (byFn[r.agent_name || r.function] ||= { total: 0, errors: 0, lastSeen: r.timestamp })
       s.total += 1
       if (r.error) s.errors += 1
@@ -58,7 +59,7 @@ export async function GET() {
     for (let h = 0; h < 24; h++) {
       hourBuckets[`${String(h).padStart(2, '0')}:00`] = 0
     }
-    rows.forEach((r: any) => {
+    rows.forEach((r) => {
       const hour = new Date(r.timestamp).getUTCHours()
       const key = `${String(hour).padStart(2, '0')}:00`
       hourBuckets[key] = (hourBuckets[key] ?? 0) + 1
@@ -78,7 +79,7 @@ export async function GET() {
           : 'IDLE',
       }))
 
-    const events = rows.slice(0, 5).map((r: any) => ({
+    const events = rows.slice(0, 5).map((r) => ({
       timestamp: r.timestamp,
       type:    r.error ? 'WARN' : 'INFO',
       message: r.error

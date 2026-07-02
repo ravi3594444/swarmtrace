@@ -30,12 +30,12 @@ export function SmartJson({ raw, maxHeight }: { raw: string; maxHeight?: string 
 
 function JsonNode({ value, depth, keyName }: { value: unknown; depth: number; keyName: string | null }) {
   const [open, setOpen] = useState(depth < 2);
-  const renderKey = keyName !== null && <span className="text-foreground font-medium">"{keyName}"</span>;
+  const renderKey = keyName !== null && <span className="text-foreground font-medium">&quot;{keyName}&quot;</span>;
 
   if (value === null)          return <Line keyEl={renderKey}><span className="text-muted-foreground">null</span></Line>;
   if (typeof value === "boolean") return <Line keyEl={renderKey}><span className="text-foreground font-medium">{String(value)}</span></Line>;
   if (typeof value === "number")  return <Line keyEl={renderKey}><span className="text-foreground">{value}</span></Line>;
-  if (typeof value === "string")  return <Line keyEl={renderKey}><span className="text-foreground break-all">"{value}"</span></Line>;
+  if (typeof value === "string")  return <Line keyEl={renderKey}><span className="text-foreground break-all">&quot;{value}&quot;</span></Line>;
 
   const isArr    = Array.isArray(value);
   const entries  = isArr ? (value as unknown[]).map((v, i) => [String(i), v] as const) : Object.entries(value as Record<string, unknown>);
