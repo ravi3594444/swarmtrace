@@ -1,5 +1,4 @@
 import json
-import numpy as np
 from swarmtrace.storage import save_trace
 from swarmtrace.tracer import _current_agent
 import uuid
@@ -25,6 +24,13 @@ class ToolAttention:
 
     def _build_index(self):
         try:
+            # Lazy-import all optional deps (numpy, sentence_transformers,
+            # faiss) inside the methods that use them — NOT at module top
+            # level. A top-level `import numpy` would crash `import
+            # swarmtrace` for anyone who did `pip install swarmtrace`
+            # (numpy is under the [tools] extra, not the base install).
+            # Matches the lazy-import pattern in regression.py / scraper.py.
+            import numpy as np
             from sentence_transformers import SentenceTransformer
             import faiss
 
@@ -67,6 +73,10 @@ class ToolAttention:
             )
 
         start = time.time()
+
+        # Lazy-import numpy — see _build_index() for why this is here and
+        # not at module top level.
+        import numpy as np
 
         # Embed the query
         query_vec = self._model.encode([query], convert_to_numpy=True).astype(np.float32)
