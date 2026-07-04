@@ -160,9 +160,13 @@ def _fov_worker() -> None:
         payload = _FOV_QUEUE.get()
         key, url = _remote_config()
         if key and url:
+            # Normalize URL so both "https://app.vercel.app" and
+            # "https://app.vercel.app/api" work (strips trailing /api).
+            from swarmtrace.tracer import _normalize_base_url
+            base = _normalize_base_url(url)
             for attempt in range(3):
                 try:
-                    _send_event_remote(payload, key, url.rstrip("/"))
+                    _send_event_remote(payload, key, base)
                     break
                 except Exception:
                     if attempt < 2:
