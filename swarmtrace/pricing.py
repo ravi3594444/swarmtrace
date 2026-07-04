@@ -15,6 +15,7 @@ rather than waiting on the network.
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 import urllib.request
@@ -100,8 +101,36 @@ def set_model_pricing(model: str, input_per_million: float, output_per_million: 
     _CUSTOM[model.lower()] = (input_per_million, output_per_million)
 
 
+def _normalize_model(name: str) -> str:
+    """Normalize a model name for pricing lookup.
+
+    Strips:
+      - Provider prefixes: 'openai/', 'anthropic/', 'azure/', 'vertex_ai/',
+        'bedrock/', 'gemini/', etc. (LiteLLM keys these without the prefix)
+      - Date suffixes: '-2024-08-06', '-2025-01-01', etc. (dated snapshots
+        are priced the same as the base model)
+
+    Does NOT do substring matching — that was the old behavior and it
+    mis-priced models ('gpt-4' substring-matched 'gpt-4o', 'gpt-4-turbo',
+    'gpt-4.1', etc., and which one won depended on dict iteration order).
+    For a cost-tracking product, a wrong number is worse than no number.
+    """
+    s = name.lower().strip()
+    # Strip provider prefix (everything before the first '/')
+    if '/' in s:
+        s = s.split('/', 1)[1]
+    # Strip date suffix like '-2024-08-06' or '-2025-01-01' at the end
+    s = re.sub(r'-\d{4}-\d{2}-\d{2}$', '', s)
+    return s
+
+
 def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
-    """Return cost in USD.  Returns 0.0 gracefully on any error."""
+    """Return cost in USD.  Returns 0.0 gracefully on any error.
+
+    Returns 0.0 for unknown models rather than guessing — a wrong cost
+    number is worse than no number for a cost-tracking product. Users
+    who want a specific model tracked can call set_model_pricing().
+    """
     if not model or (input_tokens == 0 and output_tokens == 0):
         return 0.0
 
@@ -117,13 +146,15 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     if not table:
         return 0.0
 
-    # Exact match first, then substring fallback.
+    # Lookup order:
+    #   1. Exact case-insensitive match
+    #   2. Normalized match (strip provider prefix + date suffix)
+    # No substring matching — see _normalize_model() for why.
     entry = table.get(key) or table.get(model)
     if not entry:
-        for name, data in table.items():
-            if key in name.lower() or name.lower() in key:
-                entry = data
-                break
+        norm = _normalize_model(model)
+        if norm != key:  # only try if normalization actually changed something
+            entry = table.get(norm)
 
     if entry:
         inp = entry.get("input_cost_per_token", 0) * 1_000_000
