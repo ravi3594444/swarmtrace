@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.egg-info/
+dist/
+build/
+.pypirc
+*.db
+.env
+.env.local
+*.pyo
+swarmtrace_export.*
+*.zip
