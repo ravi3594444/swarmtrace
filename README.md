@@ -376,6 +376,46 @@ export SWARMTRACE_ENDPOINT=https://swarmtrace.vercel.app
 
 ---
 
+## Browser & Extended Capture (FOV)
+
+`@observe` and `init()` already trace LLM calls with zero extra dependencies — that works on a laptop, Kaggle, Colab, or a serverless function with nothing else installed. `fov=True` adds a second, opt-in layer: outbound HTTP calls, live LLM token streaming, and filesystem writes.
+
+```python
+from swarmtrace import init, observe
+
+init(api_key="your-key", endpoint="https://swarmtrace.vercel.app", fov=True)
+```
+
+Browser screenshots are the one FOV capability that needs an actual browser, so they're opt-in on top of opt-in:
+
+```bash
+pip install swarmtrace[fov]
+playwright install chromium
+```
+
+No Playwright? `fov=True` still gives you HTTP/stream/filesystem capture — screenshots are just silently skipped. Either way, `init()` prints one line to stderr telling you exactly what's active, so you're never guessing what a given machine is actually tracing.
+
+---
+
+## Use via MCP — no Python SDK required
+
+Any MCP-compatible client (Claude Desktop, Cursor, Hermes, etc.) can send traces straight to SwarmTrace over HTTP, without installing the Python package at all. This is the zero-install path for agents running somewhere you don't control.
+
+```json
+{
+  "mcpServers": {
+    "swarmtrace": {
+      "url": "https://swarmtrace.vercel.app/api/mcp",
+      "headers": { "x-api-key": "your-swarmtrace-api-key" }
+    }
+  }
+}
+```
+
+Exposes three tools: `record_trace` (send one trace), `get_metrics` (your usage stats), `list_traces` (recent traces). Exact config keys vary by client — check your client's docs for where remote/HTTP MCP servers go.
+
+---
+
 ## CLI
 
 ```bash
@@ -411,6 +451,7 @@ pip install swarmtrace[regression]   # AI regression detection
 pip install swarmtrace[tools]        # Tool attention + FAISS
 pip install swarmtrace[budget]       # Token budget with tiktoken
 pip install swarmtrace[scraper]      # Web scraping traces
+pip install swarmtrace[fov]          # Browser screenshots (playwright + watchdog)
 pip install swarmtrace[all]          # Everything
 ```
 
