@@ -17,13 +17,16 @@ export async function GET() {
     )) as Trace[]
 
     if (!rows || rows.length === 0) {
+      // Return 24 zero buckets (same shape as the real path) so the chart
+      // renders an empty timeline instead of a 4-bucket stub.
+      const emptyActivity = Array.from({ length: 24 }, (_, i) => {
+        const d = new Date(Date.now() - (23 - i) * 60 * 60 * 1000)
+        return { time: `${String(d.getUTCHours()).padStart(2, '0')}:00`, requests: 0 }
+      })
       return NextResponse.json({
         system_health: 100, active_agents: 0,
         total_throughput: 0, avg_latency_ms: 0,
-        activity: [
-          { time: '00:00', requests: 0 }, { time: '06:00', requests: 0 },
-          { time: '12:00', requests: 0 }, { time: '18:00', requests: 0 },
-        ],
+        activity: emptyActivity,
         top_agents: [], events: [],
       })
     }
@@ -58,17 +61,30 @@ export async function GET() {
     // active_agents = agents with a trace in the last 5 minutes only
     const active_agents = Object.values(byFn).filter(s => s.lastSeen >= fiveMinutesAgo).length
 
-    // ── Real activity — bucket traces into hourly UTC windows ──────────────────
-    const hourBuckets: Record<string, number> = {}
-    for (let h = 0; h < 24; h++) {
-      hourBuckets[`${String(h).padStart(2, '0')}:00`] = 0
+    // ── Real activity — last 24 hours, bucketed by actual hour ───────────────
+    // Previous code bucketed ALL 500 traces by getUTCHours() (hour-of-day
+    // 0-23), which made it a "typical hour of day" histogram across the
+    // whole window — not a timeline. The chart label says "last 24h ·
+    // hourly", so we bucket by actual date+hour, going back 24 hours from
+    // now. Traces older than 24h are excluded.
+    const now = new Date()
+    const hourBuckets: { time: string; requests: number }[] = []
+    for (let i = 23; i >= 0; i--) {
+      const d = new Date(now.getTime() - i * 60 * 60 * 1000)
+      const label = `${String(d.getUTCHours()).padStart(2, '0')}:00`
+      hourBuckets.push({ time: label, requests: 0 })
     }
+    const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000)
     rows.forEach((r) => {
-      const hour = new Date(r.timestamp).getUTCHours()
-      const key = `${String(hour).padStart(2, '0')}:00`
-      hourBuckets[key] = (hourBuckets[key] ?? 0) + 1
+      const ts = new Date(r.timestamp)
+      if (ts < twentyFourHoursAgo) return   // exclude traces older than 24h
+      const hoursAgo = Math.floor((now.getTime() - ts.getTime()) / (60 * 60 * 1000))
+      const bucketIdx = 23 - hoursAgo       // 0 = oldest, 23 = current hour
+      if (bucketIdx >= 0 && bucketIdx < 24) {
+        hourBuckets[bucketIdx].requests++
+      }
     })
-    const activity = Object.entries(hourBuckets).map(([time, requests]) => ({ time, requests }))
+    const activity = hourBuckets
 
     // ── Top agents — sort by total calls before taking top 3 ─────────────────
     const top_agents = Object.entries(byFn)
