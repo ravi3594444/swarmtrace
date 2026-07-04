@@ -250,6 +250,12 @@ def _screenshot_sync(page) -> str:
     raises a greenlet/context error. For async pages we extract the
     page's event loop (page._impl_obj._loop) and submit the screenshot
     coroutine back to it via asyncio.run_coroutine_threadsafe().
+
+    Note: _impl_obj and _loop are private Playwright internals. If a
+    future Playwright version renames them, the detection falls through
+    to the sync path (which will raise on async pages, caught by the
+    except). The page gets deregistered from the streamer — no crash,
+    just no screenshots for that page. Worth a debug log if it happens.
     """
     try:
         # Detect async Playwright page: it has _impl_obj with an event loop.
@@ -259,6 +265,11 @@ def _screenshot_sync(page) -> str:
             import asyncio
             # page.screenshot() is a coroutine on async pages — schedule it
             # on the page's own event loop and block until it completes.
+            # The 10s timeout is a safety valve; if the user's event loop
+            # is congested the screenshot will be skipped (returns "") and
+            # the next tick retries. The streamer loop is single-threaded
+            # so no overlapping screenshots — the effective tick rate just
+            # slows to max(SCREEN_INTERVAL, actual_screenshot_time).
             fut = asyncio.run_coroutine_threadsafe(
                 page.screenshot(type="jpeg", quality=50), loop
             )
@@ -267,7 +278,12 @@ def _screenshot_sync(page) -> str:
             # Sync page — safe to call directly from this thread.
             raw = page.screenshot(type="jpeg", quality=50)
         return _to_data_uri(raw)
-    except Exception:
+    except Exception as exc:
+        # Log once per distinct error so a broken page doesn't spam the log
+        # every tick. The streamer deregisters dead pages on the next iteration.
+        import sys
+        msg = str(exc)[:120]
+        print(f"[swarmtrace/fov] screenshot failed: {msg}", file=sys.stderr)
         return ""
 
 
