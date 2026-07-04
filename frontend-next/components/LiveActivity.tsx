@@ -17,10 +17,11 @@ interface Props {
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 const ICONS: Record<string, string> = {
-  browser:   '🌐',
-  llm_token: '✨',
-  http:      '🔗',
-  file:      '📄',
+  browser:     '🌐',
+  llm_token:   '✨',
+  http:        '🔗',
+  file:        '📄',
+  screen_tick: '📸',
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -52,6 +53,11 @@ function EventRow({ ev }: { ev: AgentEvent }) {
   } else if (ev.event_type === 'file') {
     const fd = d as FileData
     label = `${fd.action ?? ''} ${(fd.path ?? '').split('/').slice(-2).join('/')}`
+  } else if (ev.event_type === 'screen_tick') {
+    // screen_tick events carry a screenshot + url in data (from fov.py).
+    // Show the page URL as the label; the screenshot renders in the expanded view.
+    const sd = d as BrowserData
+    label = (sd.url ?? '').slice(0, 60) || 'screenshot'
   }
 
   const ts = new Date(ev.timestamp).toLocaleTimeString([], { hour12: false })
@@ -143,7 +149,7 @@ export default function LiveActivity({ agentId, agentName }: Props) {
 
       {/* Filter bar */}
       <div className="flex gap-1 px-3 py-2 border-b border-white/5 shrink-0 overflow-x-auto">
-        {(['all', 'browser', 'llm_token', 'http', 'file'] as const).map(f => (
+        {(['all', 'browser', 'llm_token', 'http', 'file', 'screen_tick'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
