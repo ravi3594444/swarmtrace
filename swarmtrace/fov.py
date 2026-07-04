@@ -255,11 +255,11 @@ def _screenshot_sync(page) -> str:
     page's event loop (page._impl_obj._loop) and submit the screenshot
     coroutine back to it via asyncio.run_coroutine_threadsafe().
 
-    Note: _impl_obj and _loop are private Playwright internals. If a
-    future Playwright version renames them, the detection falls through
-    to the sync path (which will raise on async pages, caught by the
-    except). The page gets deregistered from the streamer — no crash,
-    just no screenshots for that page. Worth a debug log if it happens.
+    Returns "" for transient errors (timeout, network hiccup) so the
+    streamer retries next tick. RE-RAISES for permanent errors (page/
+    browser closed) so the streamer's except block deregisters the page
+    and stops spamming. Without the re-raise, a closed page would log
+    the same error every SCREEN_INTERVAL forever.
     """
     try:
         # Detect async Playwright page: it has _impl_obj with an event loop.
@@ -267,27 +267,31 @@ def _screenshot_sync(page) -> str:
         loop = getattr(impl, "_loop", None)
         if loop is not None and not loop.is_closed():
             import asyncio
-            # page.screenshot() is a coroutine on async pages — schedule it
-            # on the page's own event loop and block until it completes.
-            # The 10s timeout is a safety valve; if the user's event loop
-            # is congested the screenshot will be skipped (returns "") and
-            # the next tick retries. The streamer loop is single-threaded
-            # so no overlapping screenshots — the effective tick rate just
-            # slows to max(SCREEN_INTERVAL, actual_screenshot_time).
             fut = asyncio.run_coroutine_threadsafe(
                 page.screenshot(type="jpeg", quality=50), loop
             )
             raw = fut.result(timeout=10)
         else:
-            # Sync page — safe to call directly from this thread.
             raw = page.screenshot(type="jpeg", quality=50)
         return _to_data_uri(raw)
     except Exception as exc:
-        # Log once per distinct error so a broken page doesn't spam the log
-        # every tick. The streamer deregisters dead pages on the next iteration.
+        msg = str(exc).lower()
+        # Permanent errors — page/browser is gone. Re-raise so the streamer
+        # deregisters this page and stops retrying. Without this, a closed
+        # browser would spam this error every SCREEN_INTERVAL forever.
+        if any(s in msg for s in (
+            "target page, context or browser has been closed",
+            "target closed",
+            "browser has been closed",
+            "page has been closed",
+            "context has been closed",
+            "connection closed",
+        )):
+            raise
+        # Transient error (timeout, etc.) — log and return "" so the
+        # streamer retries next tick without deregistering.
         import sys
-        msg = str(exc)[:120]
-        print(f"[swarmtrace/fov] screenshot failed: {msg}", file=sys.stderr)
+        print(f"[swarmtrace/fov] screenshot failed: {str(exc)[:120]}", file=sys.stderr)
         return ""
 
 
