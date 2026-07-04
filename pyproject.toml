@@ -21,7 +21,8 @@ regression = ["litai"]
 scraper    = ["scrapling"]
 tools      = ["sentence-transformers", "faiss-cpu", "numpy"]
 budget     = ["tiktoken"]
-all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken"]
+fov        = ["playwright", "watchdog"]
+all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken", "playwright", "watchdog"]
 
 [project.scripts]
 swarmtrace = "swarmtrace.cli:view"

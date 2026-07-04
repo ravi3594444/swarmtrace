@@ -79,6 +79,18 @@ def init(
     if fov:
         from swarmtrace.fov import patch_all as fov_patch_all
         fov_patch_all(watch_dir=fov_watch_dir)
+    else:
+        # fov=False is the default, and on its own prints nothing — a user on
+        # Kaggle/Colab/serverless/MCP has no way to tell "not traced" apart
+        # from "quietly working". One line makes the default explicit and
+        # points at the upgrade path without requiring it.
+        print(
+            "[swarmtrace] tracing: @observe spans"
+            + (" + auto-instrumented LLM calls" if auto_instrument else "")
+            + " | http/stream/filesystem/browser capture is off — "
+              "pass init(fov=True) (pip install swarmtrace[fov] for browser screenshots)",
+            file=sys.stderr,
+        )
     if alerts:
         from swarmtrace.alerts import start as _alerts_start
         _alerts_start(interval_seconds=alert_interval_seconds)
