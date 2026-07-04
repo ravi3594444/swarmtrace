@@ -29,7 +29,15 @@ export async function GET() {
 
     const now       = new Date()
     const todayStr  = now.toISOString().slice(0, 10)
-    const day7Ago   = new Date(now); day7Ago.setUTCDate(now.getUTCDate() - 7)
+    // Compute the 7-days-ago boundary as a calendar-date string, NOT a Date
+    // object. The old code did `new Date(r.date) >= day7Ago` where day7Ago
+    // retained the current hours/minutes — so at 00:00:01 UTC you'd see 8
+    // days of data, and later in the day you'd see 7. Comparing ISO date
+    // strings (YYYY-MM-DD) gives exactly 7 calendar days regardless of when
+    // the request fires.
+    const day7AgoDate = new Date(now)
+    day7AgoDate.setUTCDate(now.getUTCDate() - 7)
+    const day7AgoStr = day7AgoDate.toISOString().slice(0, 10)
     const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
 
     const agg = (subset: DailyMetricRow[]) => ({
@@ -41,7 +49,7 @@ export async function GET() {
 
     return NextResponse.json({
       today:       agg(rows.filter((r) => r.date === todayStr)),
-      last_7_days: agg(rows.filter((r) => new Date(r.date) >= day7Ago)),
+      last_7_days: agg(rows.filter((r) => r.date >= day7AgoStr)),
       this_month:  agg(rows.filter((r) => r.date >= monthStart)),
       all_time:    agg(rows),
       // chart: one point per day — frontend picks the period to display
