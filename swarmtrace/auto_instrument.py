@@ -31,6 +31,155 @@ from swarmtrace.pricing import calculate_cost
 import swarmtrace.tracer as _tracer
 
 
+# ---------------------------------------------------------------------------
+# Stream wrappers — defer trace recording until the stream is exhausted
+# ---------------------------------------------------------------------------
+# When stream=True, the LLM client returns a generator/iterator, NOT a
+# response object. The old code read response.usage immediately (didn't
+# exist → 0 tokens) and recorded the trace in the finally block before any
+# chunks were consumed (latency ≈ 0). These wrappers intercept the stream,
+# accumulate usage metadata from chunks, and only call _record_async when
+# the stream is fully exhausted or breaks.
+
+class _StreamInstrumentWrapper:
+    """Wraps a sync streaming response. Records the trace when the stream
+    is exhausted or raises."""
+
+    def __init__(self, stream, func_name, model, start, agent, parent_id):
+        self._stream = stream
+        self._func_name = func_name
+        self._model = model
+        self._start = start
+        self._agent = agent
+        self._parent_id = parent_id
+        self._in_tok = 0
+        self._out_tok = 0
+        self._error: Optional[Exception] = None
+        self._recorded = False
+
+    def __iter__(self):
+        return self
+
+    def __next__(self):
+        try:
+            chunk = next(self._stream)
+            self._extract_usage(chunk)
+            return chunk
+        except StopIteration:
+            self._record()
+            raise
+        except Exception as exc:
+            self._error = exc
+            self._record()
+            raise
+
+    def _extract_usage(self, chunk):
+        """Accumulate usage + model from any chunk that carries them.
+        Different providers put usage in different places:
+          - OpenAI: chunk.usage on the final chunk (if stream_options
+            includes include_usage)
+          - Anthropic: message_start.event.usage.input_tokens,
+            message_delta.usage.output_tokens
+          - LiteLLM: depends on underlying provider
+        We check all known shapes and keep the last non-zero value."""
+        # OpenAI / LiteLLM: chunk.usage
+        usage = getattr(chunk, "usage", None)
+        if usage:
+            self._in_tok = getattr(usage, "prompt_tokens", 0) or self._in_tok
+            self._out_tok = getattr(usage, "completion_tokens", 0) or self._out_tok
+            # Anthropic-style: input_tokens / output_tokens
+            self._in_tok = getattr(usage, "input_tokens", 0) or self._in_tok
+            self._out_tok = getattr(usage, "output_tokens", 0) or self._out_tok
+        # Update model from chunk if available
+        m = getattr(chunk, "model", None)
+        if m:
+            self._model = m
+        # Anthropic streaming events have a .type attribute
+        chunk_type = getattr(chunk, "type", None)
+        if chunk_type == "message_start":
+            msg = getattr(chunk, "message", None)
+            if msg:
+                u = getattr(msg, "usage", None)
+                if u:
+                    self._in_tok = getattr(u, "input_tokens", 0) or self._in_tok
+        elif chunk_type == "message_delta":
+            u = getattr(chunk, "usage", None)
+            if u:
+                self._out_tok = getattr(u, "output_tokens", 0) or self._out_tok
+
+    def _record(self):
+        if self._recorded:
+            return
+        self._recorded = True
+        _record_async(self._func_name, self._model, self._start,
+                      self._error, self._in_tok, self._out_tok,
+                      self._agent, self._parent_id)
+
+
+class _AsyncStreamInstrumentWrapper:
+    """Wraps an async streaming response. Records the trace when the stream
+    is exhausted or raises."""
+
+    def __init__(self, stream, func_name, model, start, agent, parent_id):
+        self._stream = stream
+        self._func_name = func_name
+        self._model = model
+        self._start = start
+        self._agent = agent
+        self._parent_id = parent_id
+        self._in_tok = 0
+        self._out_tok = 0
+        self._error: Optional[Exception] = None
+        self._recorded = False
+
+    def __aiter__(self):
+        return self
+
+    async def __anext__(self):
+        try:
+            chunk = await self._stream.__anext__()
+            self._extract_usage(chunk)
+            return chunk
+        except StopAsyncIteration:
+            self._record()
+            raise
+        except Exception as exc:
+            self._error = exc
+            self._record()
+            raise
+
+    def _extract_usage(self, chunk):
+        """Same logic as the sync wrapper — see that class for details."""
+        usage = getattr(chunk, "usage", None)
+        if usage:
+            self._in_tok = getattr(usage, "prompt_tokens", 0) or self._in_tok
+            self._out_tok = getattr(usage, "completion_tokens", 0) or self._out_tok
+            self._in_tok = getattr(usage, "input_tokens", 0) or self._in_tok
+            self._out_tok = getattr(usage, "output_tokens", 0) or self._out_tok
+        m = getattr(chunk, "model", None)
+        if m:
+            self._model = m
+        chunk_type = getattr(chunk, "type", None)
+        if chunk_type == "message_start":
+            msg = getattr(chunk, "message", None)
+            if msg:
+                u = getattr(msg, "usage", None)
+                if u:
+                    self._in_tok = getattr(u, "input_tokens", 0) or self._in_tok
+        elif chunk_type == "message_delta":
+            u = getattr(chunk, "usage", None)
+            if u:
+                self._out_tok = getattr(u, "output_tokens", 0) or self._out_tok
+
+    def _record(self):
+        if self._recorded:
+            return
+        self._recorded = True
+        _record_async(self._func_name, self._model, self._start,
+                      self._error, self._in_tok, self._out_tok,
+                      self._agent, self._parent_id)
+
+
 def _record_async(
     func_name: str,
     model: str,
@@ -102,8 +251,17 @@ def patch_openai() -> None:
             parent_id = _tracer._current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
+            is_stream = kwargs.get("stream", False)
             try:
                 response = original(self, *args, **kwargs)
+                if is_stream:
+                    # Defer trace recording until the stream is exhausted.
+                    # The wrapper accumulates usage from chunks and calls
+                    # _record_async when iteration ends.
+                    return _StreamInstrumentWrapper(
+                        response, "openai.chat.completions.create",
+                        model, start, agent, parent_id,
+                    )
                 usage = getattr(response, "usage", None)
                 in_tok = getattr(usage, "prompt_tokens", 0) or 0
                 out_tok = getattr(usage, "completion_tokens", 0) or 0
@@ -113,8 +271,9 @@ def patch_openai() -> None:
                 error = exc
                 raise
             finally:
-                _record_async("openai.chat.completions.create",
-                              model, start, error, in_tok, out_tok, agent, parent_id)
+                if not is_stream:
+                    _record_async("openai.chat.completions.create",
+                                  model, start, error, in_tok, out_tok, agent, parent_id)
 
         Completions.create = _mark_patched(patched_create)
 
@@ -129,8 +288,14 @@ def patch_openai() -> None:
             parent_id = _tracer._current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
+            is_stream = kwargs.get("stream", False)
             try:
                 response = await original_async(self, *args, **kwargs)
+                if is_stream:
+                    return _AsyncStreamInstrumentWrapper(
+                        response, "openai.chat.completions.create",
+                        model, start, agent, parent_id,
+                    )
                 usage = getattr(response, "usage", None)
                 in_tok = getattr(usage, "prompt_tokens", 0) or 0
                 out_tok = getattr(usage, "completion_tokens", 0) or 0
@@ -140,8 +305,9 @@ def patch_openai() -> None:
                 error = exc
                 raise
             finally:
-                _record_async("openai.chat.completions.create",
-                              model, start, error, in_tok, out_tok, agent, parent_id)
+                if not is_stream:
+                    _record_async("openai.chat.completions.create",
+                                  model, start, error, in_tok, out_tok, agent, parent_id)
 
         AsyncCompletions.create = _mark_patched(patched_acreate)
 
@@ -167,8 +333,14 @@ def patch_anthropic() -> None:
             parent_id = _tracer._current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
+            is_stream = kwargs.get("stream", False)
             try:
                 response = original(self, *args, **kwargs)
+                if is_stream:
+                    return _StreamInstrumentWrapper(
+                        response, "anthropic.messages.create",
+                        model, start, agent, parent_id,
+                    )
                 usage = getattr(response, "usage", None)
                 in_tok = getattr(usage, "input_tokens", 0) or 0
                 out_tok = getattr(usage, "output_tokens", 0) or 0
@@ -178,8 +350,9 @@ def patch_anthropic() -> None:
                 error = exc
                 raise
             finally:
-                _record_async("anthropic.messages.create",
-                              model, start, error, in_tok, out_tok, agent, parent_id)
+                if not is_stream:
+                    _record_async("anthropic.messages.create",
+                                  model, start, error, in_tok, out_tok, agent, parent_id)
 
         Messages.create = _mark_patched(patched_create)
 
@@ -194,8 +367,14 @@ def patch_anthropic() -> None:
             parent_id = _tracer._current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
+            is_stream = kwargs.get("stream", False)
             try:
                 response = await original_async(self, *args, **kwargs)
+                if is_stream:
+                    return _AsyncStreamInstrumentWrapper(
+                        response, "anthropic.messages.create",
+                        model, start, agent, parent_id,
+                    )
                 usage = getattr(response, "usage", None)
                 in_tok = getattr(usage, "input_tokens", 0) or 0
                 out_tok = getattr(usage, "output_tokens", 0) or 0
@@ -205,8 +384,9 @@ def patch_anthropic() -> None:
                 error = exc
                 raise
             finally:
-                _record_async("anthropic.messages.create",
-                              model, start, error, in_tok, out_tok, agent, parent_id)
+                if not is_stream:
+                    _record_async("anthropic.messages.create",
+                                  model, start, error, in_tok, out_tok, agent, parent_id)
 
         AsyncMessages.create = _mark_patched(patched_acreate)
 
@@ -236,8 +416,14 @@ def patch_gemini() -> None:
             parent_id = _tracer._current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
+            is_stream = kwargs.get("stream", False)
             try:
                 response = original(self, *args, **kwargs)
+                if is_stream:
+                    return _StreamInstrumentWrapper(
+                        response, "gemini.generate_content",
+                        model, start, agent, parent_id,
+                    )
                 usage = getattr(response, "usage_metadata", None)
                 in_tok = getattr(usage, "prompt_token_count", 0) or 0
                 out_tok = getattr(usage, "candidates_token_count", 0) or 0
@@ -246,8 +432,9 @@ def patch_gemini() -> None:
                 error = exc
                 raise
             finally:
-                _record_async("gemini.generate_content",
-                              model, start, error, in_tok, out_tok, agent, parent_id)
+                if not is_stream:
+                    _record_async("gemini.generate_content",
+                                  model, start, error, in_tok, out_tok, agent, parent_id)
 
         GenerativeModel.generate_content = _mark_patched(patched_generate)
 
@@ -262,8 +449,14 @@ def patch_gemini() -> None:
             parent_id = _tracer._current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
+            is_stream = kwargs.get("stream", False)
             try:
                 response = await original_async(self, *args, **kwargs)
+                if is_stream:
+                    return _AsyncStreamInstrumentWrapper(
+                        response, "gemini.generate_content",
+                        model, start, agent, parent_id,
+                    )
                 usage = getattr(response, "usage_metadata", None)
                 in_tok = getattr(usage, "prompt_token_count", 0) or 0
                 out_tok = getattr(usage, "candidates_token_count", 0) or 0
@@ -272,8 +465,9 @@ def patch_gemini() -> None:
                 error = exc
                 raise
             finally:
-                _record_async("gemini.generate_content",
-                              model, start, error, in_tok, out_tok, agent, parent_id)
+                if not is_stream:
+                    _record_async("gemini.generate_content",
+                                  model, start, error, in_tok, out_tok, agent, parent_id)
 
         GenerativeModel.generate_content_async = _mark_patched(patched_generate_async)
 
@@ -299,8 +493,14 @@ def patch_litellm() -> None:
             parent_id = _tracer._current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
+            is_stream = kwargs.get("stream", False)
             try:
                 response = original(*args, **kwargs)
+                if is_stream:
+                    return _StreamInstrumentWrapper(
+                        response, "litellm.completion",
+                        model, start, agent, parent_id,
+                    )
                 usage = getattr(response, "usage", None)
                 in_tok = getattr(usage, "prompt_tokens", 0) or 0
                 out_tok = getattr(usage, "completion_tokens", 0) or 0
@@ -310,8 +510,9 @@ def patch_litellm() -> None:
                 error = exc
                 raise
             finally:
-                _record_async("litellm.completion",
-                              model, start, error, in_tok, out_tok, agent, parent_id)
+                if not is_stream:
+                    _record_async("litellm.completion",
+                                  model, start, error, in_tok, out_tok, agent, parent_id)
 
         litellm.completion = _mark_patched(patched_completion)
 
@@ -326,8 +527,14 @@ def patch_litellm() -> None:
             parent_id = _tracer._current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
+            is_stream = kwargs.get("stream", False)
             try:
                 response = await original_async(*args, **kwargs)
+                if is_stream:
+                    return _AsyncStreamInstrumentWrapper(
+                        response, "litellm.completion",
+                        model, start, agent, parent_id,
+                    )
                 usage = getattr(response, "usage", None)
                 in_tok = getattr(usage, "prompt_tokens", 0) or 0
                 out_tok = getattr(usage, "completion_tokens", 0) or 0
@@ -337,8 +544,9 @@ def patch_litellm() -> None:
                 error = exc
                 raise
             finally:
-                _record_async("litellm.completion",
-                              model, start, error, in_tok, out_tok, agent, parent_id)
+                if not is_stream:
+                    _record_async("litellm.completion",
+                                  model, start, error, in_tok, out_tok, agent, parent_id)
 
         litellm.acompletion = _mark_patched(patched_acompletion)
 

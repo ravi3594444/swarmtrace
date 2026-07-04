@@ -42,7 +42,30 @@ export function IntegrationsProvider({ children }: { children: ReactNode }) {
     }
   }, [])
 
-  useEffect(() => { refresh() }, [refresh])
+  // Initial load on mount. All setState calls are inside the async function
+  // (after the first await), NOT synchronous in the effect body — avoids
+  // the cascading-render lint violation. `refresh` is kept as a useCallback
+  // for manual refresh from the settings page.
+  useEffect(() => {
+    let cancelled = false
+    const load = async () => {
+      try {
+        const res = await fetch('/api/settings/integrations')
+        if (cancelled) return
+        if (res.ok) {
+          const data = await res.json()
+          if (cancelled) return
+          setIntegrations(data.integrations || [])
+        }
+      } catch {
+        // silently fail
+      } finally {
+        if (!cancelled) setLoading(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [])
 
   const isEnabled = useCallback(
     (id: string) => integrations.find(i => i.id === id)?.connected ?? false,

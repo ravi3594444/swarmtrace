@@ -69,9 +69,15 @@ BEGIN
   -- Only increment daily_metrics on a fresh insert — never on a retry
   -- upsert. This makes the whole operation idempotent: the SDK can retry
   -- safely and costs/tokens are counted exactly once.
+  --
+  -- Date is derived from p_timestamp (not CURRENT_DATE) so that traces
+  -- queued offline and sent a day or two later land on the day they
+  -- actually happened, not today. AT TIME ZONE 'UTC' extracts the UTC
+  -- calendar date from the timestamptz, matching how the dashboard
+  -- buckets days.
   IF v_was_insert THEN
     INSERT INTO public.daily_metrics (user_id, date, cost_usd, input_tokens, output_tokens, trace_count)
-    VALUES (p_user_id, CURRENT_DATE, p_cost_usd, p_input_tokens, p_output_tokens, 1)
+    VALUES (p_user_id, DATE(p_timestamp AT TIME ZONE 'UTC'), p_cost_usd, p_input_tokens, p_output_tokens, 1)
     ON CONFLICT (user_id, date) DO UPDATE SET
       cost_usd      = daily_metrics.cost_usd      + EXCLUDED.cost_usd,
       input_tokens  = daily_metrics.input_tokens  + EXCLUDED.input_tokens,

@@ -301,17 +301,24 @@ def my_agent(prompt: str) -> str:
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
   const { user } = useUser()
-  const [profile, setProfile] = useState({ fullName: '', email: '' })
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (!user) return
-    setProfile({
-      fullName: user.fullName ?? user.firstName ?? '',
-      email: user.primaryEmailAddress?.emailAddress ?? '',
-    })
-  }, [user])
+  // Seed profile from Clerk user data WITHOUT a set-state-in-effect.
+  // React-recommended pattern: store the previous user ref and adjust
+  // state during render if the prop changed. See:
+  // https://react.dev/reference/react/useState#storing-information-from-previous-renders
+  const [profile, setProfile] = useState({ fullName: '', email: '' })
+  const [prevUser, setPrevUser] = useState(user)
+  if (user !== prevUser) {
+    setPrevUser(user)
+    if (user) {
+      setProfile({
+        fullName: user.fullName ?? user.firstName ?? '',
+        email: user.primaryEmailAddress?.emailAddress ?? '',
+      })
+    }
+  }
   // Preferences are read-only defaults until backend persistence is added
   // ("Coming soon" badge in the UI). No setter needed — toggles are disabled.
   const [preferences] = useState({ emailNotifications: true, darkMode: false, weeklyReports: false })
@@ -330,16 +337,19 @@ export default function SettingsPage() {
 
   const { refresh: refreshIntegrationsCtx, integrations: ctxIntegrations, loading: loadingIntegrations } = useIntegrations()
 
-  // Local copy of integrations for optimistic toggle UI
+  // Local copy of integrations for optimistic toggle UI.
+  // Seed from context WITHOUT a set-state-in-effect: use the "store
+  // previous prop" pattern. When ctxIntegrations changes (e.g. after a
+  // successful toggle calls refreshIntegrationsCtx()), sync local state.
   const [integrations, setIntegrations] = useState<Integration[]>([])
+  const [prevCtxIntegrations, setPrevCtxIntegrations] = useState(ctxIntegrations)
+  if (ctxIntegrations !== prevCtxIntegrations) {
+    setPrevCtxIntegrations(ctxIntegrations)
+    if (ctxIntegrations.length > 0) setIntegrations(ctxIntegrations)
+  }
   const [togglingId, setTogglingId] = useState<string | null>(null)
 
-  // Seed local state from context whenever context updates
-  useEffect(() => {
-    if (ctxIntegrations.length > 0) setIntegrations(ctxIntegrations)
-  }, [ctxIntegrations])
-
-  // Load API keys when tab changes
+  // Load API keys (also used by the Retry button in the error state).
   const loadApiKeys = useCallback(async () => {
     setLoadingApiKeys(true)
     setApiKeyError(null)
@@ -358,9 +368,33 @@ export default function SettingsPage() {
     }
   }, [])
 
+  // Load API keys when the API tab is activated. Inlined here (NOT calling
+  // loadApiKeys) so all setState calls are inside the async function after
+  // the first await — avoids the cascading-render lint violation. The
+  // cancelled flag prevents setState after unmount.
   useEffect(() => {
-    if (activeTab === 'api') loadApiKeys()
-  }, [activeTab, loadApiKeys])
+    if (activeTab !== 'api') return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const result = await fetchApiKeys()
+        if (cancelled) return
+        if (result?.keys) {
+          setApiKeys(result.keys)
+          setApiKeyError(null)
+        } else {
+          setApiKeys([])
+          setApiKeyError('Could not load API keys. Check your connection.')
+        }
+      } catch {
+        if (!cancelled) setApiKeyError('Failed to load API keys.')
+      } finally {
+        if (!cancelled) setLoadingApiKeys(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [activeTab])
 
   // Create API key with full error feedback
   const handleCreateApiKey = async () => {
