@@ -35,9 +35,13 @@ export async function GET() {
     // days of data, and later in the day you'd see 7. Comparing ISO date
     // strings (YYYY-MM-DD) gives exactly 7 calendar days regardless of when
     // the request fires.
-    const day7AgoDate = new Date(now)
-    day7AgoDate.setUTCDate(now.getUTCDate() - 7)
-    const day7AgoStr = day7AgoDate.toISOString().slice(0, 10)
+    //
+    // "Last 7 days" = today + the 6 previous days = 7 days total. So the
+    // boundary is 6 days ago (inclusive), not 7. Using >= 6-days-ago gives
+    // exactly 7 rows: [6ago, 5ago, 4ago, 3ago, 2ago, 1ago, today].
+    const day6AgoDate = new Date(now)
+    day6AgoDate.setUTCDate(now.getUTCDate() - 6)
+    const day6AgoStr = day6AgoDate.toISOString().slice(0, 10)
     const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
 
     const agg = (subset: DailyMetricRow[]) => ({
@@ -49,7 +53,7 @@ export async function GET() {
 
     return NextResponse.json({
       today:       agg(rows.filter((r) => r.date === todayStr)),
-      last_7_days: agg(rows.filter((r) => r.date >= day7AgoStr)),
+      last_7_days: agg(rows.filter((r) => r.date >= day6AgoStr)),
       this_month:  agg(rows.filter((r) => r.date >= monthStart)),
       all_time:    agg(rows),
       // chart: one point per day — frontend picks the period to display

@@ -96,6 +96,11 @@ class _StreamInstrumentWrapper:
         # Passthrough for attribute access on the underlying stream
         # (e.g. stream.response, stream.parse(), stream.close()).
         # Only called when normal attribute lookup fails on self.
+        # Guard against infinite recursion if _stream isn't set yet
+        # (e.g. during __init__ or unpickling) — raise AttributeError
+        # rather than recursing into __getattr__ for '_stream'.
+        if name == "_stream":
+            raise AttributeError(name)
         return getattr(self._stream, name)
 
     def _extract_usage(self, chunk):
@@ -191,6 +196,9 @@ class _AsyncStreamInstrumentWrapper:
         # Note: async methods on the underlying stream will be returned as
         # regular functions; the caller must await them. This matches how
         # OpenAI's async stream objects expose methods like .parse().
+        # Guard against infinite recursion if _stream isn't set yet.
+        if name == "_stream":
+            raise AttributeError(name)
         return getattr(self._stream, name)
 
     def _extract_usage(self, chunk):
@@ -297,12 +305,15 @@ def patch_openai() -> None:
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
+            # stream_returned tracks whether original() successfully returned
+            # a stream (vs raised). If it raised, we must record the error
+            # trace here in the finally block — there's no stream wrapper to
+            # defer to. If it returned a stream, the wrapper handles recording.
+            stream_returned = False
             try:
                 response = original(self, *args, **kwargs)
                 if is_stream:
-                    # Defer trace recording until the stream is exhausted.
-                    # The wrapper accumulates usage from chunks and calls
-                    # _record_async when iteration ends.
+                    stream_returned = True
                     return _StreamInstrumentWrapper(
                         response, "openai.chat.completions.create",
                         model, start, agent, parent_id,
@@ -316,7 +327,10 @@ def patch_openai() -> None:
                 error = exc
                 raise
             finally:
-                if not is_stream:
+                # Record here ONLY if the stream wasn't returned (either
+                # non-stream, or stream that raised before returning).
+                # If the stream was returned, the wrapper records on exhaustion.
+                if not stream_returned:
                     _record_async("openai.chat.completions.create",
                                   model, start, error, in_tok, out_tok, agent, parent_id)
 
@@ -334,9 +348,11 @@ def patch_openai() -> None:
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
+            stream_returned = False
             try:
                 response = await original_async(self, *args, **kwargs)
                 if is_stream:
+                    stream_returned = True
                     return _AsyncStreamInstrumentWrapper(
                         response, "openai.chat.completions.create",
                         model, start, agent, parent_id,
@@ -350,7 +366,7 @@ def patch_openai() -> None:
                 error = exc
                 raise
             finally:
-                if not is_stream:
+                if not stream_returned:
                     _record_async("openai.chat.completions.create",
                                   model, start, error, in_tok, out_tok, agent, parent_id)
 
@@ -379,9 +395,11 @@ def patch_anthropic() -> None:
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
+            stream_returned = False
             try:
                 response = original(self, *args, **kwargs)
                 if is_stream:
+                    stream_returned = True
                     return _StreamInstrumentWrapper(
                         response, "anthropic.messages.create",
                         model, start, agent, parent_id,
@@ -395,7 +413,7 @@ def patch_anthropic() -> None:
                 error = exc
                 raise
             finally:
-                if not is_stream:
+                if not stream_returned:
                     _record_async("anthropic.messages.create",
                                   model, start, error, in_tok, out_tok, agent, parent_id)
 
@@ -413,9 +431,11 @@ def patch_anthropic() -> None:
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
+            stream_returned = False
             try:
                 response = await original_async(self, *args, **kwargs)
                 if is_stream:
+                    stream_returned = True
                     return _AsyncStreamInstrumentWrapper(
                         response, "anthropic.messages.create",
                         model, start, agent, parent_id,
@@ -429,7 +449,7 @@ def patch_anthropic() -> None:
                 error = exc
                 raise
             finally:
-                if not is_stream:
+                if not stream_returned:
                     _record_async("anthropic.messages.create",
                                   model, start, error, in_tok, out_tok, agent, parent_id)
 
@@ -462,9 +482,11 @@ def patch_gemini() -> None:
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
+            stream_returned = False
             try:
                 response = original(self, *args, **kwargs)
                 if is_stream:
+                    stream_returned = True
                     return _StreamInstrumentWrapper(
                         response, "gemini.generate_content",
                         model, start, agent, parent_id,
@@ -477,7 +499,7 @@ def patch_gemini() -> None:
                 error = exc
                 raise
             finally:
-                if not is_stream:
+                if not stream_returned:
                     _record_async("gemini.generate_content",
                                   model, start, error, in_tok, out_tok, agent, parent_id)
 
@@ -495,9 +517,11 @@ def patch_gemini() -> None:
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
+            stream_returned = False
             try:
                 response = await original_async(self, *args, **kwargs)
                 if is_stream:
+                    stream_returned = True
                     return _AsyncStreamInstrumentWrapper(
                         response, "gemini.generate_content",
                         model, start, agent, parent_id,
@@ -510,7 +534,7 @@ def patch_gemini() -> None:
                 error = exc
                 raise
             finally:
-                if not is_stream:
+                if not stream_returned:
                     _record_async("gemini.generate_content",
                                   model, start, error, in_tok, out_tok, agent, parent_id)
 
@@ -539,9 +563,11 @@ def patch_litellm() -> None:
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
+            stream_returned = False
             try:
                 response = original(*args, **kwargs)
                 if is_stream:
+                    stream_returned = True
                     return _StreamInstrumentWrapper(
                         response, "litellm.completion",
                         model, start, agent, parent_id,
@@ -555,7 +581,7 @@ def patch_litellm() -> None:
                 error = exc
                 raise
             finally:
-                if not is_stream:
+                if not stream_returned:
                     _record_async("litellm.completion",
                                   model, start, error, in_tok, out_tok, agent, parent_id)
 
@@ -573,9 +599,11 @@ def patch_litellm() -> None:
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
+            stream_returned = False
             try:
                 response = await original_async(*args, **kwargs)
                 if is_stream:
+                    stream_returned = True
                     return _AsyncStreamInstrumentWrapper(
                         response, "litellm.completion",
                         model, start, agent, parent_id,
@@ -589,7 +617,7 @@ def patch_litellm() -> None:
                 error = exc
                 raise
             finally:
-                if not is_stream:
+                if not stream_returned:
                     _record_async("litellm.completion",
                                   model, start, error, in_tok, out_tok, agent, parent_id)
 
