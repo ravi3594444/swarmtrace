@@ -43,7 +43,12 @@ import swarmtrace.tracer as _tracer
 
 class _StreamInstrumentWrapper:
     """Wraps a sync streaming response. Records the trace when the stream
-    is exhausted or raises."""
+    is exhausted or raises.
+
+    Implements __enter__/__exit__/__getattr__ so it works as a context
+    manager (`with client.chat.completions.create(..., stream=True) as s:`)
+    and so attribute access on the underlying stream (e.g. .response, .parse())
+    still works — OpenAI's stream objects support both patterns."""
 
     def __init__(self, stream, func_name, model, start, agent, parent_id):
         self._stream = stream
@@ -72,6 +77,26 @@ class _StreamInstrumentWrapper:
             self._error = exc
             self._record()
             raise
+
+    def __enter__(self):
+        # Support `with ... as stream:` — OpenAI streams are context managers.
+        # Don't call __enter__ on the underlying stream; it may not have one.
+        # The stream is already "entered" by the time we wrap it.
+        return self
+
+    def __exit__(self, *exc):
+        # If the user exits the context manager without exhausting the stream,
+        # record the trace with whatever we have so far (possibly 0 tokens).
+        # This matches the non-streaming behavior where the finally block
+        # always records.
+        self._record()
+        return False  # don't suppress exceptions
+
+    def __getattr__(self, name):
+        # Passthrough for attribute access on the underlying stream
+        # (e.g. stream.response, stream.parse(), stream.close()).
+        # Only called when normal attribute lookup fails on self.
+        return getattr(self._stream, name)
 
     def _extract_usage(self, chunk):
         """Accumulate usage + model from any chunk that carries them.
@@ -118,7 +143,12 @@ class _StreamInstrumentWrapper:
 
 class _AsyncStreamInstrumentWrapper:
     """Wraps an async streaming response. Records the trace when the stream
-    is exhausted or raises."""
+    is exhausted or raises.
+
+    Implements __aenter__/__aexit__/__getattr__ so it works as an async
+    context manager (`async with client.chat.completions.create(...,
+    stream=True) as s:`) and so attribute access on the underlying stream
+    still works."""
 
     def __init__(self, stream, func_name, model, start, agent, parent_id):
         self._stream = stream
@@ -147,6 +177,21 @@ class _AsyncStreamInstrumentWrapper:
             self._error = exc
             self._record()
             raise
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        # Record the trace if the user exits without exhausting the stream.
+        self._record()
+        return False  # don't suppress exceptions
+
+    def __getattr__(self, name):
+        # Passthrough for attribute access on the underlying stream.
+        # Note: async methods on the underlying stream will be returned as
+        # regular functions; the caller must await them. This matches how
+        # OpenAI's async stream objects expose methods like .parse().
+        return getattr(self._stream, name)
 
     def _extract_usage(self, chunk):
         """Same logic as the sync wrapper — see that class for details."""

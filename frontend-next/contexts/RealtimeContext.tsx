@@ -44,7 +44,7 @@ export interface AgentEvent {
   id: string
   agent_id: string
   agent_name: string
-  event_type: 'browser' | 'llm_token' | 'http' | 'file'
+  event_type: 'browser' | 'llm_token' | 'http' | 'file' | 'screen_tick'
   status: 'started' | 'done' | 'error' | 'streaming' | 'info'
   data: EventData
   timestamp: string
