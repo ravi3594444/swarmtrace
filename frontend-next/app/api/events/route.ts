@@ -107,7 +107,9 @@ function json(status: number, body: unknown) {
   })
 }
 
-const VALID_TYPES   = new Set(['browser', 'llm_token', 'http', 'file'])
+// 'screen_tick' = FOV daemon screenshot captures (swarmtrace.fov). Without
+// it in this set, screenshot events were silently flattened to 'browser'.
+const VALID_TYPES   = new Set(['browser', 'llm_token', 'http', 'file', 'screen_tick'])
 const VALID_STATUSES = new Set(['started', 'done', 'error', 'streaming', 'info'])
 
 function validate(p: unknown): { row?: Record<string, unknown>; error?: string } {

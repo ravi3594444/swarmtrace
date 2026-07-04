@@ -167,9 +167,14 @@ function ExportMenu({ traces }: { traces: Trace[] }) {
 function CostProjectionWidget({ traces }: { traces: Trace[] }) {
   const { hourly, daily, monthly, windowHours } = useMemo(() => {
     if (traces.length === 0) return { hourly: 0, daily: 0, monthly: 0, windowHours: 0 }
-    const now = Date.now()
-    const oldest = Math.min(...traces.map(t => new Date(t.timestamp).getTime()))
-    const windowMs = Math.max(now - oldest, 60_000) // at least 1 min
+    // Derive the time window from the traces themselves (newest - oldest),
+    // NOT from Date.now(). Date.now() is impure — calling it inside useMemo
+    // violates React's purity rules and would produce unstable results.
+    // Using the trace timestamps makes this a pure function of `traces`.
+    const timestamps = traces.map(t => new Date(t.timestamp).getTime())
+    const newest = Math.max(...timestamps)
+    const oldest = Math.min(...timestamps)
+    const windowMs = Math.max(newest - oldest, 60_000) // at least 1 min
     const windowHours = windowMs / 3_600_000
     const totalCost = traces.reduce((s, t) => s + (t.cost_usd ?? 0), 0)
     const hourly = totalCost / windowHours
@@ -538,14 +543,16 @@ export default function OverviewPage() {
 
   const [pickedAgent, setPickedAgent] = useState<string>('')
 
-  // Auto-select the most recently active agent
-  useEffect(() => {
-    if (activeAgents.length > 0 && !activeAgents.find((a) => a.id === pickedAgent)) {
-      setPickedAgent(activeAgents[0].id)
-    }
-  }, [activeAgents, pickedAgent])
+  // Derive the effective agent WITHOUT a set-state-in-effect. If the user
+  // has picked one and it's still active, use it; otherwise default to the
+  // most recently active agent. This replaces the old useEffect that called
+  // setPickedAgent synchronously (cascading-render lint violation).
+  const effectiveAgent =
+    pickedAgent && activeAgents.find((a) => a.id === pickedAgent)
+      ? pickedAgent
+      : activeAgents[0]?.id ?? ''
 
-  const hasRealtime = activeAgents.length > 0 && !!pickedAgent
+  const hasRealtime = activeAgents.length > 0 && !!effectiveAgent
 
   if (loading) return (
     <DashboardLayout>
@@ -619,7 +626,7 @@ export default function OverviewPage() {
                 </h3>
               </div>
               {hasRealtime && activeAgents.length > 1 ? (
-                <AgentPicker agents={activeAgents} selected={pickedAgent} onSelect={setPickedAgent} />
+                <AgentPicker agents={activeAgents} selected={effectiveAgent} onSelect={setPickedAgent} />
               ) : (
                 <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 swarm-pulse" />LIVE
@@ -630,8 +637,8 @@ export default function OverviewPage() {
             {hasRealtime ? (
               <div className="flex-1 overflow-hidden min-h-0">
                 <LiveActivity
-                  agentId={pickedAgent}
-                  agentName={activeAgents.find((a) => a.id === pickedAgent)?.name}
+                  agentId={effectiveAgent}
+                  agentName={activeAgents.find((a) => a.id === effectiveAgent)?.name}
                 />
               </div>
             ) : (

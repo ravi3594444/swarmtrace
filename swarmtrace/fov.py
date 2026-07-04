@@ -242,8 +242,30 @@ def _to_data_uri(raw: bytes) -> str:
 
 
 def _screenshot_sync(page) -> str:
+    """Capture a screenshot from a Playwright page, thread-safely.
+
+    Handles BOTH sync and async Playwright pages. Sync pages can be called
+    from any thread. Async pages (created via async_playwright()) are
+    thread-bound — calling page.screenshot() from a different thread
+    raises a greenlet/context error. For async pages we extract the
+    page's event loop (page._impl_obj._loop) and submit the screenshot
+    coroutine back to it via asyncio.run_coroutine_threadsafe().
+    """
     try:
-        raw = page.screenshot(type="jpeg", quality=50)
+        # Detect async Playwright page: it has _impl_obj with an event loop.
+        impl = getattr(page, "_impl_obj", None)
+        loop = getattr(impl, "_loop", None)
+        if loop is not None and not loop.is_closed():
+            import asyncio
+            # page.screenshot() is a coroutine on async pages — schedule it
+            # on the page's own event loop and block until it completes.
+            fut = asyncio.run_coroutine_threadsafe(
+                page.screenshot(type="jpeg", quality=50), loop
+            )
+            raw = fut.result(timeout=10)
+        else:
+            # Sync page — safe to call directly from this thread.
+            raw = page.screenshot(type="jpeg", quality=50)
         return _to_data_uri(raw)
     except Exception:
         return ""
