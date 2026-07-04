@@ -24,15 +24,16 @@ const ICONS: Record<string, string> = {
   screen_tick: '📸',
 }
 
-// Use CSS variables so the component works in BOTH light and dark mode.
-// The old code hardcoded text-zinc-300/500 and bg-black/20 which are
-// invisible on a light background (the dashboard default).
+// Explicit colors — NOT theme variables. The FOV panel is always white with
+// black text regardless of dashboard theme, so screenshots are always
+// visible against a clean background. Users complained that theme-variable
+// colors made text invisible in light mode.
 const STATUS_COLOR: Record<string, string> = {
-  started:   'text-blue-500 dark:text-blue-400',
-  done:      'text-green-600 dark:text-green-400',
-  error:     'text-red-500 dark:text-red-400',
-  streaming: 'text-purple-500 dark:text-purple-400',
-  info:      'text-muted-foreground',
+  started:   '#2563eb',  // blue-600
+  done:      '#16a34a',  // green-600
+  error:     '#dc2626',  // red-600
+  streaming: '#9333ea',  // purple-600
+  info:      '#52525b',  // zinc-600
 }
 
 // ── Full-size screenshot lightbox ───────────────────────────────────────────
@@ -49,7 +50,8 @@ function ScreenshotLightbox({ src, url, onClose }: { src: string; url?: string; 
 
   return (
     <div
-      className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 backdrop-blur-sm fade-in"
+      className="fixed inset-0 z-[60] flex items-center justify-center fade-in"
+      style={{ background: 'rgba(0,0,0,0.85)', backdropFilter: 'blur(4px)' }}
       onClick={onClose}
     >
       <div className="relative max-w-[90vw] max-h-[90vh] flex flex-col items-center gap-3" onClick={e => e.stopPropagation()}>
@@ -57,14 +59,40 @@ function ScreenshotLightbox({ src, url, onClose }: { src: string; url?: string; 
         <img
           src={src}
           alt={`screenshot — ${url ?? ''}`}
-          className="rounded-lg border border-white/20 shadow-2xl max-w-full max-h-[80vh] object-contain"
+          style={{
+            borderRadius: 8,
+            border: '1px solid rgba(255,255,255,0.2)',
+            maxWidth: '90vw',
+            maxHeight: '80vh',
+            objectFit: 'contain',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.5)',
+          }}
         />
         {url && (
-          <p className="text-white/70 text-xs font-mono truncate max-w-full">{url}</p>
+          <p style={{ color: 'rgba(255,255,255,0.7)', fontSize: 12, fontFamily: 'monospace', maxWidth: '90vw', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {url}
+          </p>
         )}
         <button
           onClick={onClose}
-          className="absolute -top-3 -right-3 w-8 h-8 rounded-full bg-white text-black flex items-center justify-center shadow-lg hover:bg-white/90 transition-colors text-lg font-bold"
+          style={{
+            position: 'absolute',
+            top: -12,
+            right: -12,
+            width: 32,
+            height: 32,
+            borderRadius: '50%',
+            background: 'white',
+            color: 'black',
+            border: 'none',
+            cursor: 'pointer',
+            fontSize: 18,
+            fontWeight: 'bold',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
           aria-label="Close"
         >
           ×
@@ -106,62 +134,80 @@ function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick
 
   return (
     <div
-      className={`group flex flex-col gap-1 px-3 py-2 rounded-lg transition-colors
-        ${hasExpandable ? 'cursor-pointer' : ''}
-        ${ev.status === 'error'
-          ? 'bg-red-500/10 hover:bg-red-500/15 dark:bg-red-500/10 dark:hover:bg-red-500/15'
-          : 'hover:bg-muted/60'}`}
+      style={{
+        display: 'flex',
+        flexDirection: 'column' as const,
+        gap: 4,
+        padding: '8px 12px',
+        borderRadius: 8,
+        cursor: hasExpandable ? 'pointer' : 'default',
+        background: ev.status === 'error' ? 'rgba(220,38,38,0.05)' : 'transparent',
+        transition: 'background 0.15s',
+      }}
+      onMouseEnter={e => { if (hasExpandable) (e.currentTarget as HTMLElement).style.background = ev.status === 'error' ? 'rgba(220,38,38,0.08)' : '#f4f4f5' }}
+      onMouseLeave={e => { (e.currentTarget as HTMLElement).style.background = ev.status === 'error' ? 'rgba(220,38,38,0.05)' : 'transparent' }}
       onClick={() => hasExpandable && setExpanded(e => !e)}
     >
-      <div className="flex items-center gap-2 text-sm">
-        {/* Thumbnail for screen_tick events — visible even when collapsed */}
-        {ev.event_type === 'screen_tick' && hasScreenshot ? (
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13 }}>
+        {/* Thumbnail for screen_tick + browser events with screenshots */}
+        {hasScreenshot ? (
           <button
             onClick={(e) => { e.stopPropagation(); onScreenshotClick(screenshot!, (d as BrowserData).url) }}
-            className="shrink-0 w-12 h-8 rounded border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all"
+            style={{
+              flexShrink: 0,
+              width: 48,
+              height: 32,
+              borderRadius: 4,
+              border: '1px solid #e4e4e7',
+              overflow: 'hidden',
+              cursor: 'pointer',
+              padding: 0,
+              background: '#000',
+            }}
             title="Click to view full size"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={screenshot} alt="thumbnail" className="w-full h-full object-cover" />
+            <img src={screenshot} alt="thumbnail" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           </button>
         ) : (
-          <span className="text-base leading-none shrink-0">{ICONS[ev.event_type] ?? '●'}</span>
+          <span style={{ fontSize: 16, lineHeight: 1, flexShrink: 0 }}>{ICONS[ev.event_type] ?? '●'}</span>
         )}
-        <span className={`text-xs font-mono shrink-0 ${STATUS_COLOR[ev.status] ?? 'text-muted-foreground'}`}>{ev.status}</span>
-        <span className="text-foreground/80 flex-1 truncate font-mono text-xs">{label}</span>
-        <span className="text-muted-foreground text-xs shrink-0 ml-2">{ts}</span>
+        <span style={{ fontSize: 11, fontFamily: 'monospace', color: STATUS_COLOR[ev.status] ?? '#52525b', flexShrink: 0, fontWeight: 600 }}>
+          {ev.status}
+        </span>
+        <span style={{ color: '#18181b', flex: 1, fontFamily: 'monospace', fontSize: 12, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+          {label}
+        </span>
+        <span style={{ color: '#a1a1aa', fontSize: 11, flexShrink: 0, marginLeft: 8 }}>{ts}</span>
         {hasExpandable && (
-          <span className="text-muted-foreground text-xs shrink-0 group-hover:text-foreground transition-colors">
-            {expanded ? '▲' : '▼'}
-          </span>
+          <span style={{ color: '#71717a', fontSize: 11, flexShrink: 0 }}>{expanded ? '▲' : '▼'}</span>
         )}
       </div>
 
       {/* Expanded: LLM accumulated tokens */}
       {expanded && hasTokens && typeof accumulated === 'string' && (
-        <div className="ml-7 text-xs text-muted-foreground font-mono bg-muted/40 rounded p-2 whitespace-pre-wrap max-h-32 overflow-y-auto">
+        <div style={{ marginLeft: 28, fontSize: 11, fontFamily: 'monospace', color: '#52525b', background: '#f4f4f5', borderRadius: 4, padding: 8, whiteSpace: 'pre-wrap', maxHeight: 128, overflowY: 'auto' }}>
           {accumulated}
         </div>
       )}
 
       {/* Expanded: screenshot preview (click opens lightbox) */}
       {expanded && hasScreenshot && typeof screenshot === 'string' && (
-        <div className="ml-7 mt-1">
+        <div style={{ marginLeft: 28, marginTop: 4 }}>
           <button
             onClick={(e) => { e.stopPropagation(); onScreenshotClick(screenshot, (d as BrowserData).url) }}
-            className="block hover:opacity-90 transition-opacity"
+            style={{ display: 'block', border: '1px solid #e4e4e7', borderRadius: 6, padding: 0, cursor: 'pointer', background: 'transparent' }}
             title="Click to view full size"
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={screenshot}
               alt={`screenshot — ${(d as BrowserData).url ?? ''}`}
-              className="rounded-md border border-border max-w-full"
-              style={{ maxHeight: 300 }}
+              style={{ borderRadius: 6, maxWidth: '100%', maxHeight: 300, display: 'block' }}
             />
           </button>
           {(d as BrowserData).url && (
-            <p className="text-muted-foreground text-xs mt-1 font-mono truncate">
+            <p style={{ color: '#71717a', fontSize: 11, fontFamily: 'monospace', marginTop: 4, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
               {(d as BrowserData).url}
             </p>
           )}
@@ -170,7 +216,7 @@ function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick
 
       {/* Expanded: error details */}
       {expanded && ev.status === 'error' && (
-        <div className="ml-7 text-xs text-red-500 dark:text-red-400 font-mono bg-red-500/10 dark:bg-red-500/10 rounded p-2">
+        <div style={{ marginLeft: 28, fontSize: 11, fontFamily: 'monospace', color: '#dc2626', background: 'rgba(220,38,38,0.08)', borderRadius: 4, padding: 8 }}>
           {(d as BrowserData).error ?? (d as HttpData).error ?? 'Unknown error'}
         </div>
       )}
@@ -182,9 +228,9 @@ function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick
 export default function LiveActivity({ agentId, agentName }: Props) {
   const { events, connected, error } = useAgentEvents(agentId)
 
-  const [filter, setFilter]   = useState<string>('all')
+  const [filter, setFilter] = useState<string>('all')
   const [lightbox, setLightbox] = useState<{ src: string; url?: string } | null>(null)
-  const bottomRef  = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
 
   const openLightbox = useCallback((src: string, url?: string) => {
     setLightbox({ src, url })
@@ -204,33 +250,59 @@ export default function LiveActivity({ agentId, agentName }: Props) {
   }, {})
 
   return (
-    <div className="flex flex-col h-full bg-card rounded-xl border border-border overflow-hidden">
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column' as const,
+        height: '100%',
+        background: '#ffffff',
+        borderRadius: 12,
+        border: '1px solid #e4e4e7',
+        overflow: 'hidden',
+      }}
+    >
       {/* Header */}
-      <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-        <div className="flex items-center gap-2">
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', borderBottom: '1px solid #e4e4e7', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <span
-            className={`w-2 h-2 rounded-full ${connected ? 'bg-green-500 animate-pulse' : 'bg-muted-foreground/40'}`}
+            style={{
+              width: 8,
+              height: 8,
+              borderRadius: '50%',
+              background: connected ? '#22c55e' : '#d4d4d8',
+              animation: connected ? 'pulse 1.6s ease-in-out infinite' : 'none',
+            }}
           />
-          <span className="text-sm font-medium text-foreground">
+          <span style={{ fontSize: 14, fontWeight: 500, color: '#18181b' }}>
             {agentName ?? agentId}
           </span>
-          <span className="text-xs text-muted-foreground">
+          <span style={{ fontSize: 12, color: '#71717a' }}>
             {connected ? 'live' : 'connecting…'}
           </span>
         </div>
-        <span className="text-xs text-muted-foreground">{events.length} events</span>
+        <span style={{ fontSize: 12, color: '#71717a' }}>{events.length} events</span>
       </div>
 
       {/* Filter bar */}
-      <div className="flex gap-1 px-3 py-2 border-b border-border/50 shrink-0 overflow-x-auto">
+      <div style={{ display: 'flex', gap: 4, padding: '8px 12px', borderBottom: '1px solid #f4f4f5', flexShrink: 0, overflowX: 'auto' }}>
         {(['all', 'browser', 'llm_token', 'http', 'file', 'screen_tick'] as const).map(f => (
           <button
             key={f}
             onClick={() => setFilter(f)}
-            className={`px-2 py-0.5 rounded text-xs font-mono whitespace-nowrap transition-colors
-              ${filter === f
-                ? 'bg-primary/15 text-primary'
-                : 'text-muted-foreground hover:text-foreground'}`}
+            style={{
+              padding: '2px 8px',
+              borderRadius: 4,
+              fontSize: 11,
+              fontFamily: 'monospace',
+              whiteSpace: 'nowrap',
+              border: 'none',
+              cursor: 'pointer',
+              background: filter === f ? '#18181b' : 'transparent',
+              color: filter === f ? '#ffffff' : '#71717a',
+              transition: 'color 0.15s',
+            }}
+            onMouseEnter={e => { if (filter !== f) (e.currentTarget as HTMLElement).style.color = '#18181b' }}
+            onMouseLeave={e => { if (filter !== f) (e.currentTarget as HTMLElement).style.color = '#71717a' }}
           >
             {f === 'all'
               ? `all (${events.length})`
@@ -240,14 +312,14 @@ export default function LiveActivity({ agentId, agentName }: Props) {
       </div>
 
       {/* Event list */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div style={{ flex: 1, overflowY: 'auto', padding: '4px 0' }}>
         {error ? (
-          <div className="flex flex-col items-center justify-center h-full text-center px-6">
-            <p className="text-sm text-red-500 dark:text-red-400 font-medium">Couldn&apos;t load agent activity</p>
-            <p className="text-xs text-muted-foreground mt-1 max-w-xs">{error}</p>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', textAlign: 'center', padding: '0 24px' }}>
+            <p style={{ fontSize: 14, color: '#dc2626', fontWeight: 500 }}>Couldn&apos;t load agent activity</p>
+            <p style={{ fontSize: 12, color: '#71717a', marginTop: 4, maxWidth: 300 }}>{error}</p>
           </div>
         ) : filtered.length === 0 ? (
-          <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100%', color: '#a1a1aa', fontSize: 14 }}>
             {connected ? 'Waiting for agent activity…' : 'Connecting to Supabase Realtime…'}
           </div>
         ) : (
