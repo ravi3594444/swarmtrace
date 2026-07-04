@@ -10,3 +10,4 @@ build/
 *.pyo
 swarmtrace_export.*
 *.zip
+upload/
