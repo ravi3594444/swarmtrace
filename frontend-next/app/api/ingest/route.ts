@@ -218,8 +218,15 @@ export async function POST(req: Request) {
     const { row, error } = validateTrace(payload)
     if (!row) return jsonResponse(400, { error })
 
-    // ── 1. Upsert trace (idempotent — safe on network retry) ─────────────────
-    await supaRpc('upsert_trace', {
+    // ── 1. Atomic upsert + metrics increment (idempotent on retry) ────────
+    // Single RPC that upserts the trace AND increments daily_metrics only
+    // if the trace was a fresh insert (not a retry upsert). Fixes the
+    // double-count bug where the SDK retries a POST whose RPCs succeeded
+    // server-side but whose HTTP response didn't reach the client in time.
+    // Old code called upsert_trace + increment_daily_metrics as two separate
+    // RPCs — the second ran unconditionally on every retry. See
+    // supabase/migrations/0007_atomic_ingest.sql.
+    await supaRpc('upsert_trace_with_metrics', {
       p_id:            row.id,
       p_user_id:       user_id,
       p_parent_id:     row.parent_id ?? null,
@@ -237,15 +244,7 @@ export async function POST(req: Request) {
       p_agent_name:    row.agent_name,
     })
 
-    // ── 2. Atomically increment daily_metrics — powers the dashboard ──────
-    await supaRpc('increment_daily_metrics', {
-      p_user_id:       user_id,
-      p_cost:          row.cost_usd,
-      p_input_tokens:  row.input_tokens,
-      p_output_tokens: row.output_tokens,
-    })
-
-    // ── 3. Update last_used (non-fatal) ───────────────────────────────────
+    // ── 2. Update last_used (non-fatal) ───────────────────────────────────
     try {
       await supa(`api_keys?key_hash=eq.${encodeURIComponent(keyHash)}`, {
         method: 'PATCH',
