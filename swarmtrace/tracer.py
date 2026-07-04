@@ -87,7 +87,26 @@ def init(
 def _remote_config() -> tuple[str, str]:
     key = _api_key if _api_key is not None else os.environ.get("SWARMTRACE_API_KEY", "")
     url = _endpoint if _endpoint is not None else os.environ.get("SWARMTRACE_ENDPOINT", "")
-    return key, url.rstrip("/")
+    return key, _normalize_base_url(url)
+
+
+def _normalize_base_url(url: str) -> str:
+    """Normalize the endpoint URL so it works whether the user set it with
+    or without a trailing /api.
+
+    Users set SWARMTRACE_ENDPOINT in different ways:
+        https://app.vercel.app
+        https://app.vercel.app/
+        https://app.vercel.app/api
+        https://app.vercel.app/api/
+
+    All four should work. We strip trailing slashes and a trailing /api,
+    then callers append the full path (/api/ingest, /api/events, etc.).
+    """
+    s = url.rstrip("/")
+    if s.endswith("/api"):
+        s = s[:-4]
+    return s
 
 
 # ---------------------------------------------------------------------------
@@ -105,7 +124,7 @@ _worker_started = False
 def _send_remote(payload: dict, key: str, url: str) -> None:
     body = json.dumps(payload).encode()
     req = Request(
-        f"{url}/ingest",
+        f"{url}/api/ingest",
         data=body,
         headers={"Content-Type": "application/json", "X-API-Key": key},
         method="POST",
