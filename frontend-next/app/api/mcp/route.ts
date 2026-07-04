@@ -157,13 +157,11 @@ function buildMcpServer(userId: string): McpServer {
     },
     async (params) => {
       try {
-        // ── Idempotent upsert (NOT a plain INSERT) ──────────────────────────
-        // MCP clients (Claude Desktop, Cursor, etc.) retry on transient network
-        // errors. A plain INSERT would hit a 409 unique violation on the retry
-        // → 500 to the client. The upsert_trace RPC (defined in
-        // supabase/migrations/0005_production_fixes.sql) does
-        // ON CONFLICT (user_id, id) DO UPDATE, so retries are safe.
-        // This matches /api/ingest's behavior exactly.
+        // ── Atomic upsert + metrics (idempotent on retry) ─────────────────
+        // MCP clients (Claude Desktop, Cursor, etc.) retry on transient
+        // network errors. Single RPC that upserts the trace AND increments
+        // daily_metrics only if the trace was a fresh insert — so retries
+        // don't double-count costs. See supabase/migrations/0007_atomic_ingest.sql.
         //
         // kind/agent_id/agent_name default the same way /api/ingest does:
         // kind='agent', agent_id=id, agent_name=function. Without these, the
@@ -174,7 +172,7 @@ function buildMcpServer(userId: string): McpServer {
         const agentId   = params.id
         const agentName = params.function
 
-        await supaRpc('upsert_trace', {
+        await supaRpc('upsert_trace_with_metrics', {
           p_id:            params.id,
           p_user_id:       userId,
           p_parent_id:     params.parent_id ?? null,
@@ -190,12 +188,6 @@ function buildMcpServer(userId: string): McpServer {
           p_kind:          kind,
           p_agent_id:      agentId,
           p_agent_name:    agentName,
-        })
-        await supaRpc('increment_daily_metrics', {
-          p_user_id:       userId,
-          p_cost:          params.cost_usd      ?? 0,
-          p_input_tokens:  params.input_tokens  ?? 0,
-          p_output_tokens: params.output_tokens ?? 0,
         })
 
         return {
