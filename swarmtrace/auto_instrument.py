@@ -287,11 +287,11 @@ def _mark_patched(wrapper):
 # OpenAI (and OpenAI-compatible: Mistral, DeepSeek, Groq, Together, …)
 # ---------------------------------------------------------------------------
 
-def patch_openai() -> None:
+def patch_openai() -> bool:
     try:
         from openai.resources.chat.completions import Completions, AsyncCompletions
     except ImportError:
-        return
+        return False
 
     if not _already_patched(Completions.create):
         original = Completions.create
@@ -372,16 +372,18 @@ def patch_openai() -> None:
 
         AsyncCompletions.create = _mark_patched(patched_acreate)
 
+    return True
+
 
 # ---------------------------------------------------------------------------
 # Anthropic
 # ---------------------------------------------------------------------------
 
-def patch_anthropic() -> None:
+def patch_anthropic() -> bool:
     try:
         from anthropic.resources.messages import Messages, AsyncMessages
     except ImportError:
-        return
+        return False
 
     if not _already_patched(Messages.create):
         original = Messages.create
@@ -455,16 +457,18 @@ def patch_anthropic() -> None:
 
         AsyncMessages.create = _mark_patched(patched_acreate)
 
+    return True
+
 
 # ---------------------------------------------------------------------------
 # Google Gemini (google-generativeai)
 # ---------------------------------------------------------------------------
 
-def patch_gemini() -> None:
+def patch_gemini() -> bool:
     try:
         from google.generativeai import GenerativeModel
     except ImportError:
-        return
+        return False
 
     def _model_name(self) -> str:
         name = getattr(self, "model_name", "") or getattr(self, "_model_name", "") or ""
@@ -540,16 +544,18 @@ def patch_gemini() -> None:
 
         GenerativeModel.generate_content_async = _mark_patched(patched_generate_async)
 
+    return True
+
 
 # ---------------------------------------------------------------------------
 # LiteLLM (covers Mistral, DeepSeek, Cohere, Bedrock, Azure, … via one SDK)
 # ---------------------------------------------------------------------------
 
-def patch_litellm() -> None:
+def patch_litellm() -> bool:
     try:
         import litellm
     except ImportError:
-        return
+        return False
 
     if not _already_patched(litellm.completion):
         original = litellm.completion
@@ -623,14 +629,41 @@ def patch_litellm() -> None:
 
         litellm.acompletion = _mark_patched(patched_acompletion)
 
+    return True
 
-def patch_all() -> None:
-    """Patch every supported LLM client that's installed. Safe to call repeatedly."""
-    for patch in (patch_openai, patch_anthropic, patch_gemini, patch_litellm):
+
+def patch_all() -> dict:
+    """Patch every supported LLM client that's installed. Safe to call repeatedly.
+
+    Returns which clients are active, e.g.::
+
+        {"openai": True, "anthropic": False, "gemini": False, "litellm": True}
+
+    A client being ``False`` just means that SDK isn't installed in this
+    environment — everything else keeps tracing normally. Also printed to
+    stderr as one line, the same way ``fov.patch_all()`` reports its own
+    active patches, so ``init()`` never leaves you guessing which LLM calls
+    are actually being traced.
+    """
+    patches = {
+        "openai":    patch_openai,
+        "anthropic": patch_anthropic,
+        "gemini":    patch_gemini,
+        "litellm":   patch_litellm,
+    }
+    results: dict = {}
+    for name, patch in patches.items():
         try:
-            patch()
+            results[name] = bool(patch())
         except Exception as exc:
+            results[name] = False
             print(
                 f"[swarmtrace] auto-instrument warning ({patch.__name__}): {exc}",
                 file=sys.stderr,
             )
+    active = [name for name, ok in results.items() if ok]
+    print(
+        f"[swarmtrace] llm auto-instrument active: {', '.join(active) or 'none installed'}",
+        file=sys.stderr,
+    )
+    return results
