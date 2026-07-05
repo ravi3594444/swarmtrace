@@ -11,3 +11,4 @@ build/
 swarmtrace_export.*
 *.zip
 upload/
+.next/
