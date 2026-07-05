@@ -36,6 +36,7 @@ of the Agents page entirely rather than appearing as a phantom agent.
 import asyncio
 import contextvars
 import functools
+import hashlib
 import json
 import os
 import queue
@@ -265,6 +266,28 @@ def _build_trace_id() -> str:
     return uuid.uuid4().hex
 
 
+def _stable_agent_id(func, name: Optional[str]) -> str:
+    """Deterministic agent_id for a bare ``@observe`` entrypoint.
+
+    Repeated invocations of the same top-level ``@observe`` function (the
+    auto-resolved "agent" case) used to get a fresh random ``agent_id`` per
+    call, which made the dashboard's Agents page show one card per run
+    instead of one persistent agent whose task count climbs over time.
+
+    Deriving the id from a SHA-256 of ``"{module}.{qualname}"`` (or an
+    explicit ``name``) makes repeat runs collapse into a single agent
+    identity. The digest is 32 hex chars — same length as ``uuid4().hex``
+    — so it drops into the existing TEXT column without schema changes.
+
+    Note: this ONLY applies to bare ``@observe`` (auto-resolved). Explicit
+    ``@observe(kind="agent")`` keeps a fresh ``trace_id`` so that swarm
+    sub-agents (orchestrator/researcher/summarizer within one run) stay
+    distinct, per ``test_nested_agents_each_get_their_own_agent_id``.
+    """
+    src = name if name else f"{func.__module__}.{func.__qualname__}"
+    return hashlib.sha256(src.encode("utf-8")).hexdigest()
+
+
 def _extract_token_info(result) -> tuple[int, int, float]:
     if result is None:
         return 0, 0, 0.0
@@ -333,16 +356,24 @@ def _safe_flush(*flush_args) -> None:
 # Decorator
 # ---------------------------------------------------------------------------
 
-def observe(func=None, *, kind: str = "auto"):
+def observe(func=None, *, kind: str = "auto", name: Optional[str] = None):
     """
     Decorator that records every call (sync or async) to the traces DB.
 
     Bare ``@observe`` defaults to ``kind="auto"``:
     - If no agent is currently running → this call becomes ``"agent"``.
     - If called from inside another ``@observe``'d function → rolls up as ``"function"``.
+
+    ``name`` (optional, only meaningful for the auto-resolved "agent" case):
+    overrides the displayed ``agent_name`` AND seeds the stable ``agent_id``
+    hash instead of ``func.__qualname__``. Useful when the same function
+    represents different agents based on runtime config, or when you want a
+    human-readable id source. Ignored for explicit ``kind="agent"`` (swarm
+    sub-agents keep fresh per-call ids, but ``name`` still overrides the
+    displayed ``agent_name`` for readability).
     """
     if func is None:
-        return lambda f: observe(f, kind=kind)
+        return lambda f: observe(f, kind=kind, name=name)
 
     if kind not in _KIND_CHOICES:
         raise ValueError(
@@ -362,7 +393,17 @@ def observe(func=None, *, kind: str = "auto"):
             resolved_kind = _resolve_kind(kind, enclosing_agent)
 
             if resolved_kind == "agent":
-                agent_id, agent_name = trace_id, func.__name__
+                if kind == "auto":
+                    # Bare @observe at top level → stable identity so repeat
+                    # runs aggregate into one dashboard agent card.
+                    agent_id = _stable_agent_id(func, name)
+                    agent_name = name if name else func.__name__
+                else:
+                    # Explicit kind="agent" → fresh id per call so swarm
+                    # sub-agents (orchestrator/researcher/summarizer within
+                    # one run) stay distinct.
+                    agent_id = trace_id
+                    agent_name = name if name else func.__name__
                 agent_token = _agent_ctx.set((agent_id, agent_name))
             else:
                 agent_id, agent_name = enclosing_agent or (trace_id, func.__name__)
@@ -407,7 +448,17 @@ def observe(func=None, *, kind: str = "auto"):
         resolved_kind = _resolve_kind(kind, enclosing_agent)
 
         if resolved_kind == "agent":
-            agent_id, agent_name = trace_id, func.__name__
+            if kind == "auto":
+                # Bare @observe at top level → stable identity so repeat
+                # runs aggregate into one dashboard agent card.
+                agent_id = _stable_agent_id(func, name)
+                agent_name = name if name else func.__name__
+            else:
+                # Explicit kind="agent" → fresh id per call so swarm
+                # sub-agents (orchestrator/researcher/summarizer within
+                # one run) stay distinct.
+                agent_id = trace_id
+                agent_name = name if name else func.__name__
             agent_token = _agent_ctx.set((agent_id, agent_name))
         else:
             agent_id, agent_name = enclosing_agent or (trace_id, func.__name__)
