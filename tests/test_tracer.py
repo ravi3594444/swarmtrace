@@ -95,7 +95,15 @@ def test_default_kind_is_agent_and_self_attributed(records):
     my_agent()
     kind, agent_id, agent_name = records[0][-3:]
     assert kind == "agent"
-    assert agent_id == records[0][0]      # attributed to itself
+    # Bare @observe at top level now gets a STABLE agent_id derived from the
+    # function's qualified name, so repeat runs aggregate into one dashboard
+    # agent card. The id is no longer equal to the row's own trace id.
+    import hashlib
+    expected = hashlib.sha256(
+        f"{my_agent.__module__}.{my_agent.__qualname__}".encode()
+    ).hexdigest()
+    assert agent_id == expected
+    assert agent_id != records[0][0]   # stable id, NOT the fresh trace id
     assert agent_name == "my_agent"
 
 
@@ -117,7 +125,12 @@ def test_nested_tool_and_llm_calls_attribute_to_enclosing_agent(records):
     orchestrator("hello")
 
     by_func = {r[2]: r for r in records}
-    orch_id = by_func["orchestrator"][0]
+    # orch_id is the orchestrator's agent_id (position -2), NOT its row id
+    # (position 0). The orchestrator is a bare @observe, so its agent_id is
+    # now a stable hash; nested spans inherit it via the enclosing-agent
+    # context. Reading from position -2 keeps this test correct regardless
+    # of how agent_id is derived.
+    orch_id = by_func["orchestrator"][-2]
 
     # Nested llm/tool spans roll up into the orchestrator's agent identity.
     assert by_func["call_llm"][-3] == "llm"
@@ -157,10 +170,23 @@ def test_nested_agents_each_get_their_own_agent_id(records):
     by_func = {r[2]: r for r in records}
 
     # Each is its own agent with its own agent_id.
-    for name in ("orchestrator", "researcher", "summarizer"):
+    # - orchestrator: bare @observe → STABLE hash id (NOT its row id)
+    # - researcher/summarizer: explicit kind="agent" → fresh trace id (== row id)
+    import hashlib
+    orch_expected = hashlib.sha256(
+        f"{orchestrator.__module__}.{orchestrator.__qualname__}".encode()
+    ).hexdigest()
+
+    kind, orch_aid, orch_aname = by_func["orchestrator"][-3:]
+    assert kind == "agent"
+    assert orch_aid == orch_expected            # stable hash
+    assert orch_aid != by_func["orchestrator"][0]  # NOT the row id
+    assert orch_aname == "orchestrator"
+
+    for name in ("researcher", "summarizer"):
         kind, agent_id, agent_name = by_func[name][-3:]
         assert kind == "agent"
-        assert agent_id == by_func[name][0]
+        assert agent_id == by_func[name][0]     # explicit kind="agent" → fresh trace id
         assert agent_name == name
 
     # researcher/summarizer are nested under orchestrator (parent_id),
@@ -201,9 +227,212 @@ def test_async_kind_and_agent_attribution(records):
     asyncio.run(aorchestrator("hi"))
 
     by_func = {r[2]: r for r in records}
-    orch_id = by_func["aorchestrator"][0]
+    # aorchestrator is a bare @observe → stable agent_id (position -2),
+    # NOT its row id (position 0). Read from -2 to stay correct.
+    orch_id = by_func["aorchestrator"][-2]
 
     assert by_func["aorchestrator"][-3] == "agent"
     assert by_func["acall_llm"][-3] == "llm"
     assert by_func["acall_llm"][-2] == orch_id
     assert by_func["acall_llm"][-1] == "aorchestrator"
+
+
+# ---------------------------------------------------------------------------
+# stable agent_id for bare @observe (the fix for "every run looks like a new
+# agent"). These lock in the new contract: repeat runs of the same top-level
+# @observe entrypoint aggregate into one agent identity on the dashboard.
+# ---------------------------------------------------------------------------
+
+def test_bare_observe_stable_agent_id_across_runs(records):
+    """Two calls to the same bare @observe function must share agent_id so
+    the dashboard shows one agent card with tasks=2, not two cards with
+    tasks=1 each."""
+    @tracer.observe
+    def my_entrypoint():
+        return "ok"
+
+    my_entrypoint()
+    my_entrypoint()
+
+    assert len(records) == 2
+    # Different trace ids (each call is its own span)...
+    assert records[0][0] != records[1][0]
+    # ...but the SAME agent_id (stable identity for the entrypoint).
+    assert records[0][-2] == records[1][-2]
+    assert records[0][-1] == "my_entrypoint"
+
+
+def test_explicit_kind_agent_keeps_fresh_id_across_runs(records):
+    """Explicit @observe(kind="agent") keeps a fresh agent_id per call —
+    swarm sub-agents within separate runs should NOT collapse."""
+    @tracer.observe(kind="agent")
+    def sub_agent():
+        return "ok"
+
+    sub_agent()
+    sub_agent()
+
+    assert len(records) == 2
+    # Fresh trace id AND fresh agent_id per call.
+    assert records[0][0] != records[1][0]
+    assert records[0][-2] != records[1][-2]
+    assert records[0][-2] == records[0][0]   # explicit kind="agent" → agent_id == trace_id
+
+
+def test_observe_name_overrides_agent_name_and_seeds_id(records):
+    """name= overrides the displayed agent_name AND seeds the stable hash,
+    so two distinct names produce two distinct (but each stable) agent ids."""
+    @tracer.observe(name="alice_bot")
+    def entrypoint_a():
+        return "a"
+
+    @tracer.observe(name="bob_bot")
+    def entrypoint_b():
+        return "b"
+
+    entrypoint_a()
+    entrypoint_a()
+    entrypoint_b()
+
+    by_func = {r[2]: r for r in records}
+    import hashlib
+
+    a_id = by_func["entrypoint_a"][-2]
+    a_name = by_func["entrypoint_a"][-1]
+    b_id = by_func["entrypoint_b"][-2]
+
+    # name= overrides the displayed agent_name.
+    assert a_name == "alice_bot"
+    # name= seeds the stable hash (deterministic).
+    assert a_id == hashlib.sha256(b"alice_bot").hexdigest()
+    # Different name → different stable id.
+    assert b_id == hashlib.sha256(b"bob_bot").hexdigest()
+    assert a_id != b_id
+    # Repeat run of entrypoint_a shares the same stable id.
+    a_rows = [r for r in records if r[2] == "entrypoint_a"]
+    assert len(a_rows) == 2
+    assert a_rows[0][-2] == a_rows[1][-2]
+
+
+# ---------------------------------------------------------------------------
+# SDK ↔ API contract test
+#
+# /api/agents/route.ts groups traces by agent_id and filters groups that
+# contain at least one kind='agent' span. This test reproduces that exact
+# filter logic against real tracer output, so a change to EITHER the SDK's
+# agent_id assignment OR the API's filter logic that breaks the contract
+# fails here instead of silently breaking the dashboard.
+#
+# The old API filter also checked `t.id === agent_id` — an artifact of the
+# old `agent_id = trace_id` invariant. That check was removed because it
+# drops every bare-@observe agent under the stable-id scheme. This test
+# guards against re-introducing it.
+# ---------------------------------------------------------------------------
+
+def _row_dict(t):
+    """Convert a save_trace positional-args tuple to the dict shape the API
+    receives from Supabase."""
+    (id_, parent_id, func, args, output, lat, err, ts, in_t, out_t, cost,
+     kind, agent_id, agent_name) = t
+    return {
+        "id": id_, "parent_id": parent_id, "function": func,
+        "agent_id": agent_id, "agent_name": agent_name, "kind": kind,
+        "timestamp": ts, "error": err, "args": args,
+    }
+
+
+def _api_agents_filter(rows):
+    """Reproduce the EXACT logic of /api/agents/route.ts.
+
+    Returns a list of {id, name, tasks} for each agent card the dashboard
+    would show. If this returns the wrong cards (or zero cards), the
+    dashboard is broken."""
+    # Group by agent_id (route.ts: rows.forEach groups[r.agent_id] ||= [])
+    groups = {}
+    for r in rows:
+        groups.setdefault(r["agent_id"], []).append(r)
+
+    # Filter + map (route.ts: .filter(...).map(...))
+    agents = []
+    for aid, traces in groups.items():
+        # The filter: group is an agent iff it has a kind='agent' span.
+        # (DO NOT add `and t['id'] == aid` — see contract docstring above.)
+        if not any(t["kind"] == "agent" for t in traces):
+            continue
+        runs = [t for t in traces if t["kind"] == "agent"]
+        agents.append({
+            "id": aid,
+            "name": runs[0]["agent_name"],
+            "tasks": len(runs),
+        })
+    return agents
+
+
+def test_api_agents_filter_contract(records):
+    """End-to-end: real tracer output → API filter → expected agent cards.
+
+    Covers all four agent_id regimes:
+      1. Bare @observe, multiple runs → ONE card, tasks=N (stable id)
+      2. Explicit kind='agent' swarm → separate cards, tasks=1 each (fresh id)
+      3. Nested non-agent spans → roll up into enclosing agent's card
+      4. Orphan tool call → NO card (phantom prevention)
+    """
+
+    @tracer.observe(kind="agent")
+    def researcher():
+        return "r"
+
+    @tracer.observe(kind="agent")
+    def summarizer():
+        return "s"
+
+    @tracer.observe
+    def orchestrator(q):
+        researcher()
+        return summarizer()
+
+    @tracer.observe
+    def my_bot():
+        return "ok"
+
+    @tracer.observe(kind="tool")
+    def standalone_tool():
+        return "orphan"
+
+    # 3 runs of my_bot (should aggregate into 1 card, tasks=3)
+    my_bot()
+    my_bot()
+    my_bot()
+
+    # 1 run of orchestrator (calls 2 explicit sub-agents)
+    orchestrator("q")
+
+    # 1 orphan tool call (should NOT become a card)
+    standalone_tool()
+
+    rows = [_row_dict(t) for t in records]
+    cards = _api_agents_filter(rows)
+
+    by_name = {c["name"]: c for c in cards}
+
+    # 1. my_bot: one card, tasks=3 (the whole point of the stable-id fix)
+    assert "my_bot" in by_name, f"my_bot card missing! cards={cards}"
+    assert by_name["my_bot"]["tasks"] == 3, \
+        f"expected tasks=3, got {by_name['my_bot']['tasks']}"
+
+    # 2. orchestrator: one card, tasks=1
+    assert "orchestrator" in by_name
+    assert by_name["orchestrator"]["tasks"] == 1
+
+    # 3. researcher + summarizer: separate cards, tasks=1 each
+    assert "researcher" in by_name
+    assert by_name["researcher"]["tasks"] == 1
+    assert "summarizer" in by_name
+    assert by_name["summarizer"]["tasks"] == 1
+
+    # 4. orphan tool: NO card (phantom prevention)
+    assert "standalone_tool" not in by_name, \
+        f"phantom agent! standalone_tool should not be a card. cards={cards}"
+
+    # Total: 4 agent cards (my_bot, orchestrator, researcher, summarizer)
+    assert len(cards) == 4, f"expected 4 cards, got {len(cards)}: {cards}"

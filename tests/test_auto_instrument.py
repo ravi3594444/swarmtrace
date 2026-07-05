@@ -75,7 +75,7 @@ def test_patch_openai_records_llm_trace_attributed_to_enclosing_agent(records, m
     my_agent()
 
     by_func = {r[2]: r for r in records}
-    agent_id = by_func["my_agent"][0]
+    agent_id = by_func["my_agent"][-2]
     llm_row = by_func["openai.chat.completions.create"]
 
     assert llm_row[-3:] == ("llm", agent_id, "my_agent")
@@ -180,7 +180,7 @@ def test_patch_anthropic_records_llm_trace(records, monkeypatch):
     my_agent()
 
     by_func = {r[2]: r for r in records}
-    agent_id = by_func["my_agent"][0]
+    agent_id = by_func["my_agent"][-2]
     llm_row = by_func["anthropic.messages.create"]
 
     assert llm_row[-3:] == ("llm", agent_id, "my_agent")
@@ -237,7 +237,7 @@ def test_patch_gemini_sync_records_llm_trace(records, fake_genai):
     my_agent()
 
     by_func = {r[2]: r for r in records}
-    agent_id = by_func["my_agent"][0]
+    agent_id = by_func["my_agent"][-2]
     llm_row = by_func["gemini.generate_content"]
 
     assert llm_row[-3:] == ("llm", agent_id, "my_agent")
@@ -259,7 +259,7 @@ def test_patch_gemini_async_records_llm_trace(records, fake_genai):
     asyncio.run(my_agent())
 
     by_func = {r[2]: r for r in records}
-    agent_id = by_func["my_agent"][0]
+    agent_id = by_func["my_agent"][-2]
     llm_row = by_func["gemini.generate_content"]
 
     assert llm_row[-3:] == ("llm", agent_id, "my_agent")
@@ -306,7 +306,7 @@ def test_patch_litellm_records_llm_trace(records, fake_litellm):
     my_agent()
 
     by_func = {r[2]: r for r in records}
-    agent_id = by_func["my_agent"][0]
+    agent_id = by_func["my_agent"][-2]
     llm_row = by_func["litellm.completion"]
 
     assert llm_row[-3:] == ("llm", agent_id, "my_agent")
