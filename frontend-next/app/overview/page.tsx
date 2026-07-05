@@ -11,6 +11,8 @@ import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
+import { filterTracesByRange } from '@/lib/trace-utils'
+import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { fetchOverview } from '@/lib/api'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import {
@@ -512,9 +514,19 @@ function RegressionPanel({ traces }: { traces: Trace[] }) {
 export default function OverviewPage() {
   const { traces, loading, isLive } = useSwarmTraces(10000)
   const { isEnabled } = useIntegrations()
+  const { range, setRange } = useTimeRange()
   const [selected, setSelected] = useState<Trace | null>(null)
   const [activity, setActivity] = useState<{ time: string; requests: number }[]>([])
   const [events, setEvents] = useState<OverviewEvent[]>([])
+
+  // Single source of truth for the time-windowed view: filter the polled
+  // traces once by the selected range, then hand the filtered array to every
+  // downstream widget. Defaults to "Today" so the dashboard no longer shows
+  // all-time data on load. Recomputes only when `traces` or `range` change.
+  const filteredTraces = useMemo(
+    () => filterTracesByRange(traces, range),
+    [traces, range],
+  )
 
   useEffect(() => {
     let mounted = true
@@ -560,7 +572,7 @@ export default function OverviewPage() {
     </DashboardLayout>
   )
 
-  const errorCount = traces.filter((t) => t.error).length
+  const errorCount = filteredTraces.filter((t) => t.error).length
 
   return (
     <DashboardLayout>
@@ -570,17 +582,18 @@ export default function OverviewPage() {
         liveStatus={isLive ? 'live' : 'paused'}
         actions={
           <div className="flex items-center gap-3">
+            <TimeRangeDropdown value={range} onChange={setRange} />
             <span className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{traces.length - errorCount} ok</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{filteredTraces.length - errorCount} ok</span>
               <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{errorCount} errors</span>
             </span>
-            <ExportMenu traces={traces} />
+            <ExportMenu traces={filteredTraces} />
           </div>
         }
       />
 
       <div className="p-6 space-y-6">
-        <StatBar traces={traces} />
+        <StatBar traces={filteredTraces} />
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Activity chart — 2/3 width */}
@@ -643,14 +656,14 @@ export default function OverviewPage() {
               </div>
             ) : (
               <div className="divide-y divide-border/50 overflow-y-auto max-h-60">
-                {(events.length ? events : traces.slice(0, 6).map((t) => ({
+                {(events.length ? events : filteredTraces.slice(0, 6).map((t) => ({
                   timestamp: t.timestamp,
                   type: t.error ? 'ERROR' : 'INFO',
                   message: t.error ? `${t.function}: ${t.error}` : `${t.function} completed in ${(t.latency_sec ?? 0).toFixed(2)}s`,
                 }))).slice(0, 8).map((e, i) => (
                   <EventRow key={`${e.timestamp}-${i}`} type={e.type} message={e.message} />
                 ))}
-                {events.length === 0 && traces.length === 0 && (
+                {events.length === 0 && filteredTraces.length === 0 && (
                   <div className="px-4 py-8 text-center text-xs text-muted-foreground">No events yet</div>
                 )}
               </div>
@@ -659,26 +672,26 @@ export default function OverviewPage() {
         </div>
 
         {/* Cost Projection Widget — always visible */}
-        <CostProjectionWidget traces={traces} />
+        <CostProjectionWidget traces={filteredTraces} />
 
         {/* Trace Diff / Regression Compare */}
-        <TraceDiffPanel traces={traces} />
+        <TraceDiffPanel traces={filteredTraces} />
 
         {/* Integration Panels — only rendered when integrations are enabled */}
         {(isEnabled('token-budget') || isEnabled('regression-detector')) && (
           <div className={`grid grid-cols-1 gap-6 ${isEnabled('token-budget') && isEnabled('regression-detector') ? 'xl:grid-cols-2' : ''}`}>
-            {isEnabled('token-budget')        && <TokenBudgetPanel traces={traces} />}
-            {isEnabled('regression-detector') && <RegressionPanel  traces={traces} />}
+            {isEnabled('token-budget')        && <TokenBudgetPanel traces={filteredTraces} />}
+            {isEnabled('regression-detector') && <RegressionPanel  traces={filteredTraces} />}
           </div>
         )}
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <CallTree traces={traces} onSelect={setSelected} />
-          <TokenChart traces={traces} />
+          <CallTree traces={filteredTraces} onSelect={setSelected} />
+          <TokenChart traces={filteredTraces} />
         </div>
       </div>
 
-      <DetailDrawer trace={selected} allTraces={traces} onClose={() => setSelected(null)} onJump={setSelected} />
+      <DetailDrawer trace={selected} allTraces={filteredTraces} onClose={() => setSelected(null)} onJump={setSelected} />
     </DashboardLayout>
   )
 }
