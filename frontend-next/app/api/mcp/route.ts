@@ -22,23 +22,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { z } from 'zod'
-import { createHash } from 'node:crypto'
 import { Redis } from '@upstash/redis'
 import { Ratelimit } from '@upstash/ratelimit'
-
-// ── Agent identity helper ────────────────────────────────────────────────────
-//
-// Mirrors swarmtrace/tracer.py::_stable_agent_id so MCP traces aggregate the
-// same way SDK traces do: repeat calls with the same `function` name collapse
-// into one agent card on the dashboard (tasks=N) instead of N separate cards.
-//
-// The SDK hashes "{module}.{qualname}"; MCP has no module, so we hash just
-// the function name. This means an SDK agent and an MCP agent with the same
-// function name get DIFFERENT ids (correct — they're different systems).
-// Callers who want explicit control can pass `agent_id` directly.
-function stableAgentId(functionName: string): string {
-  return createHash('sha256').update(functionName, 'utf8').digest('hex')
-}
+import { stableAgentId } from '@/lib/stable-agent-id'
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL!
