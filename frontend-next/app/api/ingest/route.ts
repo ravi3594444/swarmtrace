@@ -24,14 +24,14 @@ export async function POST(req: Request) {
       user_id,
       parent_id: payload.parent_id || null,
       function: payload.function,
-      args: payload.args || '',
-      output: payload.output || '',
-      latency_sec: payload.latency_sec || 0.0,
-      error: payload.error || null,
+      args: payload.args ?? '',
+      output: payload.output ?? '',
+      latency_sec: payload.latency_sec ?? 0.0,
+      error: payload.error ?? null,
       timestamp: payload.timestamp,
-      input_tokens: payload.input_tokens || 0,
-      output_tokens: payload.output_tokens || 0,
-      cost_usd: payload.cost_usd || 0.0,
+      input_tokens: payload.input_tokens ?? 0,
+      output_tokens: payload.output_tokens ?? 0,
+      cost_usd: payload.cost_usd ?? 0.0,
     }
 
     // 2. Insert trace row
@@ -51,7 +51,8 @@ export async function POST(req: Request) {
     }
 
     return new Response(null, { status: 204 })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error('[api/ingest] POST failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
