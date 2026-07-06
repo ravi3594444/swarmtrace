@@ -22,8 +22,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { z } from 'zod'
+import { createHash } from 'node:crypto'
 import { Redis } from '@upstash/redis'
 import { Ratelimit } from '@upstash/ratelimit'
+
+// ── Agent identity helper ────────────────────────────────────────────────────
+//
+// Mirrors swarmtrace/tracer.py::_stable_agent_id so MCP traces aggregate the
+// same way SDK traces do: repeat calls with the same `function` name collapse
+// into one agent card on the dashboard (tasks=N) instead of N separate cards.
+//
+// The SDK hashes "{module}.{qualname}"; MCP has no module, so we hash just
+// the function name. This means an SDK agent and an MCP agent with the same
+// function name get DIFFERENT ids (correct — they're different systems).
+// Callers who want explicit control can pass `agent_id` directly.
+function stableAgentId(functionName: string): string {
+  return createHash('sha256').update(functionName, 'utf8').digest('hex')
+}
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL!
@@ -154,6 +169,12 @@ function buildMcpServer(userId: string): McpServer {
       output:        z.string().max(4000).optional().describe('Serialised function return value'),
       error:         z.string().max(4000).optional().describe('Error message if the call failed'),
       parent_id:     z.string().max(64).optional().describe('Parent trace ID for nested spans'),
+      agent_id:      z.string().max(64).optional().describe(
+        'Stable agent identity. If omitted, derived from `function` (SHA-256) so repeat calls aggregate into one dashboard card. Pass an explicit unique value per call ONLY if you want each call to be its own agent card.'
+      ),
+      agent_name:    z.string().max(256).optional().describe(
+        'Display name for the agent card. Defaults to `function`.'
+      ),
     },
     async (params) => {
       try {
@@ -163,14 +184,24 @@ function buildMcpServer(userId: string): McpServer {
         // daily_metrics only if the trace was a fresh insert — so retries
         // don't double-count costs. See supabase/migrations/0007_atomic_ingest.sql.
         //
-        // kind/agent_id/agent_name default the same way /api/ingest does:
-        // kind='agent', agent_id=id, agent_name=function. Without these, the
-        // trace would be NULL in those columns and invisible on the /api/agents
-        // page (which filters kind='agent' and groups by agent_id). See
-        // supabase/migrations/0003_trace_kind.sql for the column definitions.
+        // Agent identity (mirrors swarmtrace/tracer.py::_stable_agent_id):
+        //   - If the caller passes an explicit `agent_id`, use it as-is.
+        //   - Otherwise derive a STABLE id from `function` (SHA-256), so
+        //     repeat calls of the same agent function aggregate into one
+        //     dashboard card with tasks=N — matching the SDK's behavior
+        //     for bare @observe.
+        //   - kind is always 'agent' for MCP (the MCP tool IS the agent
+        //     entry point; there's no nested tool/llm distinction here).
+        //   - agent_name defaults to `function` if not provided.
+        //
+        // BEFORE this change, agent_id was hardcoded to params.id (fresh
+        // per call), which meant every MCP call became its own agent card
+        // with tasks=1 — inconsistent with the SDK. See
+        // tests/test_tracer.py::test_api_agents_filter_contract and
+        // frontend-next/scripts/test-derive-agent-cards.mjs.
         const kind      = 'agent'
-        const agentId   = params.id
-        const agentName = params.function
+        const agentId   = params.agent_id ?? stableAgentId(params.function)
+        const agentName = params.agent_name ?? params.function
 
         await supaRpc('upsert_trace_with_metrics', {
           p_id:            params.id,
