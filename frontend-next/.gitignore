@@ -14,3 +14,6 @@ node_modules
 .next/
 .DS_Store
 *.tsbuildinfo
+*.log
+# clerk configuration (can include secrets)
+/.clerk/
