@@ -5,9 +5,9 @@ import { usePathname } from 'next/navigation'
 import { useState } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
-  Zap, AlertTriangle, ChevronRight, Menu, X,
+  Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
 } from 'lucide-react'
-import { useUser, UserButton } from '@clerk/nextjs'
+import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 
 const navItems = [
   { href: '/overview', label: 'Overview', icon: LayoutGrid },
@@ -110,18 +110,38 @@ export function Sidebar() {
 
       {/* User footer */}
       {open ? (
-        <div className="px-3 pt-3 pb-5 border-t border-sidebar-border">
+        <div className="px-3 pt-3 pb-5 border-t border-sidebar-border space-y-2">
           <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg bg-muted/60">
             <UserButton appearance={{ elements: { avatarBox: 'w-7 h-7 shrink-0' } }} />
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <div className="text-xs font-medium text-foreground truncate">{email}</div>
               <div className="text-[10px] text-muted-foreground">{initials}</div>
             </div>
+            <SignOutButton redirectUrl="/sign-in">
+              <button
+                type="button"
+                title="Log out"
+                aria-label="Log out"
+                className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+              >
+                <LogOut className="w-3.5 h-3.5" />
+              </button>
+            </SignOutButton>
           </div>
         </div>
       ) : (
-        <div className="px-3 pt-3 pb-5 border-t border-sidebar-border flex justify-center">
+        <div className="px-3 pt-3 pb-5 border-t border-sidebar-border flex flex-col items-center gap-2">
           <UserButton appearance={{ elements: { avatarBox: 'w-7 h-7 shrink-0' } }} />
+          <SignOutButton redirectUrl="/sign-in">
+            <button
+              type="button"
+              title="Log out"
+              aria-label="Log out"
+              className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              <LogOut className="w-3.5 h-3.5" />
+            </button>
+          </SignOutButton>
         </div>
       )}
     </aside>
