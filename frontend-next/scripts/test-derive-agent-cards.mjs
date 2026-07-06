@@ -256,4 +256,77 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     )
     assert.notEqual(stableAgentId('a'), stableAgentId('b'))
   })
+
+  // ── Time-range filter tests ────────────────────────────────────────────
+  // /api/agents filters traces by `timestamp >= since` BEFORE calling
+  // deriveAgentCards. These tests simulate that flow: build traces from
+  // multiple time periods, filter to "today", pass to deriveAgentCards,
+  // verify only today's agents appear.
+  //
+  // The filtering itself is a one-liner in the route (timestamp >= since),
+  // so we test the OUTCOME (deriveAgentCards output) rather than the filter
+  // in isolation.
+
+  test('Time filter: agent with only old traces → does NOT appear', () => {
+    // Agent "old_bot" ran 2 days ago. "Today" view should not show it.
+    const twoDaysAgo = new Date(NOW.getTime() - 2 * 24 * 60 * 60_000).toISOString()
+    const sinceToday = new Date('2026-07-05T00:00:00Z').getTime() // start of today
+
+    const allRows = [
+      mkTrace({ id: 'old1', agent_id: 'old-bot-id', agent_name: 'old_bot', kind: 'agent', timestamp: twoDaysAgo }),
+    ]
+    // Simulate the API route's filter
+    const filtered = allRows.filter((t) => new Date(t.timestamp).getTime() >= sinceToday)
+    const cards = deriveAgentCards(filtered, NOW)
+    assert.equal(cards.length, 0, 'old agent should not appear in Today view')
+  })
+
+  test('Time filter: agent with traces today AND old → appears, stats from today only', () => {
+    const twoDaysAgo = new Date(NOW.getTime() - 2 * 24 * 60 * 60_000).toISOString()
+    const sinceToday = new Date('2026-07-05T00:00:00Z').getTime()
+
+    const allRows = [
+      // 2 old runs (should be filtered out)
+      mkTrace({ id: 'old1', agent_id: 'bot-id', agent_name: 'my_bot', kind: 'agent', timestamp: twoDaysAgo }),
+      mkTrace({ id: 'old2', agent_id: 'bot-id', agent_name: 'my_bot', kind: 'agent', timestamp: twoDaysAgo }),
+      // 3 runs today (should appear, tasks=3 not 5)
+      mkTrace({ id: 'new1', agent_id: 'bot-id', agent_name: 'my_bot', kind: 'agent', timestamp: RECENT }),
+      mkTrace({ id: 'new2', agent_id: 'bot-id', agent_name: 'my_bot', kind: 'agent', timestamp: RECENT }),
+      mkTrace({ id: 'new3', agent_id: 'bot-id', agent_name: 'my_bot', kind: 'agent', timestamp: RECENT }),
+    ]
+    const filtered = allRows.filter((t) => new Date(t.timestamp).getTime() >= sinceToday)
+    const cards = deriveAgentCards(filtered, NOW)
+    assert.equal(cards.length, 1, 'agent appears (has traces today)')
+    assert.equal(cards[0].tasks, 3, 'tasks counts only today runs, not old ones')
+    assert.equal(cards[0].name, 'my_bot')
+  })
+
+  test('Time filter: All Time (no since) → all agents appear with full history', () => {
+    // Simulates range='all' → no ?since param → no filter
+    const twoDaysAgo = new Date(NOW.getTime() - 2 * 24 * 60 * 60_000).toISOString()
+
+    const allRows = [
+      mkTrace({ id: 'old1', agent_id: 'bot-a', agent_name: 'bot_a', kind: 'agent', timestamp: twoDaysAgo }),
+      mkTrace({ id: 'new1', agent_id: 'bot-b', agent_name: 'bot_b', kind: 'agent', timestamp: RECENT }),
+    ]
+    // No filter (All Time)
+    const cards = deriveAgentCards(allRows, NOW)
+    assert.equal(cards.length, 2, 'All Time shows both old and new agents')
+    const names = cards.map((c) => c.name).sort()
+    assert.deepEqual(names, ['bot_a', 'bot_b'])
+  })
+
+  test('Time filter: empty result when all traces are outside window', () => {
+    const weekAgo = new Date(NOW.getTime() - 7 * 24 * 60 * 60_000).toISOString()
+    const sinceToday = new Date('2026-07-05T00:00:00Z').getTime()
+
+    const allRows = [
+      mkTrace({ id: 'w1', agent_id: 'a', agent_name: 'bot', kind: 'agent', timestamp: weekAgo }),
+      mkTrace({ id: 'w2', agent_id: 'b', agent_name: 'bot2', kind: 'agent', timestamp: weekAgo }),
+    ]
+    const filtered = allRows.filter((t) => new Date(t.timestamp).getTime() >= sinceToday)
+    assert.equal(filtered.length, 0, 'all traces filtered out')
+    const cards = deriveAgentCards(filtered, NOW)
+    assert.equal(cards.length, 0, 'no cards when no traces in window')
+  })
 })

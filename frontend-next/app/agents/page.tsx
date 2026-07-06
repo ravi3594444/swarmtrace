@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { fetchSwarmAgents } from '@/lib/swarm-api'
 import type { Agent } from '@/lib/trace-types'
 import { formatRelativeTime } from '@/lib/api'
@@ -90,11 +91,16 @@ export default function AgentsPage() {
   const [agents, setAgents] = useState<Agent[]>([])
   const [filter, setFilter] = useState<'ALL' | 'RUNNING' | 'IDLE' | 'ERROR'>('ALL')
   const [search, setSearch] = useState('')
+  const { range, setRange } = useTimeRange()
 
+  // Refetch whenever the time range changes (Today/Week/Month/All). The
+  // range is converted to a `since` timestamp client-side (in the user's
+  // local TZ) and sent to /api/agents, which filters traces before grouping.
+  // Default is 'today' so old agents don't clutter the view.
   useEffect(() => {
     let mounted = true
     const load = () => {
-      fetchSwarmAgents().then((data) => {
+      fetchSwarmAgents(range).then((data) => {
         if (!mounted) return
         setAgents(data)
         setLoading(false)
@@ -103,7 +109,7 @@ export default function AgentsPage() {
     load()
     const id = setInterval(load, 30_000)
     return () => { mounted = false; clearInterval(id) }
-  }, [])
+  }, [range])
 
   if (loading) return (
     <DashboardLayout>
@@ -129,6 +135,7 @@ export default function AgentsPage() {
         liveStatus="live"
         actions={
           <div className="flex items-center gap-2">
+            <TimeRangeDropdown value={range} onChange={setRange} />
             <div className="relative">
               <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
               <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search agents…"
@@ -170,7 +177,9 @@ export default function AgentsPage() {
 
         {filtered.length === 0 && (
           <div className="rounded-xl border border-border bg-card py-16 text-center text-sm text-muted-foreground shadow-sm">
-            {agents.length === 0 ? 'No agents registered yet.' : 'No agents match your filters.'}
+            {agents.length === 0
+              ? `No agents active in this time range. Try switching to "This Week" or "All Time" above.`
+              : 'No agents match your filters.'}
           </div>
         )}
       </div>
