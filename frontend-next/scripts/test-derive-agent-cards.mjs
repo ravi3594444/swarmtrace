@@ -22,6 +22,7 @@
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 
 // ── Inline copy of deriveAgentCards (see note above) ───────────────────────
 function deriveAgentCards(rows, now = new Date()) {
@@ -63,6 +64,12 @@ function deriveAgentCards(rows, now = new Date()) {
     })
   }
   return agents
+}
+
+// Mirror of stableAgentId from app/api/mcp/route.ts — kept in sync so this
+// test can verify MCP traces aggregate the same way SDK traces do.
+function stableAgentId(functionName) {
+  return createHash('sha256').update(functionName, 'utf8').digest('hex')
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -226,5 +233,71 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     const cards = deriveAgentCards(rows, NOW)
     assert.equal(cards.length, 1, 'if this fails, someone re-added t.id === agent_id')
     assert.equal(cards[0].tasks, 2)
+  })
+
+  // ── MCP integration tests ──────────────────────────────────────────────
+  // The MCP record_trace tool derives agent_id from `function` (SHA-256)
+  // when the caller doesn't pass an explicit agent_id. These tests verify
+  // that MCP traces aggregate the same way SDK traces do.
+
+  test('MCP default: 3 calls with same function → 1 card, tasks=3', () => {
+    // Simulates: Claude Desktop calls record_trace 3x with function="my_bot"
+    // and no explicit agent_id. The MCP route derives stableAgentId("my_bot").
+    const mcpAid = stableAgentId('my_bot')
+    const rows = [
+      mkTrace({ id: 'mcp-1', agent_id: mcpAid, agent_name: 'my_bot', kind: 'agent' }),
+      mkTrace({ id: 'mcp-2', agent_id: mcpAid, agent_name: 'my_bot', kind: 'agent' }),
+      mkTrace({ id: 'mcp-3', agent_id: mcpAid, agent_name: 'my_bot', kind: 'agent' }),
+    ]
+    const cards = deriveAgentCards(rows, NOW)
+    assert.equal(cards.length, 1, '3 MCP calls with same function → 1 card')
+    assert.equal(cards[0].tasks, 3, 'tasks should aggregate')
+    assert.equal(cards[0].name, 'my_bot')
+  })
+
+  test('MCP default: different functions → different cards (no collision)', () => {
+    const rows = [
+      mkTrace({ id: 'm1', agent_id: stableAgentId('researcher'), agent_name: 'researcher', kind: 'agent' }),
+      mkTrace({ id: 'm2', agent_id: stableAgentId('summarizer'), agent_name: 'summarizer', kind: 'agent' }),
+    ]
+    const cards = deriveAgentCards(rows, NOW)
+    assert.equal(cards.length, 2, 'different functions → different cards')
+    const names = cards.map((c) => c.name).sort()
+    assert.deepEqual(names, ['researcher', 'summarizer'])
+  })
+
+  test('MCP explicit agent_id override: each call stays its own card', () => {
+    // A user who wants per-call cards (the OLD behavior) can pass a unique
+    // agent_id per call. This must still work — the override takes precedence
+    // over the function-name derivation.
+    const rows = [
+      mkTrace({ id: 'm1', agent_id: 'explicit-unique-1', agent_name: 'my_bot', kind: 'agent' }),
+      mkTrace({ id: 'm2', agent_id: 'explicit-unique-2', agent_name: 'my_bot', kind: 'agent' }),
+    ]
+    const cards = deriveAgentCards(rows, NOW)
+    assert.equal(cards.length, 2, 'explicit unique agent_id per call → 2 cards')
+    assert.equal(cards[0].tasks, 1)
+    assert.equal(cards[1].tasks, 1)
+  })
+
+  test('MCP + SDK coexistence: no cross-system collision', () => {
+    // An SDK agent "my_bot" in module "bot.main" hashes "bot.main.my_bot...".
+    // An MCP agent with function="my_bot" hashes just "my_bot".
+    // These MUST produce different agent_ids → different cards (correct:
+    // they're genuinely different systems even if they share a name).
+    const sdkAid = '8f395b07b234802b507e1929b733605ec945431a382394fed2cb53b30f54412c' // hypothetical SDK hash
+    const mcpAid = stableAgentId('my_bot')
+    assert.notEqual(sdkAid, mcpAid, 'test setup: SDK and MCP ids must differ')
+
+    const rows = [
+      mkTrace({ id: 's1', agent_id: sdkAid, agent_name: 'my_bot', kind: 'agent' }),
+      mkTrace({ id: 'm1', agent_id: mcpAid, agent_name: 'my_bot', kind: 'agent' }),
+    ]
+    const cards = deriveAgentCards(rows, NOW)
+    assert.equal(cards.length, 2, 'SDK + MCP agents with same name → 2 distinct cards')
+    // Both show as "my_bot" but have different ids — that's correct.
+    assert.equal(cards[0].name, 'my_bot')
+    assert.equal(cards[1].name, 'my_bot')
+    assert.notEqual(cards[0].id, cards[1].id)
   })
 })
