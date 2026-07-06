@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
@@ -57,6 +57,84 @@ function NavItem({
         )}
       </div>
     </Link>
+  )
+}
+
+/** Logout button with a confirm popover — "Are you sure you want to log out?"
+ *
+ * Why a confirm: logout is a session-ending action. A misclick on a direct
+ * button would force the user back through the sign-in flow. The popover
+ * gates the action behind an explicit "Log out" confirmation.
+ *
+ * Click-outside and Escape close the popover without signing out.
+ * The actual signout is performed by Clerk's <SignOutButton> wrapping the
+ * confirm button, so it integrates with the existing Clerk auth flow. */
+function LogoutButton() {
+  const [confirmOpen, setConfirmOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // Close on outside click / Escape so the popover doesn't get stranded.
+  useEffect(() => {
+    if (!confirmOpen) return
+    const onPointer = (e: PointerEvent) => {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setConfirmOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setConfirmOpen(false)
+    }
+    document.addEventListener('pointerdown', onPointer)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('pointerdown', onPointer)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [confirmOpen])
+
+  return (
+    <div className="relative" ref={wrapRef}>
+      <button
+        type="button"
+        onClick={() => setConfirmOpen((v) => !v)}
+        title="Log out"
+        aria-label="Log out"
+        aria-haspopup="dialog"
+        aria-expanded={confirmOpen}
+        className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+      >
+        <LogOut className="w-3.5 h-3.5" />
+      </button>
+
+      {confirmOpen && (
+        // Popover sits ABOVE the button (sidebar footer is at the bottom,
+        // a below-button popover would be clipped by the viewport).
+        <div
+          role="dialog"
+          aria-label="Confirm log out"
+          className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
+        >
+          <div className="px-3 py-2.5 border-b border-border bg-muted/30">
+            <p className="text-[11px] font-medium text-foreground text-center">Log out?</p>
+          </div>
+          <div className="p-2 grid grid-cols-2 gap-1.5">
+            <button
+              type="button"
+              onClick={() => setConfirmOpen(false)}
+              className="h-7 rounded-md border border-border bg-card text-[10px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+            >
+              Cancel
+            </button>
+            <SignOutButton redirectUrl="/sign-in">
+              <button
+                type="button"
+                className="h-7 rounded-md bg-primary text-[10px] font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+              >
+                Log out
+              </button>
+            </SignOutButton>
+          </div>
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -117,31 +195,13 @@ export function Sidebar() {
               <div className="text-xs font-medium text-foreground truncate">{email}</div>
               <div className="text-[10px] text-muted-foreground">{initials}</div>
             </div>
-            <SignOutButton redirectUrl="/sign-in">
-              <button
-                type="button"
-                title="Log out"
-                aria-label="Log out"
-                className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
-              >
-                <LogOut className="w-3.5 h-3.5" />
-              </button>
-            </SignOutButton>
+            <LogoutButton />
           </div>
         </div>
       ) : (
         <div className="px-3 pt-3 pb-5 border-t border-sidebar-border flex flex-col items-center gap-2">
           <UserButton appearance={{ elements: { avatarBox: 'w-7 h-7 shrink-0' } }} />
-          <SignOutButton redirectUrl="/sign-in">
-            <button
-              type="button"
-              title="Log out"
-              aria-label="Log out"
-              className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              <LogOut className="w-3.5 h-3.5" />
-            </button>
-          </SignOutButton>
+          <LogoutButton />
         </div>
       )}
     </aside>
