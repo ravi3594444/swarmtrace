@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
@@ -60,50 +60,46 @@ function NavItem({
   )
 }
 
-/** Logout button with a confirm popover — "Are you sure you want to log out?"
+/** Logout button with a confirm modal — "Are you sure you want to log out?"
  *
  * Why a confirm: logout is a session-ending action. A misclick on a direct
- * button would force the user back through the sign-in flow. The popover
+ * button would force the user back through the sign-in flow. The modal
  * gates the action behind an explicit "Log out" confirmation.
  *
  * Styling: the trigger button and the confirm action button both use
  * destructive (red) styling — logout ends the session, so it should look
  * like a destructive action, not a neutral one.
  *
- * Popover positioning: opens to the RIGHT of the button (left-full + ml-2),
- * floating over the main content area. This avoids overlapping the user
- * profile info above the button (which happened with the previous
- * bottom-full positioning in the expanded sidebar).
+ * Positioning: rendered as a `fixed` overlay centered in the viewport,
+ * rather than an `absolute` popover anchored to the button. The button lives
+ * inside the sidebar's `<aside>`, which has `overflow-hidden` — an anchored
+ * popover got clipped by that boundary any time it extended past the
+ * sidebar's edge. A fixed, centered modal escapes that clipping entirely
+ * and gives the confirmation the visual weight a session-ending action
+ * deserves, with a backdrop so it reads clearly as a modal rather than a
+ * dropdown.
  *
- * Click-outside and Escape close the popover without signing out.
+ * Backdrop click and Escape close the modal without signing out.
  * The actual signout is performed by Clerk's <SignOutButton> wrapping the
  * confirm button, so it integrates with the existing Clerk auth flow. */
 function LogoutButton() {
   const [confirmOpen, setConfirmOpen] = useState(false)
-  const wrapRef = useRef<HTMLDivElement>(null)
 
-  // Close on outside click / Escape so the popover doesn't get stranded.
+  // Close on Escape so the modal doesn't get stranded.
   useEffect(() => {
     if (!confirmOpen) return
-    const onPointer = (e: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setConfirmOpen(false)
-    }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') setConfirmOpen(false)
     }
-    document.addEventListener('pointerdown', onPointer)
     document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointer)
-      document.removeEventListener('keydown', onKey)
-    }
+    return () => document.removeEventListener('keydown', onKey)
   }, [confirmOpen])
 
   return (
-    <div className="relative" ref={wrapRef}>
+    <>
       <button
         type="button"
-        onClick={() => setConfirmOpen((v) => !v)}
+        onClick={() => setConfirmOpen(true)}
         title="Log out"
         aria-label="Log out"
         aria-haspopup="dialog"
@@ -114,38 +110,45 @@ function LogoutButton() {
       </button>
 
       {confirmOpen && (
-        // Popover opens to the RIGHT of the button (left-full + ml-2),
-        // vertically centered with the button. This floats over the main
-        // content area and avoids overlapping the user profile info that
-        // sits above the button in the expanded sidebar footer.
+        // Fixed overlay, centered in the viewport. Clicking the backdrop
+        // (but not the card itself) closes without signing out.
         <div
-          role="dialog"
-          aria-label="Confirm log out"
-          className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[1px] p-4"
+          onClick={() => setConfirmOpen(false)}
         >
-          <div className="px-3 py-2.5 border-b border-border bg-muted/30">
-            <p className="text-[11px] font-medium text-foreground text-center">Log out?</p>
-          </div>
-          <div className="p-2 grid grid-cols-2 gap-1.5">
-            <button
-              type="button"
-              onClick={() => setConfirmOpen(false)}
-              className="h-7 rounded-md border border-border bg-card text-[10px] font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
-            >
-              Cancel
-            </button>
-            <SignOutButton redirectUrl="/sign-in">
+          <div
+            role="dialog"
+            aria-label="Confirm log out"
+            onClick={(e) => e.stopPropagation()}
+            className="w-64 rounded-xl border border-border bg-card shadow-xl overflow-hidden"
+          >
+            <div className="px-4 py-3 border-b border-border bg-muted/30">
+              <p className="text-sm font-medium text-foreground text-center">Log out?</p>
+              <p className="text-xs text-muted-foreground text-center mt-0.5">
+                You&apos;ll need to sign in again.
+              </p>
+            </div>
+            <div className="p-3 grid grid-cols-2 gap-2">
               <button
                 type="button"
-                className="h-7 rounded-md bg-red-600 text-[10px] font-semibold text-white hover:bg-red-700 transition-colors"
+                onClick={() => setConfirmOpen(false)}
+                className="h-8 rounded-md border border-border bg-card text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
-                Log out
+                Cancel
               </button>
-            </SignOutButton>
+              <SignOutButton redirectUrl="/sign-in">
+                <button
+                  type="button"
+                  className="w-full h-8 rounded-md bg-red-600 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+                >
+                  Log out
+                </button>
+              </SignOutButton>
+            </div>
           </div>
         </div>
       )}
-    </div>
+    </>
   )
 }
 
