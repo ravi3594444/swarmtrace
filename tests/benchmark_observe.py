@@ -1,10 +1,11 @@
 import asyncio
 import time
 import statistics
-from tracely.tracer import observe, init
+from swarmtrace.tracer import observe, init
 
-# Disable remote ingest for benchmarks
-init(api_key="", endpoint="")
+# Disable remote ingest and auto-instrumentation so only the decorator's
+# own overhead is measured.
+init(api_key="", endpoint="", auto_instrument=False)
 
 def sync_work():
     return sum(range(1000))
@@ -65,11 +66,13 @@ async def benchmark_async(iterations=1000):
 def print_stats(name, raw, observed):
     avg_raw = statistics.mean(raw) * 1000
     avg_obs = statistics.mean(observed) * 1000
-    overhead = avg_obs - avg_raw
+    med_raw = statistics.median(raw) * 1000
+    med_obs = statistics.median(observed) * 1000
     print(f"--- {name} ---")
-    print(f"Average Raw: {avg_raw:.4f} ms")
-    print(f"Average Observed: {avg_obs:.4f} ms")
-    print(f"Overhead: {overhead:.4f} ms")
+    print(f"Average Raw: {avg_raw:.4f} ms | Median: {med_raw:.4f} ms")
+    print(f"Average Observed: {avg_obs:.4f} ms | Median: {med_obs:.4f} ms")
+    print(f"Overhead (mean): {avg_obs - avg_raw:.4f} ms")
+    print(f"Overhead (median): {med_obs - med_raw:.4f} ms")
     print(f"Max Observed: {max(observed)*1000:.4f} ms")
     print()
 
