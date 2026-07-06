@@ -6,7 +6,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "test": "node --test scripts/test-derive-agent-cards.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
