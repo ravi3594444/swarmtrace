@@ -66,6 +66,15 @@ function NavItem({
  * button would force the user back through the sign-in flow. The popover
  * gates the action behind an explicit "Log out" confirmation.
  *
+ * Styling: the trigger button and the confirm action button both use
+ * destructive (red) styling — logout ends the session, so it should look
+ * like a destructive action, not a neutral one.
+ *
+ * Popover positioning: opens to the RIGHT of the button (left-full + ml-2),
+ * floating over the main content area. This avoids overlapping the user
+ * profile info above the button (which happened with the previous
+ * bottom-full positioning in the expanded sidebar).
+ *
  * Click-outside and Escape close the popover without signing out.
  * The actual signout is performed by Clerk's <SignOutButton> wrapping the
  * confirm button, so it integrates with the existing Clerk auth flow. */
@@ -99,18 +108,20 @@ function LogoutButton() {
         aria-label="Log out"
         aria-haspopup="dialog"
         aria-expanded={confirmOpen}
-        className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:text-foreground hover:bg-muted transition-colors shrink-0"
+        className="w-7 h-7 rounded-lg border border-red-200 bg-red-50 flex items-center justify-center text-red-600 hover:bg-red-100 hover:text-red-700 hover:border-red-300 transition-colors shrink-0"
       >
         <LogOut className="w-3.5 h-3.5" />
       </button>
 
       {confirmOpen && (
-        // Popover sits ABOVE the button (sidebar footer is at the bottom,
-        // a below-button popover would be clipped by the viewport).
+        // Popover opens to the RIGHT of the button (left-full + ml-2),
+        // vertically centered with the button. This floats over the main
+        // content area and avoids overlapping the user profile info that
+        // sits above the button in the expanded sidebar footer.
         <div
           role="dialog"
           aria-label="Confirm log out"
-          className="absolute bottom-full mb-2 left-1/2 -translate-x-1/2 z-50 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
+          className="absolute left-full ml-2 top-1/2 -translate-y-1/2 z-50 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
         >
           <div className="px-3 py-2.5 border-b border-border bg-muted/30">
             <p className="text-[11px] font-medium text-foreground text-center">Log out?</p>
@@ -126,7 +137,7 @@ function LogoutButton() {
             <SignOutButton redirectUrl="/sign-in">
               <button
                 type="button"
-                className="h-7 rounded-md bg-primary text-[10px] font-semibold text-primary-foreground hover:opacity-90 transition-opacity"
+                className="h-7 rounded-md bg-red-600 text-[10px] font-semibold text-white hover:bg-red-700 transition-colors"
               >
                 Log out
               </button>
