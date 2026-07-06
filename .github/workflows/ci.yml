@@ -40,3 +40,7 @@ jobs:
         run: npm ci
       - name: TypeScript check
         run: npx tsc --noEmit
+      - name: Agent-derivation contract tests
+        # Regression guard for the SDK<->API agent_id contract.
+        # See scripts/test-derive-agent-cards.mjs for what this protects.
+        run: npm test
