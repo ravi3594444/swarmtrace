@@ -1,76 +1,29 @@
 /**
  * Test: deriveAgentCards contract.
  *
- * Uses Node's built-in node:test runner — zero new dependencies, runs in CI
- * with `node --test`. This is the regression guard that the Python
- * test_api_agents_filter_contract can't be (it tests the Python reproduction
- * of the logic, not the actual TypeScript code).
+ * Uses Node's built-in node:test runner + tsx (to import .ts directly).
+ * Zero behavior change vs before, but now imports the REAL
+ * deriveAgentCards and stableAgentId instead of inlining copies — so
+ * if someone edits lib/derive-agent-cards.ts or lib/stable-agent-id.ts,
+ * this test exercises the actual code, not a stale duplicate.
  *
- * Run:  node --test frontend-next/scripts/test-derive-agent-cards.mjs
+ * Run:  npm test   (which runs: node --import tsx --test <this file>)
  *
  * What this guards against:
  *   - Re-introducing the `t.id === agent_id` check (would drop every
  *     bare-@observe agent under the stable-id scheme).
  *   - Phantom agent cards from orphan tool/llm/function spans.
  *   - Silent breakage of the SDK<->API contract when either side changes.
- *
- * NOTE: This file inlines a copy of deriveAgentCards logic because Node
- * can't import .ts directly without a loader. The Python contract test
- * (tests/test_tracer.py::test_api_agents_filter_contract) is the source
- * of truth — if these two ever disagree, the Python one wins. This .mjs
- * file is the early-warning system that runs in frontend CI.
+ *   - Divergence between the test and the real source (closed by tsx import).
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
-import { createHash } from 'node:crypto'
 
-// ── Inline copy of deriveAgentCards (see note above) ───────────────────────
-function deriveAgentCards(rows, now = new Date()) {
-  const groups = new Map()
-  for (const r of rows) {
-    if (!r.agent_id) continue
-    const arr = groups.get(r.agent_id)
-    if (arr) arr.push(r)
-    else groups.set(r.agent_id, [r])
-  }
-  const fiveMinutesAgo = new Date(now.getTime() - 5 * 60 * 1000).toISOString()
-  const agents = []
-  for (const [id, traces] of groups) {
-    if (!traces.some((t) => t.kind === 'agent')) continue
-    const runs = traces.filter((t) => t.kind === 'agent')
-    const latestRun = runs[0]
-    const latestEvent = traces[0]
-    const isRecent = latestEvent.timestamp >= fiveMinutesAgo
-    const errorCount = traces.filter((t) => t.error).length
-    const tokens = traces.reduce(
-      (acc, t) => acc + (t.input_tokens || 0) + (t.output_tokens || 0), 0,
-    )
-    const successRate = ((traces.length - errorCount) / traces.length) * 100
-    const status = latestEvent.error ? 'ERROR' : isRecent ? 'RUNNING' : 'IDLE'
-    agents.push({
-      id,
-      name: latestRun.agent_name ?? id,
-      status,
-      tasks: runs.length,
-      tokens: `${Math.round(tokens / 1000)}K`,
-      lastActive: latestEvent.timestamp,
-      uptime: 'n/a',
-      success_rate: `${successRate.toFixed(1)}%`,
-      current_task: latestEvent.error
-        ? `Error in ${latestEvent.function}: ${latestEvent.error.substring(0, 80)}`
-        : isRecent && latestEvent.args
-          ? `${latestEvent.function}: ${latestEvent.args.substring(0, 60)}`
-          : 'Idle',
-    })
-  }
-  return agents
-}
-
-// Mirror of stableAgentId from app/api/mcp/route.ts — kept in sync so this
-// test can verify MCP traces aggregate the same way SDK traces do.
-function stableAgentId(functionName) {
-  return createHash('sha256').update(functionName, 'utf8').digest('hex')
-}
+// Import the REAL functions — no inlined copies. If these files change,
+// the test automatically uses the new code. (This is the whole point of
+// the tsx migration; previously a copy lived here and could go stale.)
+import { deriveAgentCards } from '../lib/derive-agent-cards.ts'
+import { stableAgentId }    from '../lib/stable-agent-id.ts'
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 const NOW = new Date('2026-07-05T17:00:00Z')
@@ -238,11 +191,10 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
   // ── MCP integration tests ──────────────────────────────────────────────
   // The MCP record_trace tool derives agent_id from `function` (SHA-256)
   // when the caller doesn't pass an explicit agent_id. These tests verify
-  // that MCP traces aggregate the same way SDK traces do.
+  // that MCP traces aggregate the same way SDK traces do — using the REAL
+  // stableAgentId function imported from lib/stable-agent-id.ts.
 
   test('MCP default: 3 calls with same function → 1 card, tasks=3', () => {
-    // Simulates: Claude Desktop calls record_trace 3x with function="my_bot"
-    // and no explicit agent_id. The MCP route derives stableAgentId("my_bot").
     const mcpAid = stableAgentId('my_bot')
     const rows = [
       mkTrace({ id: 'mcp-1', agent_id: mcpAid, agent_name: 'my_bot', kind: 'agent' }),
@@ -267,9 +219,6 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
   })
 
   test('MCP explicit agent_id override: each call stays its own card', () => {
-    // A user who wants per-call cards (the OLD behavior) can pass a unique
-    // agent_id per call. This must still work — the override takes precedence
-    // over the function-name derivation.
     const rows = [
       mkTrace({ id: 'm1', agent_id: 'explicit-unique-1', agent_name: 'my_bot', kind: 'agent' }),
       mkTrace({ id: 'm2', agent_id: 'explicit-unique-2', agent_name: 'my_bot', kind: 'agent' }),
@@ -281,11 +230,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
   })
 
   test('MCP + SDK coexistence: no cross-system collision', () => {
-    // An SDK agent "my_bot" in module "bot.main" hashes "bot.main.my_bot...".
-    // An MCP agent with function="my_bot" hashes just "my_bot".
-    // These MUST produce different agent_ids → different cards (correct:
-    // they're genuinely different systems even if they share a name).
-    const sdkAid = '8f395b07b234802b507e1929b733605ec945431a382394fed2cb53b30f54412c' // hypothetical SDK hash
+    const sdkAid = '8f395b07b234802b507e1929b733605ec945431a382394fed2cb53b30f54412c'
     const mcpAid = stableAgentId('my_bot')
     assert.notEqual(sdkAid, mcpAid, 'test setup: SDK and MCP ids must differ')
 
@@ -295,9 +240,20 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     ]
     const cards = deriveAgentCards(rows, NOW)
     assert.equal(cards.length, 2, 'SDK + MCP agents with same name → 2 distinct cards')
-    // Both show as "my_bot" but have different ids — that's correct.
     assert.equal(cards[0].name, 'my_bot')
     assert.equal(cards[1].name, 'my_bot')
     assert.notEqual(cards[0].id, cards[1].id)
+  })
+
+  test('stableAgentId is deterministic (same input → same output)', () => {
+    // Direct test of the imported stableAgentId — guards against anyone
+    // changing the hash algorithm or input encoding without updating
+    // the SDK's _stable_agent_id to match.
+    assert.equal(stableAgentId('my_bot'), stableAgentId('my_bot'))
+    assert.equal(
+      stableAgentId('my_bot'),
+      '3430ffa949a448f3d963be933c0dc71abf5395fe0a4d0598547fd2c4bfb4529e',
+    )
+    assert.notEqual(stableAgentId('a'), stableAgentId('b'))
   })
 })
