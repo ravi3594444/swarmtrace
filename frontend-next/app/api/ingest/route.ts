@@ -124,6 +124,8 @@ function jsonResponse(status: number, body: unknown) {
   })
 }
 
+const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function'])
+
 function validateTrace(payload: unknown): { row?: Record<string, unknown>; error?: string } {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload))
     return { error: 'Body must be a JSON object' }
@@ -136,6 +138,20 @@ function validateTrace(payload: unknown): { row?: Record<string, unknown>; error
     return { error: 'timestamp must be a valid ISO 8601 string' }
   const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, MAX_TEXT_LEN) : '')
   const num  = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
+
+  // kind/agent_id/agent_name were added in swarmtrace 0.3.0. Older SDK versions
+  // (or anything posting to /ingest directly) won't send them — default to
+  // kind='agent', agent_id=id, agent_name=function, which reproduces the
+  // pre-0.3.0 "every trace is its own agent" behavior exactly, so old
+  // clients keep working without becoming phantom sub-agents of anything.
+  const kind = typeof p.kind === 'string' && VALID_KINDS.has(p.kind) ? p.kind : 'agent'
+  const agentId =
+    typeof p.agent_id === 'string' && p.agent_id.length > 0 ? p.agent_id.slice(0, 64) : p.id
+  const agentName =
+    typeof p.agent_name === 'string' && p.agent_name.length > 0
+      ? p.agent_name.slice(0, 256)
+      : p.function
+
   return {
     row: {
       id:            p.id,
@@ -149,6 +165,9 @@ function validateTrace(payload: unknown): { row?: Record<string, unknown>; error
       input_tokens:  Math.max(0, Math.trunc(num(p.input_tokens))),
       output_tokens: Math.max(0, Math.trunc(num(p.output_tokens))),
       cost_usd:      Math.max(0, num(p.cost_usd)),
+      kind:          kind,
+      agent_id:      agentId,
+      agent_name:    agentName,
     },
   }
 }
@@ -157,8 +176,12 @@ export async function POST(req: Request) {
   const apiKey = req.headers.get('X-API-Key')
   if (!apiKey) return jsonResponse(401, { error: 'Missing X-API-Key header' })
 
-  const contentLength = Number(req.headers.get('content-length') || 0)
-  if (contentLength > MAX_BODY_BYTES) return jsonResponse(413, { error: 'Payload too large' })
+  // Read the actual bytes — Content-Length is client-supplied and optional,
+  // so checking the header alone can be bypassed by omitting it entirely.
+  let bodyBytes: ArrayBuffer
+  try { bodyBytes = await req.arrayBuffer() }
+  catch { return jsonResponse(400, { error: 'Could not read request body' }) }
+  if (bodyBytes.byteLength > MAX_BODY_BYTES) return jsonResponse(413, { error: 'Payload too large' })
 
   try {
     const keyHash = await sha256Hex(apiKey)
@@ -189,24 +212,39 @@ export async function POST(req: Request) {
     }
 
     let payload: unknown
-    try { payload = await req.json() }
+    try { payload = JSON.parse(new TextDecoder().decode(bodyBytes)) }
     catch { return jsonResponse(400, { error: 'Body must be valid JSON' }) }
 
     const { row, error } = validateTrace(payload)
     if (!row) return jsonResponse(400, { error })
 
-    // ── 1. Insert trace ───────────────────────────────────────────────────
-    await supa('traces', { method: 'POST', body: JSON.stringify({ ...row, user_id }) })
-
-    // ── 2. Atomically increment daily_metrics — powers the dashboard ──────
-    await supaRpc('increment_daily_metrics', {
+    // ── 1. Atomic upsert + metrics increment (idempotent on retry) ────────
+    // Single RPC that upserts the trace AND increments daily_metrics only
+    // if the trace was a fresh insert (not a retry upsert). Fixes the
+    // double-count bug where the SDK retries a POST whose RPCs succeeded
+    // server-side but whose HTTP response didn't reach the client in time.
+    // Old code called upsert_trace + increment_daily_metrics as two separate
+    // RPCs — the second ran unconditionally on every retry. See
+    // supabase/migrations/0007_atomic_ingest.sql.
+    await supaRpc('upsert_trace_with_metrics', {
+      p_id:            row.id,
       p_user_id:       user_id,
-      p_cost:          row.cost_usd,
+      p_parent_id:     row.parent_id ?? null,
+      p_function:      row.function,
+      p_args:          row.args,
+      p_output:        row.output,
+      p_latency_sec:   row.latency_sec,
+      p_error:         row.error ?? null,
+      p_timestamp:     row.timestamp,
       p_input_tokens:  row.input_tokens,
       p_output_tokens: row.output_tokens,
+      p_cost_usd:      row.cost_usd,
+      p_kind:          row.kind,
+      p_agent_id:      row.agent_id,
+      p_agent_name:    row.agent_name,
     })
 
-    // ── 3. Update last_used (non-fatal) ───────────────────────────────────
+    // ── 2. Update last_used (non-fatal) ───────────────────────────────────
     try {
       await supa(`api_keys?key_hash=eq.${encodeURIComponent(keyHash)}`, {
         method: 'PATCH',

@@ -2,7 +2,21 @@
 
 import { Button } from "@/components/ui/button"
 import { useState } from "react"
+import Link from "next/link"
 import { Menu, X } from "lucide-react"
+
+const navLinks = [
+  { label: "Features",     href: "#features"     },
+  { label: "How it works", href: "#how-it-works" },
+  { label: "Developers",   href: "#developers"   },
+  { label: "Pricing",      href: "#pricing"       },
+]
+
+function scrollTo(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
+  e.preventDefault()
+  const el = document.querySelector(href)
+  if (el) el.scrollIntoView({ behavior: "smooth" })
+}
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false)
@@ -17,18 +31,24 @@ export function Navigation() {
 
           {/* Desktop Navigation */}
           <nav className="hidden md:flex items-center gap-8">
-            <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a>
-            <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">How it works</a>
-            <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Developers</a>
-            <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
+            {navLinks.map(({ label, href }) => (
+              <a
+                key={href}
+                href={href}
+                onClick={(e) => scrollTo(e, href)}
+                className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+              >
+                {label}
+              </a>
+            ))}
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
             <Button variant="outline" size="sm" asChild>
-              <a href="/sign-in">Sign In</a>
+              <Link href="/sign-in">Sign In</Link>
             </Button>
             <Button size="sm" asChild>
-              <a href="/sign-up">Get Started</a>
+              <Link href="/sign-up">Get Started</Link>
             </Button>
           </div>
 
@@ -45,16 +65,22 @@ export function Navigation() {
         {isOpen && (
           <div className="md:hidden mt-4 pb-4 border-t border-border/20">
             <div className="flex flex-col gap-4">
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Features</a>
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">How it works</a>
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Developers</a>
-              <a href="#" className="text-sm text-muted-foreground hover:text-foreground transition-colors">Pricing</a>
+              {navLinks.map(({ label, href }) => (
+                <a
+                  key={href}
+                  href={href}
+                  onClick={(e) => { scrollTo(e, href); setIsOpen(false) }}
+                  className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  {label}
+                </a>
+              ))}
               <div className="flex flex-col gap-2 pt-4 border-t border-border/20">
                 <Button variant="outline" size="sm" asChild>
-                  <a href="/sign-in">Sign In</a>
+                  <Link href="/sign-in">Sign In</Link>
                 </Button>
                 <Button size="sm" asChild>
-                  <a href="/sign-up">Get Started</a>
+                  <Link href="/sign-up">Get Started</Link>
                 </Button>
               </div>
             </div>

@@ -1,8 +1,12 @@
 import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
+// Public routes: the landing page, auth pages, and API routes that use
+// their own auth (X-API-Key for ingest/events, Clerk for mcp via resolveApiKey).
 const isPublicRoute = createRouteMatcher([
   "/",
   "/api/ingest(.*)",
+  "/api/events(.*)",
+  "/api/mcp(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);
@@ -15,12 +19,6 @@ export default clerkMiddleware(async (auth, request) => {
 
 export const config = {
   matcher: [
-    /*
-     * Match all request paths except for the ones starting with:
-     * - _next/static (static files)
-     * - _next/image (image optimization files)
-     * - favicon.ico, sitemap.xml, robots.txt (metadata files)
-     */
     "/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)",
   ],
 };

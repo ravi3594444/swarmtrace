@@ -1,18 +1,30 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaRequest } from '../../../../lib/supabase'
+import { supaRequest, supaUserRequest } from '../../../../lib/supabase'
 import crypto from 'crypto'
+
+interface ApiKeyRow {
+  id: string
+  name: string
+  created_at: string
+  last_used: string | null
+  key_prefix: string
+}
 
 export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const keys = await supaRequest(
-      `api_keys?user_id=eq.${encodeURIComponent(userId)}&revoked=eq.false&order=created_at.desc`
-    )
+    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
+    // JWT in the Authorization header). The user_id filter in the URL is
+    // now defence-in-depth, not the only guard.
+    const keys = (await supaUserRequest(
+      `api_keys?user_id=eq.${encodeURIComponent(userId)}&revoked=eq.false&order=created_at.desc`,
+      userId
+    )) as ApiKeyRow[]
     return NextResponse.json({
-      keys: keys.map((k: any) => ({
+      keys: keys.map((k) => ({
         id: k.id,
         name: k.name,
         created: k.created_at,

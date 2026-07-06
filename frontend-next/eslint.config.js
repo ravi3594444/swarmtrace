@@ -1,11 +1,17 @@
-import { dirname } from 'path'
-import { fileURLToPath } from 'url'
-import { FlatCompat } from '@eslint/eslintrc'
+import nextCoreWebVitals from 'eslint-config-next/core-web-vitals'
+import nextTypescript from 'eslint-config-next/typescript'
 
-const compat = new FlatCompat({
-  baseDirectory: dirname(fileURLToPath(import.meta.url)),
-})
-
-export default [
-  ...compat.extends('next/core-web-vitals', 'next/typescript'),
+const eslintConfig = [
+  ...nextCoreWebVitals,
+  ...nextTypescript,
+  {
+    rules: {
+      // Codebase convention: a leading underscore marks an intentionally
+      // unused binding (e.g. destructuring a prop out just to exclude it
+      // from a rest spread). Recognize that instead of warning on it.
+      '@typescript-eslint/no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_' }],
+    },
+  },
 ]
+
+export default eslintConfig

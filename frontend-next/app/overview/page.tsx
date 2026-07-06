@@ -1,414 +1,697 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts'
-import { AlertCircle, Activity, Cpu, Gauge, Zap } from 'lucide-react'
-import { fetchOverview, formatTime } from '@/lib/api'
-import { SkeletonMetricCard, SkeletonChart, SkeletonCard } from '@/components/skeleton'
-import { createClient, SupabaseClient } from '@supabase/supabase-js'
+import { PageHeader } from '@/components/page-header'
+import { useSwarmTraces } from '@/lib/use-swarm-traces'
+import { StatBar } from '@/components/swarm/StatBar'
+import { CallTree } from '@/components/swarm/CallTree'
+import { TokenChart } from '@/components/swarm/TokenChart'
+import { DetailDrawer } from '@/components/swarm/DetailDrawer'
+import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import LiveActivity from '@/components/LiveActivity'
+import type { Trace } from '@/lib/trace-types'
+import { filterTracesByRange } from '@/lib/trace-utils'
+import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
+import { fetchOverview } from '@/lib/api'
+import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import {
+  Activity, ChevronDown, ChevronUp, Info, Coins, TrendingDown,
+  Download, FileJson, FileText, TrendingUp, GitCompare, CheckCircle, AlertCircle,
+} from 'lucide-react'
+import { useIntegrations } from '@/contexts/IntegrationsContext'
 
-const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL  || ''
-const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-const REALTIME_CONFIGURED = Boolean(supabaseUrl && supabaseAnon)
-
-// ─── Fallback data ─────────────────────────────────────────────────────────
-const FALLBACK_ACTIVITY = [
-  { time: '00:00', requests: 2000 },
-  { time: '06:00', requests: 3000 },
-  { time: '12:00', requests: 5500 },
-  { time: '18:00', requests: 4000 },
-  { time: '24:00', requests: 4500 },
-]
-const FALLBACK_TOP_AGENTS = [
-  { id: 'agt-0', name: 'GatewayRouter',       score: 99.7, status: 'ACTIVE' },
-  { id: 'agt-1', name: 'VectorIndexer_Prod',  score: 99.1, status: 'ACTIVE' },
-  { id: 'agt-2', name: 'DataExtractor_v2',    score: 98.5, status: 'ACTIVE' },
-]
-const FALLBACK_EVENTS = [
-  { timestamp: new Date().toISOString(), type: 'INFO', message: 'GatewayRouter completed successfully in 0.4s' },
-  { timestamp: new Date().toISOString(), type: 'INFO', message: 'VectorIndexer_Prod completed successfully in 1.2s' },
-  { timestamp: new Date().toISOString(), type: 'WARN', message: 'Error in LangRouter_EU: Timeout exceeded' },
-]
-const FALLBACK_DATA = {
-  system_health: 99.9, active_agents: 6,
-  total_throughput: 1250000, avg_latency_ms: 420,
-  activity: FALLBACK_ACTIVITY, top_agents: FALLBACK_TOP_AGENTS, events: FALLBACK_EVENTS,
+const chartTooltip = {
+  contentStyle: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
+  labelStyle: { color: 'var(--foreground)', fontWeight: 600 },
+  itemStyle: { color: 'var(--foreground)' },
+  cursor: { stroke: 'var(--border)', strokeWidth: 1, strokeDasharray: '4 4' },
 }
 
-function formatNumber(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
-  if (n >= 1_000)     return `${(n / 1_000).toFixed(1)}K`
-  return `${n}`
-}
+type OverviewEvent = { timestamp: string; type: string; message: string }
 
-// ─── Animated stat value — counts up when value changes ────────────────────
-function AnimatedNumber({
-  value, format = (v: number) => `${v}`, pulse = false
-}: {
-  value: number; format?: (v: number) => string; pulse?: boolean
-}) {
-  const [display, setDisplay]   = useState(value)
-  const [flashing, setFlashing] = useState(false)
-  const prevRef = useRef(value)
-  const frameRef = useRef<number | null>(null)
-
-  useEffect(() => {
-    if (value === prevRef.current) return
-    const from  = prevRef.current
-    const to    = value
-    const diff  = to - from
-    prevRef.current = to
-
-    // Flash the card
-    setFlashing(true)
-    setTimeout(() => setFlashing(false), 800)
-
-    // Animate count
-    const start    = performance.now()
-    const duration = Math.min(600, Math.abs(diff) * 2)
-
-    const tick = (now: number) => {
-      const t   = Math.min((now - start) / duration, 1)
-      const ease = 1 - Math.pow(1 - t, 3) // ease-out cubic
-      setDisplay(Math.round(from + diff * ease))
-      if (t < 1) frameRef.current = requestAnimationFrame(tick)
-    }
-    if (frameRef.current) cancelAnimationFrame(frameRef.current)
-    frameRef.current = requestAnimationFrame(tick)
-    return () => { if (frameRef.current) cancelAnimationFrame(frameRef.current) }
-  }, [value])
+function EventRow({ type, message }: { type: string; message: string }) {
+  const [expanded, setExpanded] = useState(false)
+  const isDense = message.length > 64
+  const isAlert = type === 'ERROR' || type === 'WARN'
 
   return (
-    <span
-      className="transition-colors duration-300"
-      style={{ color: flashing && pulse ? 'var(--color-primary)' : undefined }}
+    <button
+      onClick={() => isDense && setExpanded((v) => !v)}
+      className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 ${isDense ? 'cursor-pointer' : 'cursor-default'}`}
     >
-      {format(display)}
-    </span>
-  )
-}
-
-// ─── Live dot — shows when Realtime is connected ────────────────────────────
-function LiveDot({ active }: { active: boolean }) {
-  return (
-    <span className="relative flex h-2 w-2">
-      {active && (
-        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75" />
-      )}
-      <span className={`relative inline-flex rounded-full h-2 w-2 ${active ? 'bg-green-500' : 'bg-outline-variant'}`} />
-    </span>
-  )
-}
-
-// ─── Stat card ───────────────────────────────────────────────────────────────
-function StatCard({
-  icon: Icon, label, value, format, unit, pulse = false
-}: {
-  icon: React.ElementType; label: string; value: number
-  format?: (v: number) => string; unit?: string; pulse?: boolean
-}) {
-  const [popped, setPopped] = useState(false)
-  const prevRef = useRef(value)
-
-  useEffect(() => {
-    if (value !== prevRef.current) {
-      prevRef.current = value
-      setPopped(true)
-      setTimeout(() => setPopped(false), 400)
-    }
-  }, [value])
-
-  return (
-    <div
-      className={`
-        relative bg-surface-container border rounded-2xl p-6 overflow-hidden
-        transition-all duration-300
-        ${popped ? 'border-primary/60 shadow-sm shadow-primary/20' : 'border-outline'}
-      `}
-    >
-      {/* Pulse ring on new data */}
-      {popped && (
-        <span className="absolute inset-0 rounded-2xl border-2 border-primary/40 animate-ping pointer-events-none" />
-      )}
-
-      <div className="flex items-center gap-2 text-on-surface-variant text-sm mb-4">
-        <Icon className={`w-4 h-4 transition-colors duration-300 ${popped ? 'text-primary' : ''}`} />
-        <span>{label}</span>
-      </div>
-
-      <p className={`text-3xl font-bold transition-all duration-300 ${popped ? 'scale-105' : 'scale-100'} inline-block`}>
-        <AnimatedNumber value={value} format={format} pulse={pulse} />
-        {unit && <span className="text-sm font-normal text-on-surface-variant ml-1">{unit}</span>}
-      </p>
-    </div>
-  )
-}
-
-// ─── Live event ticker row ───────────────────────────────────────────────────
-function EventRow({ event, isNew }: { event: any; isNew: boolean }) {
-  const [visible, setVisible] = useState(!isNew)
-
-  useEffect(() => {
-    if (isNew) {
-      // Slide in
-      const t = setTimeout(() => setVisible(true), 30)
-      return () => clearTimeout(t)
-    }
-  }, [isNew])
-
-  return (
-    <div
-      className={`
-        px-6 py-3 flex items-center gap-4
-        transition-all duration-500
-        ${visible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2'}
-        ${isNew ? 'bg-primary/5' : ''}
-      `}
-    >
-      <span className={`text-xs font-semibold px-2 py-1 rounded-full shrink-0 ${
-        event.type === 'WARN'  ? 'bg-yellow-500/20 text-yellow-500' :
-        event.type === 'ERROR' ? 'bg-red-500/20 text-red-500' :
-                                  'bg-green-500/20 text-green-500'
-      }`}>
-        {event.type}
+      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase mt-0.5 ${isAlert ? 'bg-red-50 text-destructive border-red-200' : 'bg-muted text-muted-foreground border-border'}`}>
+        {type}
       </span>
-      <span className="text-sm text-on-surface-variant flex-1 truncate">{event.message}</span>
-      <span className="text-xs text-on-surface-variant shrink-0">{formatTime(event.timestamp)}</span>
+      <p className={`text-xs text-foreground leading-relaxed min-w-0 flex-1 font-mono ${expanded ? 'whitespace-pre-wrap break-all' : 'truncate'}`}>
+        {message}
+      </p>
+      {isDense && (
+        <ChevronDown className={`w-3.5 h-3.5 shrink-0 mt-0.5 text-muted-foreground transition-transform ${expanded ? 'rotate-180' : ''}`} />
+      )}
+    </button>
+  )
+}
+
+/** Small agent selector shown above LiveActivity when >1 agent is active */
+function AgentPicker({ agents, selected, onSelect }: {
+  agents: { id: string; name: string }[]
+  selected: string
+  onSelect: (id: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const current = agents.find((a) => a.id === selected)
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen((v) => !v)}
+        className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+      >
+        <span className="max-w-[120px] truncate">{current?.name ?? selected}</span>
+        {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full mt-1 z-20 w-48 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+          {agents.map((a) => (
+            <button
+              key={a.id}
+              onClick={() => { onSelect(a.id); setOpen(false) }}
+              className={`w-full px-3 py-2 text-left text-xs transition-colors hover:bg-muted/60
+                ${a.id === selected ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
+            >
+              {a.name}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   )
 }
 
-// ─── Main page ───────────────────────────────────────────────────────────────
-export default function OverviewPage() {
-  const [data,    setData]    = useState<typeof FALLBACK_DATA | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [error,   setError]   = useState(false)
-  const [liveEvents, setLiveEvents] = useState<any[]>([])
-  const [newEventIds, setNewEventIds] = useState<Set<string>>(new Set())
-  const [realtimeOk,  setRealtimeOk]  = useState(false)
-  // stats that update from realtime
-  const [liveStats, setLiveStats] = useState({
-    active_agents: 0, total_throughput: 0, avg_latency_ms: 0, trace_count: 0
-  })
-  const supaRef = useRef<SupabaseClient<any> | null>(null)
+// ── Export helpers ─────────────────────────────────────────────────────────────
 
-  // ── Initial load ───────────────────────────────────────────────────────────
-  useEffect(() => {
-    let mounted = true
-    fetchOverview()
-      .then(result => {
-        if (!mounted) return
-        const d = result || FALLBACK_DATA
-        setData(d)
-        setError(!result)
-        setLoading(false)
-        setLiveStats({
-          active_agents:    d.active_agents    ?? 0,
-          total_throughput: d.total_throughput ?? 0,
-          avg_latency_ms:   d.avg_latency_ms   ?? 0,
-          trace_count:      0,
-        })
-        setLiveEvents((d.events || []).slice(0, 8))
-      })
-      .catch(() => {
-        if (!mounted) return
-        setData(FALLBACK_DATA)
-        setError(true)
-        setLoading(false)
-        setLiveEvents(FALLBACK_EVENTS.slice(0, 8))
-      })
-    return () => { mounted = false }
-  }, [])
+function exportJSON(traces: Trace[]) {
+  // Guard against empty data — without this, the user could download a
+  // file containing just "[]" (no traces). The menu button is also
+  // disabled when there's no data, but this is belt-and-suspenders.
+  if (traces.length === 0) return
+  const blob = new Blob([JSON.stringify(traces, null, 2)], { type: 'application/json' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `swarmtrace-export-${new Date().toISOString().slice(0, 10)}.json`
+  a.click()
+  URL.revokeObjectURL(url)
+}
 
-  // ── Supabase Realtime subscription ────────────────────────────────────────
-  useEffect(() => {
-    if (!supabaseUrl || !supabaseAnon) return // env vars not set — gracefully skip
-
-    const sb = createClient(supabaseUrl, supabaseAnon)
-    supaRef.current = sb
-
-    const channel = sb
-      .channel('overview-traces')
-      .on(
-        'postgres_changes',
-        { event: 'INSERT', schema: 'public', table: 'traces' },
-        (payload: any) => {
-          const trace = payload.new
-          const id = trace.id || `rt-${Date.now()}`
-
-          // Build event row from the incoming trace
-          const newEvent = {
-            id,
-            timestamp: trace.timestamp || new Date().toISOString(),
-            type:    trace.error ? 'ERROR' : 'INFO',
-            message: trace.error
-              ? `Error in ${trace.function}: ${trace.error}`
-              : `${trace.function} completed in ${((trace.latency_sec || 0) * 1000).toFixed(0)}ms`,
-          }
-
-          // Prepend to feed, keep last 20
-          setLiveEvents(prev => [newEvent, ...prev].slice(0, 20))
-          setNewEventIds(prev => new Set([...prev, id]))
-          setTimeout(() => {
-            setNewEventIds(prev => { const s = new Set(prev); s.delete(id); return s })
-          }, 3000)
-
-          // Bump live stats
-          setLiveStats(prev => ({
-            active_agents:    prev.active_agents,
-            total_throughput: prev.total_throughput + (trace.input_tokens || 0) + (trace.output_tokens || 0),
-            avg_latency_ms:   prev.trace_count > 0
-              ? Math.round((prev.avg_latency_ms * prev.trace_count + (trace.latency_sec || 0) * 1000) / (prev.trace_count + 1))
-              : Math.round((trace.latency_sec || 0) * 1000),
-            trace_count: prev.trace_count + 1,
-          }))
-        }
-      )
-      .subscribe((status: string) => {
-        setRealtimeOk(status === 'SUBSCRIBED')
-      })
-
-    return () => { sb.removeChannel(channel) }
-  }, [])
-
-  const activity  = data?.activity?.length    ? data.activity   : FALLBACK_ACTIVITY
-  const topAgents = data?.top_agents?.length  ? data.top_agents : FALLBACK_TOP_AGENTS
-
-  const stats = {
-    system_health:    data?.system_health    ?? 99.9,
-    active_agents:    liveStats.active_agents || data?.active_agents    || 0,
-    total_throughput: liveStats.total_throughput || data?.total_throughput || 0,
-    avg_latency_ms:   liveStats.avg_latency_ms   || data?.avg_latency_ms   || 0,
+function exportCSV(traces: Trace[]) {
+  // Guard against empty data — without this, the user could download a
+  // CSV containing only the header row (no data rows).
+  if (traces.length === 0) return
+  const headers = ['id', 'parent_id', 'function', 'kind', 'agent_name', 'timestamp',
+    'latency_sec', 'input_tokens', 'output_tokens', 'cost_usd', 'error']
+  const escape = (v: unknown) => {
+    const s = v == null ? '' : String(v)
+    return s.includes(',') || s.includes('"') || s.includes('\n')
+      ? `"${s.replace(/"/g, '""')}"` : s
   }
+  const rows = [
+    headers.join(','),
+    ...traces.map(t => headers.map(h => escape((t as Record<string, unknown>)[h])).join(',')),
+  ]
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `swarmtrace-export-${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function ExportMenu({ traces }: { traces: Trace[] }) {
+  const [open, setOpen] = useState(false)
+  const hasTraces = traces.length > 0
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        disabled={!hasTraces}
+        title={hasTraces ? 'Export traces' : 'No traces to export yet'}
+        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
+      >
+        <Download className="w-3.5 h-3.5" />
+        Export
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && hasTraces && (
+        <div className="absolute right-0 top-full mt-1 z-30 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+          <button
+            onClick={() => { exportJSON(traces); setOpen(false) }}
+            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
+          >
+            <FileJson className="w-3.5 h-3.5 text-primary" /> Export JSON
+          </button>
+          <button
+            onClick={() => { exportCSV(traces); setOpen(false) }}
+            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
+          >
+            <FileText className="w-3.5 h-3.5 text-primary" /> Export CSV
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Cost Projection Widget ─────────────────────────────────────────────────────
+
+function CostProjectionWidget({ traces }: { traces: Trace[] }) {
+  const { hourly, daily, monthly, windowHours } = useMemo(() => {
+    if (traces.length === 0) return { hourly: 0, daily: 0, monthly: 0, windowHours: 0 }
+    // Derive the time window from the traces themselves (newest - oldest),
+    // NOT from Date.now(). Date.now() is impure — calling it inside useMemo
+    // violates React's purity rules and would produce unstable results.
+    // Using the trace timestamps makes this a pure function of `traces`.
+    const timestamps = traces.map(t => new Date(t.timestamp).getTime())
+    const newest = Math.max(...timestamps)
+    const oldest = Math.min(...timestamps)
+    const windowMs = Math.max(newest - oldest, 60_000) // at least 1 min
+    const windowHours = windowMs / 3_600_000
+    const totalCost = traces.reduce((s, t) => s + (t.cost_usd ?? 0), 0)
+    const hourly = totalCost / windowHours
+    return {
+      hourly,
+      daily: hourly * 24,
+      monthly: hourly * 24 * 30,
+      windowHours,
+    }
+  }, [traces])
+
+  const fmt = (v: number) =>
+    v < 0.01 ? `$${v.toFixed(6)}` : v < 1 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`
 
   return (
-    <DashboardLayout>
-      <div className="p-6 space-y-6">
-
-        {/* Header */}
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Overview</h1>
-            <p className="text-muted-foreground">A real-time snapshot of your swarm.</p>
-          </div>
-          <div className="flex items-center gap-2 text-xs text-on-surface-variant mt-1">
-            <LiveDot active={realtimeOk} />
-            <span>{realtimeOk ? 'Live' : REALTIME_CONFIGURED ? 'Connecting…' : 'Offline'}</span>
-          </div>
-        </div>
-
-        {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4" />
-            <span>API unavailable — showing cached data</span>
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
+        <TrendingUp className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Cost Projection</h3>
+        <span className="ml-auto text-[11px] text-muted-foreground">
+          based on last {windowHours < 1 ? `${Math.round(windowHours * 60)}m` : `${windowHours.toFixed(1)}h`}
+        </span>
+      </div>
+      <div className="p-4">
+        {traces.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No traces yet — run some agent calls to see cost projections.
+          </p>
+        ) : (
+          <div className="grid grid-cols-3 gap-3">
+            {[
+              { label: 'Per Hour', value: fmt(hourly), sub: 'current rate' },
+              { label: 'Per Day', value: fmt(daily), sub: '24h projection' },
+              { label: 'Per Month', value: fmt(monthly), sub: '30d projection' },
+            ].map(({ label, value, sub }) => (
+              <div key={label} className="rounded-lg border border-border bg-muted/20 p-3 text-center">
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                <div className="font-mono text-sm font-bold text-foreground">{value}</div>
+                <div className="text-[10px] text-muted-foreground mt-0.5">{sub}</div>
+              </div>
+            ))}
           </div>
         )}
+      </div>
+    </div>
+  )
+}
 
-        {/* Stat cards */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          {loading ? (
-            Array(4).fill(0).map((_, i) => <SkeletonMetricCard key={i} />)
-          ) : (
-            <>
-              <StatCard
-                icon={Gauge} label="System Health"
-                value={stats.system_health}
-                format={v => `${v.toFixed(1)}%`}
-              />
-              <StatCard
-                icon={Cpu} label="Active Agents"
-                value={stats.active_agents}
-                pulse
-              />
-              <StatCard
-                icon={Zap} label="Total Throughput"
-                value={stats.total_throughput}
-                format={formatNumber}
-                unit="tokens"
-                pulse
-              />
-              <StatCard
-                icon={Activity} label="Avg Latency"
-                value={stats.avg_latency_ms}
-                unit="ms"
-                pulse
-              />
-            </>
-          )}
-        </div>
+// ── Trace Diff / Regression Compare View ──────────────────────────────────────
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          {/* Activity chart */}
-          <div className="lg:col-span-2">
-            {loading ? <SkeletonChart /> : (
-              <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                <h2 className="text-lg font-semibold text-on-surface mb-6">Request Activity</h2>
-                <ResponsiveContainer width="100%" height={280}>
-                  <LineChart data={activity}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--outline)" />
-                    <XAxis dataKey="time" stroke="var(--on-surface-variant)" fontSize={12} />
-                    <YAxis stroke="var(--on-surface-variant)" fontSize={12} />
-                    <Tooltip contentStyle={{
-                      backgroundColor: 'var(--surface-container-low)',
-                      border: '1px solid var(--outline)',
-                      borderRadius: '0.5rem',
-                    }} />
-                    <Line type="monotone" dataKey="requests" stroke="var(--primary)" strokeWidth={2} dot={false} />
-                  </LineChart>
-                </ResponsiveContainer>
-              </div>
-            )}
+function TraceDiffPanel({ traces }: { traces: Trace[] }) {
+  const [fnFilter, setFnFilter] = useState('')
+  const [baseId, setBaseId] = useState('')
+  const [candId, setCandId] = useState('')
+  const [open, setOpen] = useState(false)
+
+  // Unique function names for the filter
+  const fnNames = useMemo(() => {
+    const s = new Set(traces.map(t => t.function))
+    return Array.from(s).sort()
+  }, [traces])
+
+  const candidates = useMemo(() =>
+    traces.filter(t => !fnFilter || t.function === fnFilter),
+    [traces, fnFilter])
+
+  const base = traces.find(t => t.id === baseId)
+  const cand = traces.find(t => t.id === candId)
+
+  const similarity = useMemo(() => {
+    if (!base || !cand) return null
+    const a = (base.output ?? '').toLowerCase()
+    const b = (cand.output ?? '').toLowerCase()
+    if (!a && !b) return 1
+    if (!a || !b) return 0
+    // Jaccard similarity on word sets as a lightweight client-side heuristic
+    const setA = new Set(a.split(/\s+/))
+    const setB = new Set(b.split(/\s+/))
+    const inter = [...setA].filter(w => setB.has(w)).length
+    const union = new Set([...setA, ...setB]).size
+    return union === 0 ? 1 : inter / union
+  }, [base, cand])
+
+  const latDiff = base && cand
+    ? ((cand.latency_sec ?? 0) - (base.latency_sec ?? 0))
+    : null
+
+  const costDiff = base && cand
+    ? ((cand.cost_usd ?? 0) - (base.cost_usd ?? 0))
+    : null
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <button
+        onClick={() => setOpen(v => !v)}
+        className="flex items-center gap-2 w-full border-b border-border bg-muted/30 px-4 py-3 text-left"
+      >
+        <GitCompare className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Trace Diff</h3>
+        <span className="ml-1.5 text-[10px] text-muted-foreground">regression.compare() in UI</span>
+        <ChevronDown className={`w-3.5 h-3.5 ml-auto text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+
+      {open && (
+        <div className="p-4 space-y-4">
+          {/* Function filter */}
+          <div className="flex items-center gap-2">
+            <label className="text-xs text-muted-foreground shrink-0">Function:</label>
+            <select
+              value={fnFilter}
+              onChange={e => { setFnFilter(e.target.value); setBaseId(''); setCandId('') }}
+              className="flex-1 h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+            >
+              <option value="">All functions</option>
+              {fnNames.map(fn => <option key={fn} value={fn}>{fn}</option>)}
+            </select>
           </div>
 
-          {/* Top agents */}
-          {loading ? <SkeletonCard /> : (
-            <div className="bg-surface-container border border-outline rounded-2xl p-6">
-              <h2 className="text-lg font-semibold text-on-surface mb-4">Top Agents</h2>
-              <div className="space-y-4">
-                {topAgents.map((agent: any) => (
-                  <div key={agent.id} className="flex items-center justify-between">
-                    <div>
-                      <p className="text-sm font-medium text-on-surface">{agent.name}</p>
-                      <div className="flex items-center gap-1.5 mt-0.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-green-500" />
-                        <span className="text-xs text-green-500">{agent.status}</span>
-                      </div>
-                    </div>
-                    <p className="text-sm font-semibold text-on-surface">{agent.score}</p>
+          {/* Span selectors */}
+          <div className="grid grid-cols-2 gap-3">
+            {([
+              { label: 'Baseline span', value: baseId, set: setBaseId },
+              { label: 'Candidate span', value: candId, set: setCandId },
+            ] as const).map(({ label, value, set }) => (
+              <div key={label}>
+                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                <select
+                  value={value}
+                  onChange={e => set(e.target.value)}
+                  className="w-full h-8 rounded-lg border border-border bg-card px-2 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                >
+                  <option value="">— pick a span —</option>
+                  {candidates.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.function} · {t.id.slice(0, 8)} · {new Date(t.timestamp).toLocaleTimeString()}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            ))}
+          </div>
+
+          {/* Diff result */}
+          {base && cand && (
+            <div className="space-y-3">
+              {/* Metrics comparison */}
+              <div className="grid grid-cols-3 gap-2">
+                {[
+                  {
+                    label: 'Similarity',
+                    value: similarity != null ? `${(similarity * 100).toFixed(0)}%` : '—',
+                    ok: similarity != null && similarity >= 0.6,
+                    icon: similarity != null && similarity >= 0.6 ? CheckCircle : AlertCircle,
+                  },
+                  {
+                    label: 'Latency Δ',
+                    value: latDiff != null ? `${latDiff >= 0 ? '+' : ''}${latDiff.toFixed(3)}s` : '—',
+                    ok: latDiff != null && latDiff <= 0,
+                    icon: latDiff != null && latDiff <= 0 ? CheckCircle : AlertCircle,
+                  },
+                  {
+                    label: 'Cost Δ',
+                    value: costDiff != null ? `${costDiff >= 0 ? '+' : ''}$${Math.abs(costDiff).toFixed(6)}` : '—',
+                    ok: costDiff != null && costDiff <= 0,
+                    icon: costDiff != null && costDiff <= 0 ? CheckCircle : AlertCircle,
+                  },
+                ].map(({ label, value, ok, icon: Icon }) => (
+                  <div key={label} className={`rounded-lg border p-2.5 text-center ${ok ? 'border-emerald-200 bg-emerald-50' : 'border-red-200 bg-red-50'}`}>
+                    <Icon className={`w-3.5 h-3.5 mx-auto mb-1 ${ok ? 'text-emerald-600' : 'text-red-500'}`} />
+                    <div className={`font-mono text-xs font-bold ${ok ? 'text-emerald-700' : 'text-red-600'}`}>{value}</div>
+                    <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
                   </div>
                 ))}
               </div>
-            </div>
-          )}
-        </div>
 
-        {/* Live event feed */}
-        {loading ? <SkeletonCard /> : (
-          <div className="bg-surface-container border border-outline rounded-2xl overflow-hidden">
-            <div className="px-6 py-4 border-b border-outline flex items-center justify-between">
-              <h2 className="text-lg font-semibold text-on-surface">Live Events</h2>
-              <div className="flex items-center gap-2">
-                <LiveDot active={realtimeOk} />
-                <span className="text-xs text-on-surface-variant">
-                  {liveStats.trace_count > 0 ? `+${liveStats.trace_count} this session` : 'Waiting for traces…'}
-                </span>
+              {/* Side-by-side output diff */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: 'Baseline output', content: base.output, err: base.error },
+                  { label: 'Candidate output', content: cand.output, err: cand.error },
+                ].map(({ label, content, err }) => (
+                  <div key={label}>
+                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                    <pre className={`rounded-lg border p-2.5 text-[10px] font-mono leading-relaxed overflow-auto max-h-40 whitespace-pre-wrap break-all
+                      ${err ? 'border-red-200 bg-red-50 text-red-700' : 'border-border bg-muted/20 text-foreground'}`}>
+                      {err ? `ERROR: ${err}` : (content || '(empty)')}
+                    </pre>
+                  </div>
+                ))}
+              </div>
+
+              {/* Regression verdict */}
+              <div className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-semibold
+                ${similarity != null && similarity < 0.6
+                  ? 'border-red-200 bg-red-50 text-red-700'
+                  : 'border-emerald-200 bg-emerald-50 text-emerald-700'}`}>
+                {similarity != null && similarity < 0.6
+                  ? <><AlertCircle className="w-3.5 h-3.5" /> Regression detected — similarity below 60% threshold</>
+                  : <><CheckCircle className="w-3.5 h-3.5" /> No regression — outputs are sufficiently similar</>}
               </div>
             </div>
-            <div className="divide-y divide-outline">
-              {liveEvents.slice(0, 10).map((event: any) => (
-                <EventRow key={event.id ?? event.timestamp} event={event} isNew={newEventIds.has(event.id)} />
-              ))}
-              {liveEvents.length === 0 && (
-                <div className="px-6 py-8 text-center text-sm text-on-surface-variant">
-                  No events yet — deploy your agent with <code className="font-mono text-xs bg-surface-container-high px-1.5 py-0.5 rounded">@observe</code> to see live data here
+          )}
+
+          {!base && !cand && (
+            <p className="text-xs text-muted-foreground text-center py-2">
+              Select a baseline and candidate span above to compare outputs, latency, and cost.
+            </p>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ── Integration Panels ────────────────────────────────────────────────────────
+
+function TokenBudgetPanel({ traces }: { traces: Trace[] }) {
+  const agentTokens = useMemo(() => {
+    const map = new Map<string, { id: string; name: string; input: number; output: number; calls: number }>()
+    for (const t of traces) {
+      const key = t.agent_id || t.agent_name || ''
+      if (!key) continue
+      const e = map.get(key) || { id: key, name: t.agent_name || key, input: 0, output: 0, calls: 0 }
+      e.input += t.input_tokens ?? 0; e.output += t.output_tokens ?? 0; e.calls++
+      map.set(key, e)
+    }
+    return Array.from(map.values()).sort((a, b) => (b.input + b.output) - (a.input + a.output))
+  }, [traces])
+
+  const maxTotal = Math.max(1, agentTokens[0] ? agentTokens[0].input + agentTokens[0].output : 0)
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
+        <Coins className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Token Budget Monitor</h3>
+        <span className="ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />ACTIVE
+        </span>
+        <span className="ml-auto text-[11px] text-muted-foreground">per agent · all time</span>
+      </div>
+      <div className="p-4">
+        {agentTokens.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-4">
+            No agent token data yet — tag your agents with <code className="font-mono text-xs bg-muted px-1 rounded">agent_name</code> in the SDK.
+          </p>
+        ) : (
+          <div className="space-y-3">
+            {agentTokens.slice(0, 5).map(a => {
+              const total = a.input + a.output
+              const pct = Math.round((total / maxTotal) * 100)
+              return (
+                <div key={a.id}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-medium text-foreground truncate max-w-[60%]">{a.name}</span>
+                    <span className="text-xs text-muted-foreground">{total.toLocaleString()} tokens</span>
+                  </div>
+                  <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
+                  </div>
+                  <div className="flex gap-3 mt-0.5">
+                    <span className="text-[10px] text-muted-foreground">↑ {a.input.toLocaleString()} in</span>
+                    <span className="text-[10px] text-muted-foreground">↓ {a.output.toLocaleString()} out</span>
+                    <span className="text-[10px] text-muted-foreground">{a.calls} calls</span>
+                  </div>
                 </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function RegressionPanel({ traces }: { traces: Trace[] }) {
+  // Group by function and flag high-variance latency as potential regressions
+  const riskFns = useMemo(() => {
+    const map = new Map<string, number[]>()
+    for (const t of traces) {
+      if (t.latency_sec == null) continue
+      const arr = map.get(t.function) || []
+      arr.push(t.latency_sec)
+      map.set(t.function, arr)
+    }
+    return Array.from(map.entries())
+      .filter(([, lats]) => lats.length >= 3)
+      .map(([fn, lats]) => {
+        const avg = lats.reduce((a, b) => a + b, 0) / lats.length
+        const variance = lats.reduce((a, b) => a + (b - avg) ** 2, 0) / lats.length
+        const cv = avg > 0 ? Math.sqrt(variance) / avg : 0
+        return { fn, cv, avg, calls: lats.length }
+      })
+      .filter(r => r.cv > 0.4)
+      .sort((a, b) => b.cv - a.cv)
+      .slice(0, 3)
+  }, [traces])
+
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
+        <TrendingDown className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Regression Monitor</h3>
+        <span className={`ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${riskFns.length > 0 ? 'bg-yellow-500/10 text-yellow-600 border-yellow-500/20' : 'bg-green-500/10 text-green-600 border-green-500/20'}`}>
+          <span className={`w-1.5 h-1.5 rounded-full ${riskFns.length > 0 ? 'bg-yellow-500' : 'bg-green-500'}`} />
+          {riskFns.length > 0 ? `${riskFns.length} AT RISK` : 'ALL CLEAR'}
+        </span>
+      </div>
+      <div className="p-4">
+        {riskFns.length === 0 ? (
+          <p className="text-sm text-muted-foreground text-center py-3">
+            {traces.length === 0
+              ? 'No traces yet — run some agent calls to start monitoring latency.'
+              : `No regressions detected across ${traces.length} trace${traces.length !== 1 ? 's' : ''}.`}
+          </p>
+        ) : (
+          <div className="space-y-2">
+            {riskFns.map(r => (
+              <div key={r.fn} className="flex items-center justify-between p-2.5 bg-yellow-500/5 border border-yellow-500/20 rounded-lg">
+                <div className="min-w-0">
+                  <p className="text-xs font-mono font-medium text-foreground truncate">{r.fn}</p>
+                  <p className="text-[10px] text-muted-foreground mt-0.5">{r.calls} calls · avg {r.avg.toFixed(2)}s</p>
+                </div>
+                <span className="text-xs font-semibold text-yellow-600 ml-3 shrink-0">CV {(r.cv * 100).toFixed(0)}%</span>
+              </div>
+            ))}
+            <p className="text-[10px] text-muted-foreground pt-1">High coefficient of variation (CV &gt; 40%) signals unstable latency.</p>
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+export default function OverviewPage() {
+  const { traces, loading, isLive } = useSwarmTraces(10000)
+  const { isEnabled } = useIntegrations()
+  const { range, setRange } = useTimeRange()
+  const [selected, setSelected] = useState<Trace | null>(null)
+  const [activity, setActivity] = useState<{ time: string; requests: number }[]>([])
+  const [events, setEvents] = useState<OverviewEvent[]>([])
+
+  // Single source of truth for the time-windowed view: filter the polled
+  // traces once by the selected range, then hand the filtered array to every
+  // downstream widget. Defaults to "Today" so the dashboard no longer shows
+  // all-time data on load. Recomputes only when `traces` or `range` change.
+  const filteredTraces = useMemo(
+    () => filterTracesByRange(traces, range),
+    [traces, range],
+  )
+
+  useEffect(() => {
+    let mounted = true
+    const load = () => {
+      fetchOverview().then((d) => {
+        if (!mounted || !d) return
+        if (d.activity?.length) setActivity(d.activity)
+        if (d.events?.length) setEvents(d.events)
+      })
+    }
+    load()
+    const id = setInterval(load, 30_000)
+    return () => { mounted = false; clearInterval(id) }
+  }, [])
+
+  // Derive unique agents from traces that have agent_id
+  const activeAgents = useMemo(() => {
+    const seen = new Map<string, string>()
+    traces.forEach((t) => {
+      if (t.agent_id && !seen.has(t.agent_id)) {
+        seen.set(t.agent_id, t.agent_name ?? t.agent_id)
+      }
+    })
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
+  }, [traces])
+
+  const [pickedAgent, setPickedAgent] = useState<string>('')
+
+  // Derive the effective agent WITHOUT a set-state-in-effect. If the user
+  // has picked one and it's still active, use it; otherwise default to the
+  // most recently active agent. This replaces the old useEffect that called
+  // setPickedAgent synchronously (cascading-render lint violation).
+  const effectiveAgent =
+    pickedAgent && activeAgents.find((a) => a.id === pickedAgent)
+      ? pickedAgent
+      : activeAgents[0]?.id ?? ''
+
+  const hasRealtime = activeAgents.length > 0 && !!effectiveAgent
+
+  if (loading) return (
+    <DashboardLayout>
+      <SwarmLoadingScreen message="Connecting to swarm…" />
+    </DashboardLayout>
+  )
+
+  const errorCount = filteredTraces.filter((t) => t.error).length
+
+  return (
+    <DashboardLayout>
+      <PageHeader
+        title="Overview"
+        description="Live swarm health and execution summary"
+        liveStatus={isLive ? 'live' : 'paused'}
+        actions={
+          <div className="flex items-center gap-3">
+            <TimeRangeDropdown value={range} onChange={setRange} />
+            <span className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{filteredTraces.length - errorCount} ok</span>
+              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{errorCount} errors</span>
+            </span>
+            <ExportMenu traces={filteredTraces} />
+          </div>
+        }
+      />
+
+      <div className="p-6 space-y-6">
+        <StatBar traces={filteredTraces} />
+
+        <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
+          {/* Activity chart — 2/3 width */}
+          <div className="xl:col-span-2 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
+              <div className="flex items-center gap-2">
+                <Activity className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold text-foreground">Request Activity</h3>
+              </div>
+              <span className="text-[11px] text-muted-foreground">last 24h · hourly</span>
+            </div>
+            <div className="p-4 h-44">
+              {activity.length === 0 ? (
+                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No activity yet</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <AreaChart data={activity} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                    <defs>
+                      <linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.18} />
+                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
+                    <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} interval={3} />
+                    <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
+                    <Tooltip {...chartTooltip} />
+                    <Area type="monotone" dataKey="requests" stroke="var(--primary)" strokeWidth={2} fill="url(#colorReq)" dot={false} activeDot={{ r: 4, fill: 'var(--primary)', stroke: 'var(--card)', strokeWidth: 2 }} />
+                  </AreaChart>
+                </ResponsiveContainer>
               )}
             </div>
           </div>
+
+          {/* Live Activity — 1/3 width. Shows FOV realtime events if agent_id is available,
+              falls back to the polled event feed for older SDK traces. */}
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col">
+            <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3 shrink-0">
+              <div className="flex items-center gap-2">
+                <Info className="w-4 h-4 text-muted-foreground" />
+                <h3 className="text-sm font-semibold text-foreground">
+                  {hasRealtime ? 'Live Activity' : 'Live Events'}
+                </h3>
+              </div>
+              {hasRealtime && activeAgents.length > 1 ? (
+                <AgentPicker agents={activeAgents} selected={effectiveAgent} onSelect={setPickedAgent} />
+              ) : (
+                <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 swarm-pulse" />LIVE
+                </span>
+              )}
+            </div>
+
+            {hasRealtime ? (
+              <div className="flex-1 overflow-hidden min-h-0">
+                <LiveActivity
+                  agentId={effectiveAgent}
+                  agentName={activeAgents.find((a) => a.id === effectiveAgent)?.name}
+                />
+              </div>
+            ) : (
+              <div className="divide-y divide-border/50 overflow-y-auto max-h-60">
+                {(events.length ? events : filteredTraces.slice(0, 6).map((t) => ({
+                  timestamp: t.timestamp,
+                  type: t.error ? 'ERROR' : 'INFO',
+                  message: t.error ? `${t.function}: ${t.error}` : `${t.function} completed in ${(t.latency_sec ?? 0).toFixed(2)}s`,
+                }))).slice(0, 8).map((e, i) => (
+                  <EventRow key={`${e.timestamp}-${i}`} type={e.type} message={e.message} />
+                ))}
+                {events.length === 0 && filteredTraces.length === 0 && (
+                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">No events yet</div>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* Cost Projection Widget — always visible */}
+        <CostProjectionWidget traces={filteredTraces} />
+
+        {/* Trace Diff / Regression Compare */}
+        <TraceDiffPanel traces={filteredTraces} />
+
+        {/* Integration Panels — only rendered when integrations are enabled */}
+        {(isEnabled('token-budget') || isEnabled('regression-detector')) && (
+          <div className={`grid grid-cols-1 gap-6 ${isEnabled('token-budget') && isEnabled('regression-detector') ? 'xl:grid-cols-2' : ''}`}>
+            {isEnabled('token-budget')        && <TokenBudgetPanel traces={filteredTraces} />}
+            {isEnabled('regression-detector') && <RegressionPanel  traces={filteredTraces} />}
+          </div>
         )}
 
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <CallTree traces={filteredTraces} onSelect={setSelected} />
+          <TokenChart traces={filteredTraces} />
+        </div>
       </div>
+
+      <DetailDrawer trace={selected} allTraces={filteredTraces} onClose={() => setSelected(null)} onJump={setSelected} />
     </DashboardLayout>
   )
 }

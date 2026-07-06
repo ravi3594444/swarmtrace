@@ -5,12 +5,16 @@ import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import { ClerkProvider } from "@clerk/nextjs"
 import { ThemeProvider } from "@/components/theme-provider"
+import { IntegrationsProvider } from "@/contexts/IntegrationsContext"
 import "./globals.css"
 
 
 export const metadata: Metadata = {
   title: "SwarmTrace - AI Agent Monitoring",
   description: "Real-time observability platform for LLM swarms and AI agents",
+  verification: {
+    google: "FKuXzQR0mShmnAc_vV98diBhBW7OlVRes_lnm2HbbgM",
+  },
   icons: {
     icon: [
       { url: "/favicon.ico" },
@@ -65,9 +69,11 @@ export default function RootLayout({
             defaultTheme="light"
             storageKey="swarmtrace-theme"
           >
-            {children}
+            <IntegrationsProvider>
+              {children}
+              <Analytics />
+            </IntegrationsProvider>
           </ThemeProvider>
-          <Analytics />
         </body>
       </html>
     </ClerkProvider>

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swarmtrace"
-version = "0.2.1"
+version = "0.4.9"
 description = "pytest for AI agents — trace, debug and catch regressions in LLM swarms"
 readme = "README.md"
 authors = [{ name = "Ravi" }]
@@ -21,18 +21,20 @@ regression = ["litai"]
 scraper    = ["scrapling"]
 tools      = ["sentence-transformers", "faiss-cpu", "numpy"]
 budget     = ["tiktoken"]
-all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken"]
+fov        = ["playwright", "watchdog"]
+all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken", "playwright", "watchdog"]
 
 [project.scripts]
-swarmtrace = "tracely.cli:view"
-swarmtrace-export = "tracely.export:main"
-swarmtrace-replay = "tracely.cli:main_replay"
+swarmtrace = "swarmtrace.cli:view"
+swarmtrace-export = "swarmtrace.export:main"
+swarmtrace-replay = "swarmtrace.cli:main_replay"
+swarmtrace-alerts = "swarmtrace.cli:main_alerts"
 
 [tool.setuptools]
-packages = ["tracely"]
+packages = ["swarmtrace"]
 
 [tool.setuptools.package-data]
-tracely = ["py.typed"]
+swarmtrace = ["py.typed"]
 
 [tool.ruff]
 line-length = 100

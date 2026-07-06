@@ -13,9 +13,10 @@ export async function fetchOverview() {
   }
 }
 
-export async function fetchAgents() {
+export async function fetchAgents(since?: number | null) {
   try {
-    const res = await fetch('/api/agents')
+    const url = since != null ? `/api/agents?since=${since}` : '/api/agents'
+    const res = await fetch(url)
     return res.ok ? res.json() : null
   } catch {
     return null
@@ -76,15 +77,6 @@ export async function revokeApiKey(id: string) {
 export async function fetchBillingInfo() {
   try {
     const res = await fetch('/api/settings/billing')
-    return res.ok ? res.json() : null
-  } catch {
-    return null
-  }
-}
-
-export async function fetchIntegrations() {
-  try {
-    const res = await fetch('/api/settings/integrations')
     return res.ok ? res.json() : null
   } catch {
     return null

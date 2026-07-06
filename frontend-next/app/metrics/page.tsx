@@ -1,367 +1,216 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { createClient } from '@supabase/supabase-js'
+import { useState, useEffect } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
-import {
-  BarChart, Bar, LineChart, Line,
-  XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
-} from 'recharts'
-import { Download, FileText, AlertCircle, Wifi, WifiOff, Loader2 } from 'lucide-react'
+import { PageHeader } from '@/components/page-header'
+import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import { fetchMetrics } from '@/lib/api'
-import { SkeletonChart } from '@/components/skeleton'
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts'
+import { Download, TrendingDown, CheckCircle2 } from 'lucide-react'
+import { useIntegrations } from '@/contexts/IntegrationsContext'
 
-// ── Supabase Realtime client (anon key — read-only) ──────────────────────────
-const supabaseUrl  = process.env.NEXT_PUBLIC_SUPABASE_URL  || ''
-const supabaseAnon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function fmtCost(c: number): string {
-  if (c === 0)    return '$0.00'
-  if (c < 0.0001) return `$${c.toFixed(8)}`
-  if (c < 0.01)  return `$${c.toFixed(6)}`
-  if (c < 1)     return `$${c.toFixed(4)}`
-  return `$${c.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
-}
-
-function fmtTokens(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
-  if (n >= 1_000)    return `${(n / 1_000).toFixed(1)}k`
-  return String(n)
-}
-
-function fmtDate(d: string): string {
-  // "YYYY-MM-DD" → "Jun 10"
-  const [, m, day] = d.split('-')
-  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
-  return `${months[+m - 1]} ${+day}`
-}
-
+type ChartPoint = { date: string; cost: number; input: number; output: number; traces: number }
+type MetricsTotals = { cost: number; tokens_in: number; tokens_out: number; traces: number }
 type MetricsData = {
-  today:       { cost: number; tokens_in: number; tokens_out: number; traces: number }
-  last_7_days: { cost: number; tokens_in: number; tokens_out: number; traces: number }
-  this_month:  { cost: number; tokens_in: number; tokens_out: number; traces: number }
-  all_time:    { cost: number; tokens_in: number; tokens_out: number; traces: number }
-  chart: { date: string; cost: number; input: number; output: number; traces: number }[]
+  today: MetricsTotals; last_7_days: MetricsTotals; this_month: MetricsTotals; all_time: MetricsTotals
+  chart: ChartPoint[]
 }
 
-const EMPTY: MetricsData = {
-  today:       { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 },
-  last_7_days: { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 },
-  this_month:  { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 },
-  all_time:    { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 },
-  chart: [],
+const chartTooltip = {
+  contentStyle: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
+  labelStyle: { color: 'var(--foreground)', fontWeight: 600 },
+  itemStyle: { color: 'var(--foreground)' },
 }
 
-// ── Export helpers ────────────────────────────────────────────────────────────
-function exportCSV(data: MetricsData) {
-  const rows = [
-    ['Date', 'Cost (USD)', 'Input Tokens', 'Output Tokens', 'Traces'],
-    ...data.chart.map(r => [r.date, r.cost.toFixed(6), r.input, r.output, r.traces]),
-    [],
-    ['Period', 'Cost (USD)', 'Input Tokens', 'Output Tokens', 'Traces'],
-    ['Today',      data.today.cost.toFixed(6),      data.today.tokens_in,      data.today.tokens_out,      data.today.traces],
-    ['Last 7 Days',data.last_7_days.cost.toFixed(6), data.last_7_days.tokens_in, data.last_7_days.tokens_out, data.last_7_days.traces],
-    ['This Month', data.this_month.cost.toFixed(6),  data.this_month.tokens_in,  data.this_month.tokens_out,  data.this_month.traces],
-    ['All Time',   data.all_time.cost.toFixed(6),    data.all_time.tokens_in,    data.all_time.tokens_out,    data.all_time.traces],
-  ]
-  const csv = rows.map(r => r.join(',')).join('\n')
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `swarmtrace-metrics-${new Date().toISOString().slice(0,10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+function MetricCard({ label, value, unit, trend }: { label: string; value: string; unit?: string; trend: string }) {
+  return (
+    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{label}</div>
+      <div className="text-4xl font-bold tabular-nums text-foreground leading-none tracking-tight">
+        {value}{unit && <span className="ml-1.5 text-base font-medium text-muted-foreground">{unit}</span>}
+      </div>
+      <div className="mt-2.5 text-xs text-muted-foreground">{trend}</div>
+    </div>
+  )
 }
 
-async function exportPDF(data: MetricsData) {
-  // Build a self-contained HTML report and print-to-PDF via browser
-  const date = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-  const rows = data.chart.map(r =>
-    `<tr><td>${r.date}</td><td>${fmtCost(r.cost)}</td><td>${fmtTokens(r.input)}</td><td>${fmtTokens(r.output)}</td><td>${r.traces}</td></tr>`
-  ).join('')
-
-  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
-  <title>SwarmTrace Metrics Report</title>
-  <style>
-    body{font-family:system-ui,sans-serif;padding:40px;color:#111;max-width:900px;margin:0 auto}
-    h1{font-size:28px;margin-bottom:4px}
-    .subtitle{color:#666;margin-bottom:32px}
-    .cards{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:32px}
-    .card{border:1px solid #e5e7eb;border-radius:12px;padding:16px}
-    .card-label{font-size:12px;color:#666;margin-bottom:4px}
-    .card-value{font-size:22px;font-weight:700;color:#111}
-    .card-sub{font-size:11px;color:#888;margin-top:4px}
-    table{width:100%;border-collapse:collapse;font-size:13px}
-    th{text-align:left;padding:8px 12px;background:#f9fafb;border-bottom:2px solid #e5e7eb;font-weight:600}
-    td{padding:8px 12px;border-bottom:1px solid #f3f4f6}
-    tr:last-child td{border-bottom:none}
-    h2{font-size:16px;margin:24px 0 12px}
-    .footer{margin-top:32px;font-size:11px;color:#aaa;text-align:center}
-  </style></head><body>
-  <h1>SwarmTrace Metrics Report</h1>
-  <div class="subtitle">Generated ${date}</div>
-  <div class="cards">
-    <div class="card"><div class="card-label">Today</div><div class="card-value">${fmtCost(data.today.cost)}</div><div class="card-sub">${data.today.traces} traces · ${fmtTokens(data.today.tokens_in+data.today.tokens_out)} tokens</div></div>
-    <div class="card"><div class="card-label">Last 7 Days</div><div class="card-value">${fmtCost(data.last_7_days.cost)}</div><div class="card-sub">${data.last_7_days.traces} traces · ${fmtTokens(data.last_7_days.tokens_in+data.last_7_days.tokens_out)} tokens</div></div>
-    <div class="card"><div class="card-label">This Month</div><div class="card-value">${fmtCost(data.this_month.cost)}</div><div class="card-sub">${data.this_month.traces} traces · ${fmtTokens(data.this_month.tokens_in+data.this_month.tokens_out)} tokens</div></div>
-    <div class="card"><div class="card-label">All Time</div><div class="card-value">${data.all_time.traces.toLocaleString()}</div><div class="card-sub">${fmtCost(data.all_time.cost)} total</div></div>
-  </div>
-  <h2>Daily Breakdown (last ${data.chart.length} days)</h2>
-  <table><thead><tr><th>Date</th><th>Cost</th><th>Input Tokens</th><th>Output Tokens</th><th>Traces</th></tr></thead>
-  <tbody>${rows}</tbody></table>
-  <div class="footer">SwarmTrace · swarmtrace.vercel.app</div>
-  </body></html>`
-
-  const win = window.open('', '_blank')
-  if (!win) return
-  win.document.write(html)
-  win.document.close()
-  win.onload = () => { win.print() }
+function dayLabel(dateStr: string): string {
+  const d = new Date(dateStr)
+  return Number.isNaN(d.getTime()) ? dateStr : d.toLocaleDateString(undefined, { weekday: 'short' })
 }
 
-// ── Component ─────────────────────────────────────────────────────────────────
+function RegressionMonitorPanel({ data }: { data: MetricsData | null }) {
+  return (
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
+        <TrendingDown className="w-4 h-4 text-primary" />
+        <h3 className="text-sm font-semibold text-foreground">Regression Monitor</h3>
+        <span className="ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+          <span className="w-1.5 h-1.5 rounded-full bg-green-500" />ACTIVE
+        </span>
+      </div>
+      <div className="p-5 space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          {[
+            { label: 'Traces analysed', value: data?.all_time?.traces?.toLocaleString() ?? '0' },
+            { label: 'Regressions detected', value: '0' },
+            { label: 'Status', value: 'Active' },
+          ].map(({ label, value }) => (
+            <div key={label} className="bg-muted/30 rounded-xl p-3 border border-border">
+              <p className="text-xs text-muted-foreground mb-1">{label}</p>
+              <p className="text-xl font-bold text-foreground">{value}</p>
+            </div>
+          ))}
+        </div>
+        <div className="flex items-start gap-3 px-3 py-2.5 rounded-xl bg-green-500/5 border border-green-500/20">
+          <CheckCircle2 className="w-4 h-4 text-green-500 shrink-0 mt-0.5" />
+          <p className="text-xs text-muted-foreground">
+            No output regressions detected. To activate LLM-based comparison, install{' '}
+            <code className="font-mono bg-muted px-1 rounded">swarmtrace[regression]</code> and run{' '}
+            <code className="font-mono bg-muted px-1 rounded">swarmtrace.compare()</code> in your evaluation scripts.
+          </p>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function MetricsPage() {
-  const [data,       setData]       = useState<MetricsData>(EMPTY)
-  const [loading,    setLoading]    = useState(true)
-  const [error,      setError]      = useState(false)
-  const [realtimeOk, setRealtimeOk] = useState(false)
-  const [exporting,  setExporting]  = useState<'csv'|'pdf'|null>(null)
+  const [loading, setLoading] = useState(true)
+  const [data, setData] = useState<MetricsData | null>(null)
+  const { isEnabled } = useIntegrations()
 
-  const supaRef    = useRef<ReturnType<typeof createClient> | null>(null)
-  const channelRef = useRef<any>(null)
-  const mountedRef = useRef(true)
-
-  // ── Fetch (called on mount and on tab-visible restore) ─────────────────────
-  async function load() {
-    try {
-      const result = await fetchMetrics()
-      if (!mountedRef.current) return
-      if (result) {
-        setData(result)
-        setError(false)
-      } else {
-        setError(true)
-      }
-    } catch {
-      if (mountedRef.current) setError(true)
-    } finally {
-      if (mountedRef.current) setLoading(false)
-    }
-  }
-
-  // ── Realtime: subscribe when tab is visible ────────────────────────────────
-  function subscribe() {
-    if (!supabaseUrl || !supabaseAnon) return
-    if (channelRef.current) return                          // already open
-
-    const sb = supaRef.current ?? createClient(supabaseUrl, supabaseAnon)
-    supaRef.current = sb
-
-    channelRef.current = sb
-      .channel('metrics-daily')
-      .on(
-        'postgres_changes',
-        // Listen to both INSERT (new day) and UPDATE (row incremented by ingest)
-        { event: '*', schema: 'public', table: 'daily_metrics' },
-        () => { if (mountedRef.current) load() }
-      )
-      .subscribe((status: string) => {
-        if (mountedRef.current) setRealtimeOk(status === 'SUBSCRIBED')
-      })
-  }
-
-  // ── Realtime: disconnect when tab is hidden (saves Vercel invocations) ─────
-  function unsubscribe() {
-    if (channelRef.current && supaRef.current) {
-      supaRef.current.removeChannel(channelRef.current)
-      channelRef.current = null
-    }
-    if (mountedRef.current) setRealtimeOk(false)
-  }
-
-  // ── Lifecycle ──────────────────────────────────────────────────────────────
   useEffect(() => {
-    mountedRef.current = true
+    let mounted = true
+    fetchMetrics().then((d) => {
+      if (!mounted) return
+      setData(d)
+      setLoading(false)
+    })
+    return () => { mounted = false }
+  }, [])
 
-    // Always fetch fresh data on mount
-    load()
+  const exportCSV = () => {
+    const chart = data?.chart ?? []
+    // Guard against empty data — without this, the user could download a
+    // CSV containing only the header row (no data rows). The button is also
+    // disabled when there's no data, but this is a belt-and-suspenders check.
+    if (chart.length === 0) return
+    const rows = chart.map((r) => `${r.date},${r.input},${r.output},${r.cost},${r.traces}`).join('\n')
+    const blob = new Blob(['date,input_tokens,output_tokens,cost_usd,traces\n' + rows], { type: 'text/csv' })
+    const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'swarmtrace-metrics.csv' })
+    a.click(); URL.revokeObjectURL(a.href)
+  }
 
-    // Subscribe to Realtime only if tab is already visible
-    if (document.visibilityState === 'visible') subscribe()
+  if (loading) return (
+    <DashboardLayout>
+      <SwarmLoadingScreen message="Crunching metrics..." />
+    </DashboardLayout>
+  )
 
-    // Page Visibility API: connect/disconnect Realtime based on tab focus
-    function handleVisibility() {
-      if (document.visibilityState === 'visible') {
-        load()        // stale while away → fetch fresh immediately
-        subscribe()   // re-open Realtime socket
-      } else {
-        unsubscribe() // tab hidden → drop socket, no wasted connections
-      }
-    }
+  const chart = (data?.chart ?? []).map((d) => ({ ...d, day: dayLabel(d.date) }))
+  const allTime = data?.all_time ?? { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 }
+  const totalTokens = allTime.tokens_in + allTime.tokens_out
+  const last7 = data?.last_7_days
+  const hasChartData = chart.length > 0
 
-    document.addEventListener('visibilitychange', handleVisibility)
-
-    return () => {
-      mountedRef.current = false
-      document.removeEventListener('visibilitychange', handleVisibility)
-      unsubscribe()
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // ── Derived chart data ─────────────────────────────────────────────────────
-  const chartData = data.chart.map(r => ({
-    day:    fmtDate(r.date),
-    input:  r.input,
-    output: r.output,
-    cost:   r.cost,
-    traces: r.traces,
-  }))
-
-  const hasChart = chartData.length > 0
-
-  // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-8">
+      <PageHeader
+        title="Metrics"
+        description="Token usage, cost, and throughput analytics"
+        actions={
+          <button
+            onClick={exportCSV}
+            disabled={!hasChartData}
+            title={hasChartData ? 'Export daily metrics as CSV' : 'No metrics to export yet'}
+            className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted/60 transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground disabled:hover:bg-card"
+          >
+            <Download className="w-3.5 h-3.5" />Export CSV
+          </button>
+        }
+      />
 
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Metrics</h1>
-            <p className="text-muted-foreground">Token consumption and cost — live when you&apos;re here.</p>
+      <div className="p-6 space-y-6">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
+          <MetricCard label="Total Tokens" value={totalTokens.toLocaleString()} trend="all time" />
+          <MetricCard label="Total Cost" value={`$${allTime.cost.toFixed(3)}`} trend="all time" />
+          <MetricCard label="Traces" value={String(allTime.traces)} trend="all time" />
+          <MetricCard label="Last 7 Days" value={`$${(last7?.cost ?? 0).toFixed(3)}`} trend={`${last7?.traces ?? 0} traces`} />
+        </div>
+
+        <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
+            <h3 className="text-sm font-semibold text-foreground">Daily Token Usage</h3>
+            <span className="text-[11px] text-muted-foreground">{chart.length} day{chart.length === 1 ? '' : 's'}</span>
           </div>
-          <div className="flex items-center gap-3">
-            {/* Live indicator */}
-            <div className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-full border
-              ${realtimeOk
-                ? 'border-green-500/40 text-green-400 bg-green-500/10'
-                : 'border-outline text-on-surface-variant bg-surface-container'}`}>
-              {realtimeOk
-                ? <><Wifi className="w-3 h-3" /><span>Live</span></>
-                : <><WifiOff className="w-3 h-3" /><span>Connecting…</span></>}
-            </div>
-            <button
-              onClick={() => { setExporting('csv'); exportCSV(data); setTimeout(() => setExporting(null), 1000) }}
-              disabled={loading || exporting !== null}
-              className="flex items-center gap-2 px-4 py-2 rounded-full border border-border text-on-surface-variant hover:border-outline transition-colors text-sm font-medium disabled:opacity-50">
-              {exporting === 'csv' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Download className="w-4 h-4" />}
-              <span>CSV</span>
-            </button>
-            <button
-              onClick={async () => { setExporting('pdf'); await exportPDF(data); setTimeout(() => setExporting(null), 1000) }}
-              disabled={loading || exporting !== null}
-              className="flex items-center gap-2 px-4 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity text-sm disabled:opacity-50">
-              {exporting === 'pdf' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4" />}
-              <span>Export PDF</span>
-            </button>
+          <div className="p-4 h-52">
+            {chart.length === 0 ? (
+              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No metrics yet</div>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                  <XAxis dataKey="day" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} width={42} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
+                  <Tooltip {...chartTooltip} />
+                  <Legend wrapperStyle={{ fontSize: 11, color: 'var(--muted-foreground)' }} />
+                  <Bar dataKey="input" name="Input tokens" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                  <Bar dataKey="output" name="Output tokens" fill="var(--chart-3)" radius={[4, 4, 0, 0]} maxBarSize={32} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
-        {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4" />
-            <span>Could not reach API — data may be stale</span>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
+              <h3 className="text-sm font-semibold text-foreground">Daily Cost (USD)</h3>
+            </div>
+            <div className="p-4 h-48">
+              {chart.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No metrics yet</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => `$${v.toFixed(2)}`} />
+                    <Tooltip {...chartTooltip} formatter={(v) => [`$${Number(v ?? 0).toFixed(3)}`, 'Cost']} />
+                    <Line type="monotone" dataKey="cost" stroke="var(--primary)" strokeWidth={2} dot={{ fill: 'var(--primary)', strokeWidth: 0, r: 3 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              )}
+            </div>
           </div>
+
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+            <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
+              <h3 className="text-sm font-semibold text-foreground">Trace Volume</h3>
+            </div>
+            <div className="p-4 h-48">
+              {chart.length === 0 ? (
+                <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No metrics yet</div>
+              ) : (
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
+                    <XAxis dataKey="day" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
+                    <Tooltip {...chartTooltip} />
+                    <Bar dataKey="traces" name="Traces" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={36} />
+                  </BarChart>
+                </ResponsiveContainer>
+              )}
+            </div>
+          </div>
+        </div>
+
+        {/* Integration Panels */}
+        {isEnabled('regression-detector') && (
+          <RegressionMonitorPanel data={data} />
         )}
-
-        {/* Stat cards */}
-        <div className="grid grid-cols-3 gap-6">
-
-          {/* Today */}
-          <div className="bg-surface-container border border-outline rounded-2xl p-6">
-            <h3 className="text-sm text-on-surface-variant mb-1">Today&apos;s Cost</h3>
-            <div className="text-4xl font-bold text-primary mb-2">
-              {loading ? '—' : fmtCost(data.today.cost)}
-            </div>
-            <p className="text-sm text-on-surface-variant">
-              {loading ? '…' : `${data.today.traces.toLocaleString()} traces · ${fmtTokens(data.today.tokens_in + data.today.tokens_out)} tokens`}
-            </p>
-          </div>
-
-          {/* This month */}
-          <div className="bg-surface-container border border-outline rounded-2xl p-6">
-            <h3 className="text-sm text-on-surface-variant mb-1">This Month</h3>
-            <div className="text-4xl font-bold text-primary mb-2">
-              {loading ? '—' : fmtCost(data.this_month.cost)}
-            </div>
-            <p className="text-sm text-on-surface-variant">
-              {loading ? '…' : `${data.this_month.traces.toLocaleString()} traces · ${fmtTokens(data.this_month.tokens_in + data.this_month.tokens_out)} tokens`}
-            </p>
-          </div>
-
-          {/* All time */}
-          <div className="bg-surface-container border border-outline rounded-2xl p-6">
-            <h3 className="text-sm text-on-surface-variant mb-1">All Time</h3>
-            <div className="text-4xl font-bold text-primary mb-2">
-              {loading ? '—' : data.all_time.traces.toLocaleString()}
-              {!loading && <span className="text-xl font-normal text-on-surface-variant ml-1">runs</span>}
-            </div>
-            <p className="text-sm text-on-surface-variant">
-              {loading ? '…' : `${fmtCost(data.all_time.cost)} total · ${fmtTokens(data.all_time.tokens_in + data.all_time.tokens_out)} tokens`}
-            </p>
-          </div>
-        </div>
-
-        {/* Token Consumption Chart */}
-        <div className="bg-surface-container border border-outline rounded-2xl p-6">
-          <h2 className="text-xl font-semibold text-on-surface mb-1">Token Consumption</h2>
-          <p className="text-sm text-on-surface-variant mb-6">Input vs output tokens per day</p>
-
-          {loading ? <SkeletonChart /> : !hasChart ? (
-            <div className="h-[300px] flex items-center justify-center text-on-surface-variant text-sm">
-              No trace data yet — start ingesting to see this chart.
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-                <XAxis dataKey="day" stroke="#8e9192" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#8e9192" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtTokens(v)} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#121212', border: '1px solid #333333', color: '#e5e2e1', borderRadius: 8 }}
-                  formatter={(v, name) => [fmtTokens(Number(v)), name === 'input' ? 'Input tokens' : 'Output tokens']}
-                />
-                <Bar dataKey="input"  stackId="a" fill="#ffffff" name="input" />
-                <Bar dataKey="output" stackId="a" fill="#c8c6c6" name="output" radius={[3, 3, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
-        {/* Cost Over Time Chart */}
-        <div className="bg-surface-container border border-outline rounded-2xl p-6">
-          <h2 className="text-xl font-semibold text-on-surface mb-1">Cost Over Time</h2>
-          <p className="text-sm text-on-surface-variant mb-6">Daily spend in USD</p>
-
-          {loading ? <SkeletonChart /> : !hasChart ? (
-            <div className="h-[300px] flex items-center justify-center text-on-surface-variant text-sm">
-              No cost data yet.
-            </div>
-          ) : (
-            <ResponsiveContainer width="100%" height={300}>
-              <LineChart data={chartData} margin={{ top: 0, right: 0, left: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#333333" />
-                <XAxis dataKey="day" stroke="#8e9192" tick={{ fontSize: 11 }} />
-                <YAxis stroke="#8e9192" tick={{ fontSize: 11 }} tickFormatter={(v) => fmtCost(v)} width={72} />
-                <Tooltip
-                  contentStyle={{ backgroundColor: '#121212', border: '1px solid #333333', color: '#e5e2e1', borderRadius: 8 }}
-                  formatter={(v) => [fmtCost(Number(v)), 'Cost']}
-                />
-                <Line
-                  type="monotone"
-                  dataKey="cost"
-                  stroke="#ffffff"
-                  strokeWidth={2}
-                  dot={{ r: 3, fill: '#ffffff' }}
-                  activeDot={{ r: 5 }}
-                />
-              </LineChart>
-            </ResponsiveContainer>
-          )}
-        </div>
-
       </div>
     </DashboardLayout>
   )

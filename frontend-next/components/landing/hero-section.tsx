@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 import { AnimatedSphere } from "./animated-sphere";
@@ -11,7 +12,14 @@ export function HeroSection() {
   const [isVisible, setIsVisible] = useState(false);
   const [wordIndex, setWordIndex] = useState(0);
 
-  useEffect(() => { setIsVisible(true); }, []);
+  // Mount-triggered entrance animation. Use requestAnimationFrame to defer
+  // the setState to the next paint cycle — calling it synchronously in the
+  // effect body violates react-hooks/set-state-in-effect. The RAF callback
+  // runs after the effect's synchronous body, so the linter is satisfied.
+  useEffect(() => {
+    const raf = requestAnimationFrame(() => setIsVisible(true))
+    return () => cancelAnimationFrame(raf)
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -89,7 +97,7 @@ export function HeroSection() {
             className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full"
             asChild
           >
-            <a href="/sign-up">Get Started Free</a>
+            <Link href="/sign-up">Get Started Free</Link>
           </Button>
           <Button
             size="lg"

@@ -1,221 +1,187 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
-import React from 'react'
+import { useState, useEffect } from 'react'
+import Link from 'next/link'
 import { DashboardLayout } from '@/components/dashboard-layout'
-import { Search, AlertCircle } from 'lucide-react'
-import { fetchAgents } from '@/lib/api'
-import { SkeletonTableRow } from '@/components/skeleton'
+import { PageHeader } from '@/components/page-header'
+import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
+import { fetchSwarmAgents } from '@/lib/swarm-api'
+import type { Agent } from '@/lib/trace-types'
+import { formatRelativeTime } from '@/lib/api'
+import { Activity, Clock, CheckCircle2, XCircle, Pause, RefreshCw, Search } from 'lucide-react'
 
-const FALLBACK_AGENTS = [
-  { id: 'ext-8829', name: 'DataExtractor_v2', status: 'RUNNING', tasks: 12, tokens: '2.4M', lastActive: '2 min ago', uptime: '14d 2h', success_rate: '99.2%', current_task: 'Extracting Q3 earnings...' },
-  { id: 'agt-1024', name: 'CodeAnalyzer_Beta', status: 'RUNNING', tasks: 8, tokens: '1.8M', lastActive: '5 min ago', uptime: '5d 12h', success_rate: '98.5%', current_task: 'Processing daily news feeds' },
-  { id: 'rtr-5021', name: 'LangRouter_EU', status: 'IDLE', tasks: 0, tokens: '850K', lastActive: '1 hour ago', uptime: '30d+', success_rate: '99.9%', current_task: 'Waiting for events' },
-  { id: 'vec-3341', name: 'VectorIndexer_Prod', status: 'RUNNING', tasks: 15, tokens: '3.2M', lastActive: '1 min ago', uptime: '45d 3h', success_rate: '99.1%', current_task: 'Indexing embeddings' },
-  { id: 'cache-2819', name: 'CacheManager_v1', status: 'RUNNING', tasks: 5, tokens: '560K', lastActive: '3 min ago', uptime: '22d 14h', success_rate: '98.8%', current_task: 'Syncing cache' },
-  { id: 'gat-9102', name: 'GatewayRouter', status: 'RUNNING', tasks: 20, tokens: '4.1M', lastActive: 'Just now', uptime: '60d+', success_rate: '99.7%', current_task: 'Routing requests' },
-]
+function StatusBadge({ status }: { status: Agent['status'] }) {
+  if (status === 'RUNNING') return (
+    <span className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 swarm-pulse" />RUNNING
+    </span>
+  )
+  if (status === 'ERROR') return (
+    <span className="flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
+      <XCircle className="w-2.5 h-2.5" />ERROR
+    </span>
+  )
+  return (
+    <span className="flex items-center gap-1.5 rounded-full border border-border bg-muted/60 px-2 py-0.5 text-[10px] font-bold text-muted-foreground">
+      <Pause className="w-2.5 h-2.5" />IDLE
+    </span>
+  )
+}
+
+function AgentCard({ agent }: { agent: Agent }) {
+  const isRunning = agent.status === 'RUNNING'
+  const isError = agent.status === 'ERROR'
+  const lastActive = /^\d{4}-\d{2}-\d{2}T/.test(agent.lastActive) ? formatRelativeTime(agent.lastActive) : agent.lastActive
+
+  return (
+    <div className={`rounded-xl border bg-card shadow-sm overflow-hidden transition-all hover:shadow-md ${
+      isError ? 'border-red-200' : 'border-border'
+    }`}>
+      <div className={`h-1 ${isRunning ? 'bg-primary' : isError ? 'bg-red-400' : 'bg-border'}`} />
+      <div className="p-5">
+        <div className="flex items-start justify-between gap-3 mb-4">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2 mb-1.5">
+              <span className={`w-2 h-2 rounded-full shrink-0 ${isRunning ? 'bg-emerald-500 swarm-pulse' : isError ? 'bg-red-400' : 'bg-muted-foreground/30'}`} />
+              <h3 className="text-sm font-semibold text-foreground truncate">{agent.name}</h3>
+            </div>
+            <div className="flex items-center gap-2">
+              <StatusBadge status={agent.status} />
+              <span className="text-[11px] text-muted-foreground">{agent.id}</span>
+            </div>
+          </div>
+        </div>
+
+        <div className={`rounded-lg border px-3 py-2 mb-4 ${isError ? 'border-red-200 bg-red-50' : 'border-border bg-muted/30'}`}>
+          <div className="text-[10px] font-medium text-muted-foreground mb-0.5">Current Task</div>
+          <p className="text-xs truncate font-medium text-foreground">{agent.current_task}</p>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3">
+          {[
+            { label: 'Tasks', value: String(agent.tasks), icon: Activity },
+            { label: 'Success', value: agent.success_rate, icon: CheckCircle2 },
+            { label: 'Uptime', value: agent.uptime, icon: Clock },
+            { label: 'Tokens', value: agent.tokens, icon: RefreshCw },
+          ].map(({ label, value, icon: Icon }) => (
+            <div key={label} className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-md bg-muted flex items-center justify-center shrink-0">
+                <Icon className="w-[15px] h-[15px] text-muted-foreground" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-xs font-bold text-foreground">{value}</div>
+                <div className="text-[10px] text-muted-foreground">{label}</div>
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="border-t border-border/60 bg-muted/20 px-5 py-2.5 flex justify-between items-center">
+        <span className="text-[11px] text-muted-foreground">Active {lastActive}</span>
+        <Link href="/traces" className="text-[11px] font-semibold text-foreground hover:text-muted-foreground transition-colors">View traces →</Link>
+      </div>
+    </div>
+  )
+}
 
 export default function AgentsPage() {
-  const [agents, setAgents] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
+  const [agents, setAgents] = useState<Agent[]>([])
+  const [filter, setFilter] = useState<'ALL' | 'RUNNING' | 'IDLE' | 'ERROR'>('ALL')
   const [search, setSearch] = useState('')
-  const [filter, setFilter] = useState<'all' | 'running' | 'idle' | 'error'>('all')
-  const [expanded, setExpanded] = useState<string | null>(null)
+  const { range, setRange } = useTimeRange()
 
+  // Refetch whenever the time range changes (Today/Week/Month/All). The
+  // range is converted to a `since` timestamp client-side (in the user's
+  // local TZ) and sent to /api/agents, which filters traces before grouping.
+  // Default is 'today' so old agents don't clutter the view.
   useEffect(() => {
-    let isMounted = true
-    const load = async () => {
-      try {
-        const result = await fetchAgents()
-        if (isMounted) {
-          setAgents(result?.agents || FALLBACK_AGENTS)
-          setError(!result)
-          setLoading(false)
-        }
-      } catch (err) {
-        if (isMounted) {
-          console.error('[v0] Agents fetch failed:', err)
-          setAgents(FALLBACK_AGENTS)
-          setError(true)
-          setLoading(false)
-        }
-      }
+    let mounted = true
+    const load = () => {
+      fetchSwarmAgents(range).then((data) => {
+        if (!mounted) return
+        setAgents(data)
+        setLoading(false)
+      })
     }
     load()
-    return () => {
-      isMounted = false
-    }
-  }, [])
+    const id = setInterval(load, 30_000)
+    return () => { mounted = false; clearInterval(id) }
+  }, [range])
 
-  const filtered = useMemo(() => {
-    return agents.filter(agent => {
-      const matchesSearch = agent.name.toLowerCase().includes(search.toLowerCase()) || agent.id.toLowerCase().includes(search.toLowerCase())
-      const matchesFilter = filter === 'all' || agent.status.toLowerCase() === filter.toLowerCase()
-      return matchesSearch && matchesFilter
-    })
-  }, [agents, search, filter])
+  if (loading) return (
+    <DashboardLayout>
+      <SwarmLoadingScreen message="Loading agents..." />
+    </DashboardLayout>
+  )
 
-  const getFilterCount = (status: string) => {
-    if (status === 'all') return agents.length
-    return agents.filter(a => a.status.toLowerCase() === status.toLowerCase()).length
+  const filtered = agents
+    .filter((a) => filter === 'ALL' || a.status === filter)
+    .filter((a) => !search || a.name.toLowerCase().includes(search.toLowerCase()) || a.id.includes(search))
+
+  const counts = {
+    RUNNING: agents.filter((a) => a.status === 'RUNNING').length,
+    IDLE: agents.filter((a) => a.status === 'IDLE').length,
+    ERROR: agents.filter((a) => a.status === 'ERROR').length,
   }
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-6">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Agents</h1>
-            <p className="text-muted-foreground">Manage and monitor your autonomous agents.</p>
+      <PageHeader
+        title="Agents"
+        description="Registered swarm agents and their health"
+        liveStatus="live"
+        actions={
+          <div className="flex items-center gap-2">
+            <TimeRangeDropdown value={range} onChange={setRange} />
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+              <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search agents…"
+                className="h-8 rounded-lg border border-border bg-card pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring shadow-sm" />
+            </div>
           </div>
+        }
+      />
+
+      <div className="p-6 space-y-6">
+        <div className="grid grid-cols-4 gap-4">
+          {[
+            { label: 'Total', value: agents.length },
+            { label: 'Running', value: counts.RUNNING },
+            { label: 'Idle', value: counts.IDLE },
+            { label: 'Error', value: counts.ERROR },
+          ].map((s) => (
+            <div key={s.label} className="rounded-xl border border-border bg-card p-5 shadow-sm">
+              <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-semibold">{s.label}</div>
+              <div className="text-4xl font-bold tabular-nums text-foreground leading-none tracking-tight">{s.value}</div>
+            </div>
+          ))}
         </div>
 
-        {error && (
-          <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-            <AlertCircle className="w-4 h-4" />
-            <span>API unavailable — showing cached data</span>
+        <div className="flex gap-2">
+          {(['ALL', 'RUNNING', 'IDLE', 'ERROR'] as const).map((f) => (
+            <button key={f} onClick={() => setFilter(f)}
+              className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-all ${
+                filter === f ? 'bg-primary text-primary-foreground shadow-sm' : 'border border-border bg-card text-muted-foreground hover:text-foreground hover:bg-muted/60 shadow-sm'
+              }`}>
+              {f}
+            </button>
+          ))}
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
+          {filtered.map((a) => <AgentCard key={a.id} agent={a} />)}
+        </div>
+
+        {filtered.length === 0 && (
+          <div className="rounded-xl border border-border bg-card py-16 text-center text-sm text-muted-foreground shadow-sm">
+            {agents.length === 0
+              ? `No agents active in this time range. Try switching to "This Week" or "All Time" above.`
+              : 'No agents match your filters.'}
           </div>
         )}
-
-        {/* Search & Filter */}
-        <div className="flex flex-col gap-4">
-          <div className="flex-1 relative">
-            <Search className="w-5 h-5 text-on-surface-variant absolute left-3 top-1/2 -translate-y-1/2" />
-            <input
-              type="text"
-              placeholder="Search agents..."
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary"
-            />
-          </div>
-
-          <div className="flex gap-2">
-            <button
-              onClick={() => setFilter('all')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                filter === 'all'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              All Agents ({getFilterCount('all')})
-            </button>
-            <button
-              onClick={() => setFilter('running')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                filter === 'running'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              Running ({getFilterCount('running')})
-            </button>
-            <button
-              onClick={() => setFilter('idle')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                filter === 'idle'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              Idle ({getFilterCount('idle')})
-            </button>
-            <button
-              onClick={() => setFilter('error')}
-              className={`px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                filter === 'error'
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-surface-container-high text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              Error ({getFilterCount('error')})
-            </button>
-          </div>
-        </div>
-
-        {/* Table */}
-        <div className="bg-surface-container border border-outline rounded-2xl overflow-hidden">
-          <table className="w-full">
-            <thead>
-              <tr className="border-b border-outline bg-surface-container-high">
-                <th className="text-left px-6 py-4 text-sm font-semibold text-on-surface">Agent Name</th>
-                <th className="text-left px-6 py-4 text-sm font-semibold text-on-surface">Status</th>
-                <th className="text-left px-6 py-4 text-sm font-semibold text-on-surface">Tasks</th>
-                <th className="text-left px-6 py-4 text-sm font-semibold text-on-surface">Tokens Used</th>
-                <th className="text-left px-6 py-4 text-sm font-semibold text-on-surface">Last Active</th>
-              </tr>
-            </thead>
-            <tbody>
-              {loading ? (
-                Array(5).fill(0).map((_, i) => <tr key={i}><td colSpan={5}><SkeletonTableRow /></td></tr>)
-              ) : filtered.length === 0 ? (
-                <tr>
-                  <td colSpan={5} className="px-6 py-8 text-center text-on-surface-variant">
-                    No agents found
-                  </td>
-                </tr>
-              ) : (
-                filtered.map((agent, idx) => (
-                  <React.Fragment key={agent.id}>
-                    <tr
-                      onClick={() => setExpanded(expanded === agent.id ? null : agent.id)}
-                      className={`cursor-pointer hover:bg-surface-container-high transition-colors ${idx !== filtered.length - 1 && !expanded ? 'border-b border-outline' : ''}`}
-                    >
-                      <td className="px-6 py-4">
-                        <div>
-                          <p className="font-semibold text-on-surface">{agent.name}</p>
-                          <p className="text-xs text-on-surface-variant">{agent.id}</p>
-                        </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className={`text-xs font-semibold px-2 py-1 rounded-full ${
-                          agent.status === 'RUNNING'
-                            ? 'bg-green-500/20 text-green-400'
-                            : agent.status === 'IDLE'
-                            ? 'bg-outline-variant text-on-surface-variant'
-                            : 'bg-red-500/20 text-red-400'
-                        }`}>
-                          {agent.status}
-                        </span>
-                      </td>
-                      <td className="px-6 py-4 text-on-surface">{agent.tasks}</td>
-                      <td className="px-6 py-4 text-on-surface">{agent.tokens}</td>
-                      <td className="px-6 py-4 text-on-surface-variant text-sm">{agent.lastActive}</td>
-                    </tr>
-                    {expanded === agent.id && (
-                      <tr className="border-b border-outline bg-surface-container-high/50">
-                        <td colSpan={5} className="px-6 py-6">
-                          <div className="grid grid-cols-4 gap-6">
-                            <div>
-                              <p className="text-xs text-on-surface-variant mb-2">CURRENT TASK</p>
-                              <p className="text-sm text-on-surface">{agent.current_task}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-on-surface-variant mb-2">TOTAL TOKENS</p>
-                              <p className="text-sm font-semibold text-on-surface">{agent.tokens}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-on-surface-variant mb-2">UPTIME</p>
-                              <p className="text-sm text-on-surface">{agent.uptime}</p>
-                            </div>
-                            <div>
-                              <p className="text-xs text-on-surface-variant mb-2">SUCCESS RATE</p>
-                              <p className="text-sm text-on-surface font-semibold">{agent.success_rate}</p>
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    )}
-                  </React.Fragment>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
       </div>
     </DashboardLayout>
   )

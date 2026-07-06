@@ -4,50 +4,50 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* SwarmTrace AI Monitoring - Light theme (Tasko-style) */
-  --background: oklch(0.97 0.003 120);
-  --foreground: oklch(0.18 0.02 120);
+  /* SwarmTrace AI Monitoring - Light theme (#F4F4F4 neutral canvas, white cards) */
+  --background: oklch(0.9672 0 0); /* #F4F4F4 */
+  --foreground: oklch(0.18 0 0);
 
   /* Material Design surface tokens — light mode */
   --surface: oklch(1 0 0);
   --surface-container: oklch(1 0 0);
-  --surface-container-high: oklch(0.95 0.005 120);
-  --surface-container-low: oklch(0.975 0.003 120);
-  --on-surface: oklch(0.18 0.02 120);
-  --on-surface-variant: oklch(0.50 0.02 120);
-  --outline: oklch(0.88 0.01 120);
-  --outline-variant: oklch(0.91 0.008 120);
+  --surface-container-high: oklch(0.93 0 0);
+  --surface-container-low: oklch(0.9672 0 0);
+  --on-surface: oklch(0.18 0 0);
+  --on-surface-variant: oklch(0.4386 0 0);
+  --outline: oklch(0.88 0 0);
+  --outline-variant: oklch(0.91 0 0);
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.25 0.02 120);
+  --card-foreground: oklch(0.25 0 0);
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.25 0.02 120);
-  --primary: oklch(0.42 0.15 155);
-  --primary-foreground: oklch(0.98 0.01 155);
-  --secondary: oklch(0.96 0.01 120);
-  --secondary-foreground: oklch(0.25 0.02 120);
-  --muted: oklch(0.96 0.01 120);
-  --muted-foreground: oklch(0.55 0.02 120);
-  --accent: oklch(0.55 0.18 155);
-  --accent-foreground: oklch(0.98 0.01 155);
-  --destructive: oklch(0.577 0.245 27.325);
+  --popover-foreground: oklch(0.25 0 0);
+  --primary: oklch(0.2178 0 0); /* #1A1A1A charcoal — was brand green */
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.95 0 0);
+  --secondary-foreground: oklch(0.25 0 0);
+  --muted: oklch(0.95 0 0);
+  --muted-foreground: oklch(0.4386 0 0); /* darkened from 0.55 — was failing WCAG AA (~3.4:1); now ~7.8:1 on white */
+  --accent: oklch(0.37 0 0); /* charcoal-gray secondary accent — was brand green */
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.5054 0.1905 27.5); /* softened from 0.577/0.245 — less neon, ~6.5:1 on white */
   --destructive-foreground: oklch(0.98 0.01 0);
-  --border: oklch(0.92 0.01 120);
-  --input: oklch(0.92 0.01 120);
-  --ring: oklch(0.42 0.15 155);
-  --chart-1: oklch(0.42 0.15 155);
-  --chart-2: oklch(0.55 0.18 155);
-  --chart-3: oklch(0.65 0.12 155);
-  --chart-4: oklch(0.75 0.08 155);
-  --chart-5: oklch(0.85 0.04 155);
+  --border: oklch(0.90 0 0);
+  --input: oklch(0.90 0 0);
+  --ring: oklch(0.2178 0 0);
+  --chart-1: oklch(0.22 0 0);
+  --chart-2: oklch(0.37 0 0);
+  --chart-3: oklch(0.50 0 0);
+  --chart-4: oklch(0.65 0 0);
+  --chart-5: oklch(0.80 0 0);
   --radius: 1rem;
   --sidebar: oklch(1 0 0);
-  --sidebar-foreground: oklch(0.25 0.02 120);
-  --sidebar-primary: oklch(0.42 0.15 155);
-  --sidebar-primary-foreground: oklch(0.98 0.01 155);
-  --sidebar-accent: oklch(0.96 0.01 120);
-  --sidebar-accent-foreground: oklch(0.25 0.02 120);
-  --sidebar-border: oklch(0.92 0.01 120);
-  --sidebar-ring: oklch(0.42 0.15 155);
+  --sidebar-foreground: oklch(0.25 0 0);
+  --sidebar-primary: oklch(0.2178 0 0);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent-foreground: oklch(0.25 0 0);
+  --sidebar-border: oklch(0.90 0 0);
+  --sidebar-ring: oklch(0.2178 0 0);
   /* Font stacks — Geist is loaded from the geist npm package (local font files,
      no Google Fonts network fetch needed at build time). The --font-geist-sans and
      --font-geist-mono variables are injected by the geist package via className on <html>. */
@@ -274,4 +274,44 @@
 
 .animate-char-in {
   animation: char-in 0.3s ease forwards;
+}
+
+/* ─── Swarm dashboard (Overview / Traces / Agents / Metrics / Failures) ───── */
+
+@keyframes swarm-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+.swarm-pulse {
+  animation: swarm-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes fade-slide-in {
+  from { opacity: 0; transform: translateX(12px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.fade-slide-in {
+  animation: fade-slide-in 0.18s ease-out;
+}
+
+@keyframes skeleton-shimmer {
+  0%   { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+.skeleton-shimmer {
+  background: linear-gradient(90deg, var(--muted) 25%, var(--accent) 50%, var(--muted) 75%);
+  background-size: 400px 100%;
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes swarm-row-new {
+  from { background-color: color-mix(in oklch, var(--primary) 12%, transparent); }
+  to   { background-color: transparent; }
+}
+
+.swarm-row-new {
+  animation: swarm-row-new 2s ease-out;
 }

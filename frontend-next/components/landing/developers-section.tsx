@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button"
 
 export function DevelopersSection() {
   return (
-    <section className="py-24 bg-gradient-to-b from-muted/10 to-background">
+    <section id="developers" className="py-24 bg-gradient-to-b from-muted/10 to-background">
       <div className="max-w-[1400px] mx-auto px-6 lg:px-12">
         <div className="grid lg:grid-cols-2 gap-16 items-center">
           <div>
@@ -45,7 +45,7 @@ export function DevelopersSection() {
               <div className="ml-4 text-muted-foreground"># Your agent logic here</div>
               <div className="ml-4 text-blue-400">return</div> <div className="text-green-300">result</div>
 
-              <div className="text-muted-foreground pt-4"># That's it! 🎉</div>
+              <div className="text-muted-foreground pt-4"># That&apos;s it! 🎉</div>
               <div className="text-muted-foreground"># All traces are automatically captured</div>
             </div>
           </div>

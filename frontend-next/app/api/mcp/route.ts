@@ -22,6 +22,9 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { z } from 'zod'
+import { Redis } from '@upstash/redis'
+import { Ratelimit } from '@upstash/ratelimit'
+import { stableAgentId } from '@/lib/stable-agent-id'
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL!
@@ -64,6 +67,53 @@ async function supaRpc(fn: string, params: Record<string, unknown>) {
   }
 }
 
+// ── Rate limiter (Upstash Redis with per-isolate fallback) ──────────────────
+// Same pattern as /api/ingest and /api/events. 120 requests / 60s per API key.
+// Falls back to per-isolate Map when UPSTASH_REDIS_REST_URL is not set.
+// To enable: add UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN to Vercel env.
+const RATE_LIMIT     = 120
+const RATE_WINDOW_MS = 60_000
+
+let _upstashLimiter: Ratelimit | null = null
+
+function getUpstashLimiter(): Ratelimit | null {
+  if (_upstashLimiter) return _upstashLimiter
+  const url   = process.env.UPSTASH_REDIS_REST_URL
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN
+  if (!url || !token) return null
+  _upstashLimiter = new Ratelimit({
+    redis:     new Redis({ url, token }),
+    limiter:   Ratelimit.slidingWindow(RATE_LIMIT, '60 s'),
+    analytics: false,
+    prefix:    'st_mcp_rl',
+  })
+  return _upstashLimiter
+}
+
+interface RateEntry { count: number; windowStart: number }
+const RATE_MAP = new Map<string, RateEntry>()
+
+function checkRateLocal(keyHash: string): boolean {
+  const now   = Date.now()
+  const entry = RATE_MAP.get(keyHash)
+  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
+    RATE_MAP.set(keyHash, { count: 1, windowStart: now })
+    return true
+  }
+  if (entry.count >= RATE_LIMIT) return false
+  entry.count++
+  return true
+}
+
+async function checkRate(keyHash: string): Promise<boolean> {
+  const limiter = getUpstashLimiter()
+  if (limiter) {
+    const { success } = await limiter.limit(keyHash)
+    return success
+  }
+  return checkRateLocal(keyHash)
+}
+
 // ── API key → user_id resolution ─────────────────────────────────────────────
 async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
@@ -72,8 +122,9 @@ async function sha256Hex(input: string): Promise<string> {
     .join('')
 }
 
-async function resolveApiKey(apiKey: string): Promise<string | null> {
-  const keyHash = await sha256Hex(apiKey)
+// Accepts a pre-computed keyHash (same one used for rate limiting) so we
+// don't hash the API key twice per request.
+async function resolveApiKeyByKeyHash(keyHash: string): Promise<string | null> {
   const rows: Array<{ user_id: string }> = await supa(
     `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`
   )
@@ -104,30 +155,56 @@ function buildMcpServer(userId: string): McpServer {
       output:        z.string().max(4000).optional().describe('Serialised function return value'),
       error:         z.string().max(4000).optional().describe('Error message if the call failed'),
       parent_id:     z.string().max(64).optional().describe('Parent trace ID for nested spans'),
+      agent_id:      z.string().max(64).optional().describe(
+        'Stable agent identity. If omitted, derived from `function` (SHA-256) so repeat calls aggregate into one dashboard card. Pass an explicit unique value per call ONLY if you want each call to be its own agent card.'
+      ),
+      agent_name:    z.string().max(256).optional().describe(
+        'Display name for the agent card. Defaults to `function`.'
+      ),
     },
     async (params) => {
       try {
-        const row = {
-          id:            params.id,
-          function:      params.function,
-          timestamp:     params.timestamp,
-          latency_sec:   params.latency_sec,
-          input_tokens:  params.input_tokens ?? 0,
-          output_tokens: params.output_tokens ?? 0,
-          cost_usd:      params.cost_usd ?? 0,
-          args:          params.args    ?? '',
-          output:        params.output  ?? '',
-          error:         params.error   ?? null,
-          parent_id:     params.parent_id ?? null,
-          user_id:       userId,
-        }
+        // ── Atomic upsert + metrics (idempotent on retry) ─────────────────
+        // MCP clients (Claude Desktop, Cursor, etc.) retry on transient
+        // network errors. Single RPC that upserts the trace AND increments
+        // daily_metrics only if the trace was a fresh insert — so retries
+        // don't double-count costs. See supabase/migrations/0007_atomic_ingest.sql.
+        //
+        // Agent identity (mirrors swarmtrace/tracer.py::_stable_agent_id):
+        //   - If the caller passes an explicit `agent_id`, use it as-is.
+        //   - Otherwise derive a STABLE id from `function` (SHA-256), so
+        //     repeat calls of the same agent function aggregate into one
+        //     dashboard card with tasks=N — matching the SDK's behavior
+        //     for bare @observe.
+        //   - kind is always 'agent' for MCP (the MCP tool IS the agent
+        //     entry point; there's no nested tool/llm distinction here).
+        //   - agent_name defaults to `function` if not provided.
+        //
+        // BEFORE this change, agent_id was hardcoded to params.id (fresh
+        // per call), which meant every MCP call became its own agent card
+        // with tasks=1 — inconsistent with the SDK. See
+        // tests/test_tracer.py::test_api_agents_filter_contract and
+        // frontend-next/scripts/test-derive-agent-cards.mjs.
+        const kind      = 'agent'
+        const agentId   = params.agent_id ?? stableAgentId(params.function)
+        const agentName = params.agent_name ?? params.function
 
-        await supa('traces', { method: 'POST', body: JSON.stringify(row) })
-        await supaRpc('increment_daily_metrics', {
+        await supaRpc('upsert_trace_with_metrics', {
+          p_id:            params.id,
           p_user_id:       userId,
-          p_cost:          row.cost_usd,
-          p_input_tokens:  row.input_tokens,
-          p_output_tokens: row.output_tokens,
+          p_parent_id:     params.parent_id ?? null,
+          p_function:      params.function,
+          p_args:          params.args    ?? '',
+          p_output:        params.output  ?? '',
+          p_latency_sec:   params.latency_sec,
+          p_error:         params.error   ?? null,
+          p_timestamp:     params.timestamp,
+          p_input_tokens:  params.input_tokens  ?? 0,
+          p_output_tokens: params.output_tokens ?? 0,
+          p_cost_usd:      params.cost_usd      ?? 0,
+          p_kind:          kind,
+          p_agent_id:      agentId,
+          p_agent_name:    agentName,
         })
 
         return {
@@ -276,9 +353,24 @@ async function handleMcp(req: Request): Promise<Response> {
     )
   }
 
+  const keyHash = await sha256Hex(apiKey)
+
+  // ── Rate limit check (before DB lookup — cheap, fast) ──────────────────
+  // Same pattern as /api/ingest. 120 requests / 60s per API key.
+  if (!await checkRate(keyHash)) {
+    return new Response(null, {
+      status: 429,
+      headers: {
+        'Retry-After':       '60',
+        'X-RateLimit-Limit':  String(RATE_LIMIT),
+        'X-RateLimit-Window': '60s',
+      },
+    })
+  }
+
   let userId: string | null = null
   try {
-    userId = await resolveApiKey(apiKey)
+    userId = await resolveApiKeyByKeyHash(keyHash)
   } catch {
     return new Response(
       JSON.stringify({ error: 'Auth check failed' }),
