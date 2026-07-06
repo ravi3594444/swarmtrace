@@ -1,111 +1,486 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
+import { useUser } from '@clerk/nextjs'
 import { DashboardLayout } from '@/components/dashboard-layout'
-import { Bell, Save, Check, Copy, Trash2, AlertCircle } from 'lucide-react'
-import { fetchApiKeys, createApiKey, revokeApiKey, fetchIntegrations, fetchBillingInfo } from '@/lib/api'
+import { PageHeader } from '@/components/page-header'
+import { Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settings2, Terminal, BookOpen } from 'lucide-react'
+import { fetchApiKeys, createApiKey, revokeApiKey, fetchBillingInfo } from '@/lib/api'
+import { useIntegrations, type Integration } from '@/contexts/IntegrationsContext'
 import { SkeletonCard } from '@/components/skeleton'
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
+
+// ─── Billing Page ─────────────────────────────────────────────────────────────
+function BillingTab() {
+  const [usage, setUsage] = useState<{ traces_used?: number; cost_this_month?: number } | null>(null)
+
+  useEffect(() => {
+    fetchBillingInfo().then((d) => { if (d) setUsage(d) })
+  }, [])
+
+  const plans = [
+    {
+      name: 'Hobby',
+      price: 0,
+      period: 'Free forever',
+      description: 'For personal projects and experimentation.',
+      features: ['10,000 traces / month', '1 API key', '7-day retention', 'Community support'],
+      cta: 'Current Plan',
+      current: true,
+      highlight: false,
+    },
+    {
+      name: 'Pro',
+      price: 19,
+      period: 'per month',
+      description: 'For teams shipping AI to production.',
+      features: ['1,000,000 traces / month', 'Unlimited API keys', '90-day retention', 'Realtime dashboard', 'CSV & PDF export', 'Email support'],
+      cta: 'Upgrade to Pro',
+      current: false,
+      highlight: true,
+    },
+    {
+      name: 'Enterprise',
+      price: null,
+      period: 'Custom pricing',
+      description: 'For large-scale deployments with custom needs.',
+      features: ['Unlimited traces', 'Custom retention', 'SSO / SAML', 'SLA guarantee', 'Dedicated support', 'On-prem option'],
+      cta: 'Contact Us',
+      current: false,
+      highlight: false,
+    },
+  ]
+
+  return (
+    <div className="space-y-8">
+      {/* Current usage summary */}
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="text-xl font-semibold text-foreground mb-1">Current Usage</h2>
+        <p className="text-sm text-muted-foreground mb-5">You are on the <span className="text-primary font-semibold">Hobby</span> plan.</p>
+        <div className="grid grid-cols-3 gap-4">
+          {[
+            { label: 'Traces this month', value: usage ? String(usage.traces_used ?? 0) : '…', max: '10,000' },
+            { label: 'Cost this month', value: usage ? `$${(usage.cost_this_month ?? 0).toFixed(4)}` : '…', max: null },
+            { label: 'Data retention', value: '7 days', max: null },
+          ].map(({ label, value, max }) => (
+            <div key={label} className="bg-muted/40 border border-border rounded-xl p-4">
+              <p className="text-xs text-muted-foreground mb-1">{label}</p>
+              <p className="text-lg font-bold text-foreground">
+                {value}
+                {max && <span className="text-sm font-normal text-muted-foreground"> / {max}</span>}
+              </p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Plan cards */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {plans.map((plan) => (
+          <div
+            key={plan.name}
+            className={`relative border rounded-xl p-6 flex flex-col gap-4 transition-all ${
+              plan.highlight
+                ? 'border-primary/60 bg-primary/5 shadow-sm shadow-primary/10'
+                : 'border-border bg-card'
+            }`}
+          >
+            {plan.highlight && (
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 rounded-full">
+                Most Popular
+              </span>
+            )}
+            <div>
+              <h3 className="text-lg font-bold text-foreground">{plan.name}</h3>
+              <p className="text-sm text-muted-foreground mt-0.5">{plan.description}</p>
+            </div>
+            <div>
+              {plan.price !== null
+                ? <span className="text-3xl font-bold text-foreground">${plan.price}<span className="text-sm font-normal text-muted-foreground"> /{plan.period}</span></span>
+                : <span className="text-2xl font-bold text-foreground">{plan.period}</span>
+              }
+            </div>
+            <ul className="space-y-2 flex-1">
+              {plan.features.map(f => (
+                <li key={f} className="flex items-center gap-2 text-sm text-muted-foreground">
+                  <span className="w-4 h-4 rounded-full bg-primary/15 text-primary flex items-center justify-center shrink-0 text-xs font-bold">✓</span>
+                  {f}
+                </li>
+              ))}
+            </ul>
+            <button
+              disabled={plan.current}
+              onClick={() => {
+                if (plan.name === 'Enterprise') window.open('mailto:hello@swarmtrace.ai?subject=Enterprise Plan', '_blank')
+              }}
+              className={`w-full py-2.5 rounded-full text-sm font-semibold transition-all ${
+                plan.current
+                  ? 'bg-muted/60 text-muted-foreground cursor-default border border-border'
+                  : plan.highlight
+                  ? 'bg-primary text-primary-foreground hover:opacity-90'
+                  : 'border border-border text-foreground hover:bg-muted/60'
+              }`}
+            >
+              {plan.cta}
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {/* FAQ */}
+      <div className="bg-card border border-border rounded-xl p-6">
+        <h2 className="text-lg font-semibold text-foreground mb-4">Billing FAQ</h2>
+        <div className="space-y-4">
+          {[
+            { q: 'When will Pro billing be available?', a: 'Pro plan payments are coming soon via Stripe. You will be notified by email when available.' },
+            { q: 'What counts as a trace?', a: 'Each @observe decorated function call that is successfully ingested counts as one trace.' },
+            { q: 'What happens if I exceed the free limit?', a: 'New traces will be rejected with a 429 response. Your existing data is never deleted.' },
+            { q: 'Can I export my data?', a: 'Yes — use the CSV or PDF export on the Metrics page at any time.' },
+          ].map(({ q, a }) => (
+            <div key={q} className="border-b border-border/50 pb-4 last:border-0 last:pb-0">
+              <p className="text-sm font-semibold text-foreground mb-1">{q}</p>
+              <p className="text-sm text-muted-foreground">{a}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Resolved safely inside the component where window is always available
+function getEndpoint() {
+  if (typeof window === 'undefined') return 'https://your-swarmtrace-url.vercel.app/api'
+  return `${window.location.origin}/api`
+}
+
+function CopyLine({ label, value, mono = true }: { label: string; value: string; mono?: boolean }) {
+  const [copied, setCopied] = useState(false)
+  const [copyError, setCopyError] = useState(false)
+  const copy = async () => {
+    // navigator.clipboard.writeText() rejects when: page is served over
+    // HTTP (non-localhost), clipboard permission denied, or browser doesn't
+    // support it. Without try/catch, the await throws, setCopied never runs,
+    // and the user sees nothing happen.
+    try {
+      await navigator.clipboard.writeText(value)
+      setCopied(true)
+      setCopyError(false)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      setCopyError(true)
+      setTimeout(() => setCopyError(false), 3000)
+    }
+  }
+  return (
+    <div className="space-y-1.5">
+      <span className="block text-xs font-mono font-medium text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <code className={`flex-1 min-w-0 px-3 py-1.5 bg-muted/30 border border-border rounded-lg text-xs text-foreground truncate ${mono ? 'font-mono' : ''}`}>
+          {value}
+        </code>
+        <button
+          onClick={copy}
+          className="p-1.5 rounded-lg hover:bg-muted/60 transition-colors text-muted-foreground hover:text-foreground shrink-0"
+          title={copyError ? 'Copy failed — select the text and press Ctrl+C' : 'Copy'}
+        >
+          {copied ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+function QuickSetup({ apiKeyPlaceholder }: { apiKeyPlaceholder?: string }) {
+  const [copiedSnippet, setCopiedSnippet] = useState(false)
+  const keyDisplay = apiKeyPlaceholder || 'st_your_key_here'
+  const endpoint = getEndpoint()
+
+  const snippet = `import os
+from swarmtrace import observe
+
+os.environ["SWARMTRACE_API_KEY"]  = "${keyDisplay}"
+os.environ["SWARMTRACE_ENDPOINT"] = "${endpoint}"
+
+@observe
+def my_agent(prompt: str) -> str:
+    # your LLM call here — every call is traced automatically
+    ...`
+
+  const copySnippet = async () => {
+    try {
+      await navigator.clipboard.writeText(snippet)
+      setCopiedSnippet(true)
+      setTimeout(() => setCopiedSnippet(false), 2000)
+    } catch {
+      // Non-secure context or permission denied — user can select manually.
+      // The snippet is visible in the <pre> below for manual copy.
+    }
+  }
+
+  return (
+    <div className="bg-card border border-border rounded-xl overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-6 py-4 border-b border-border bg-muted/60">
+        <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center">
+          <Terminal className="w-4 h-4 text-primary" />
+        </div>
+        <div>
+          <h2 className="text-sm font-semibold text-foreground">Quick setup</h2>
+          <p className="text-xs text-muted-foreground">Two env vars and one decorator — that&apos;s all</p>
+        </div>
+        <a
+          href="https://github.com/ravi3594444/swarmtrace#readme"
+          target="_blank"
+          rel="noreferrer"
+          className="ml-auto flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          <BookOpen className="w-3.5 h-3.5" />
+          Docs
+        </a>
+      </div>
+
+      <div className="p-6 space-y-5">
+        {/* Step 1: install */}
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">1 · Install</p>
+          <CopyLine label="pip install" value="pip install swarmtrace" />
+        </div>
+
+        {/* Step 2: env vars */}
+        <div>
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">2 · Set env vars</p>
+          <div className="space-y-2">
+            <CopyLine label="SWARMTRACE_API_KEY" value={keyDisplay} />
+            <CopyLine label="SWARMTRACE_ENDPOINT" value={endpoint} />
+          </div>
+        </div>
+
+        {/* Step 3: code snippet */}
+        <div>
+          <div className="flex items-center justify-between mb-2">
+            <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">3 · Use in your code</p>
+            <button
+              onClick={copySnippet}
+              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {copiedSnippet ? <Check className="w-3.5 h-3.5 text-green-500" /> : <Copy className="w-3.5 h-3.5" />}
+              {copiedSnippet ? 'Copied!' : 'Copy all'}
+            </button>
+          </div>
+          <pre className="bg-muted/30 border border-border rounded-xl p-4 text-xs font-mono text-foreground overflow-x-auto leading-relaxed whitespace-pre">
+{`import os
+from swarmtrace import observe
+
+os.environ[`}<span className="text-primary">{`"SWARMTRACE_API_KEY"`}</span>{`]  = `}<span className="text-green-600 dark:text-green-400">{`"${keyDisplay}"`}</span>{`
+os.environ[`}<span className="text-primary">{`"SWARMTRACE_ENDPOINT"`}</span>{`] = `}<span className="text-green-600 dark:text-green-400">{`"${endpoint}"`}</span>{`
+
+`}<span className="text-primary">{`@observe`}</span>{`
+def my_agent(prompt: str) -> str:
+    `}<span className="text-muted-foreground">{`# every call traced automatically`}</span>{`
+    ...`}
+          </pre>
+        </div>
+
+        {/* What gets tracked */}
+        <div className="flex flex-wrap gap-2 pt-1">
+          {['Latency', 'Token usage', 'Cost (USD)', 'Errors', 'Parent–child nesting', 'Async support'].map(f => (
+            <span key={f} className="text-xs px-2.5 py-1 rounded-full bg-primary/10 text-primary border border-primary/20">
+              {f}
+            </span>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
-  const [profile, setProfile] = useState({
-    fullName: 'Admin User',
-    email: 'admin@swarmtrace.ai',
-  })
-  const [preferences, setPreferences] = useState({
-    emailNotifications: true,
-    darkMode: true,
-    weeklyReports: false,
-  })
+  const { user } = useUser()
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState<string | null>(null)
+
+  // Seed profile from Clerk user data WITHOUT a set-state-in-effect.
+  // React-recommended pattern: store the previous user ref and adjust
+  // state during render if the prop changed. See:
+  // https://react.dev/reference/react/useState#storing-information-from-previous-renders
+  const [profile, setProfile] = useState({ fullName: '', email: '' })
+  const [prevUser, setPrevUser] = useState(user)
+  if (user !== prevUser) {
+    setPrevUser(user)
+    if (user) {
+      setProfile({
+        fullName: user.fullName ?? user.firstName ?? '',
+        email: user.primaryEmailAddress?.emailAddress ?? '',
+      })
+    }
+  }
+  // Preferences are read-only defaults until backend persistence is added
+  // ("Coming soon" badge in the UI). No setter needed — toggles are disabled.
+  const [preferences] = useState({ emailNotifications: true, darkMode: false, weeklyReports: false })
   const [saved, setSaved] = useState(false)
 
-  const [apiKeys, setApiKeys] = useState<any[]>([])
+  // API Keys state
+  const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [loadingApiKeys, setLoadingApiKeys] = useState(false)
   const [newKeyName, setNewKeyName] = useState('')
-  const [createdKey, setCreatedKey] = useState<any>(null)
-  const [apiError, setApiError] = useState(false)
+  const [createdKey, setCreatedKey] = useState<{ key: string } | null>(null)
+  const [apiKeyError, setApiKeyError] = useState<string | null>(null)
+  const [creatingKey, setCreatingKey] = useState(false)
+  const [copiedKey, setCopiedKey] = useState(false)
+  const [revokingId, setRevokingId] = useState<string | null>(null)
+  const [integrationError, setIntegrationError] = useState<string | null>(null)
 
-  const [integrations, setIntegrations] = useState<any[]>([])
-  const [loadingIntegrations, setLoadingIntegrations] = useState(false)
-  const [integrationError, setIntegrationError] = useState(false)
+  const { refresh: refreshIntegrationsCtx, integrations: ctxIntegrations, loading: loadingIntegrations } = useIntegrations()
 
-  const [billing, setBilling] = useState<any>(null)
-  const [loadingBilling, setLoadingBilling] = useState(false)
-  const [billingError, setBillingError] = useState(false)
+  // Local copy of integrations for optimistic toggle UI.
+  // Seed from context WITHOUT a set-state-in-effect: use the "store
+  // previous prop" pattern. When ctxIntegrations changes (e.g. after a
+  // successful toggle calls refreshIntegrationsCtx()), sync local state.
+  const [integrations, setIntegrations] = useState<Integration[]>([])
+  const [prevCtxIntegrations, setPrevCtxIntegrations] = useState(ctxIntegrations)
+  if (ctxIntegrations !== prevCtxIntegrations) {
+    setPrevCtxIntegrations(ctxIntegrations)
+    if (ctxIntegrations.length > 0) setIntegrations(ctxIntegrations)
+  }
+  const [togglingId, setTogglingId] = useState<string | null>(null)
 
-  useEffect(() => {
-    if (activeTab === 'api') {
-      const load = async () => {
-        setLoadingApiKeys(true)
-        const result = await fetchApiKeys()
-        setApiKeys(result?.keys || [
-          { id: 'key_1', prefix: 'sk_live_abc123', name: 'Production', created: '2024-01-10T10:30:00Z' },
-        ])
-        setApiError(!result)
-        setLoadingApiKeys(false)
-      }
-      load()
-    }
-  }, [activeTab])
-
-  useEffect(() => {
-    if (activeTab === 'integrations') {
-      const load = async () => {
-        setLoadingIntegrations(true)
-        const result = await fetchIntegrations()
-        setIntegrations(result?.integrations || [
-          { id: 'slack', name: 'Slack', description: 'Send notifications to Slack', connected: true },
-          { id: 'pagerduty', name: 'PagerDuty', description: 'Alert escalation', connected: false },
-          { id: 'datadog', name: 'Datadog', description: 'Metrics and monitoring', connected: true },
-        ])
-        setIntegrationError(!result)
-        setLoadingIntegrations(false)
-      }
-      load()
-    }
-  }, [activeTab])
-
-  useEffect(() => {
-    if (activeTab === 'billing') {
-      const load = async () => {
-        setLoadingBilling(true)
-        const result = await fetchBillingInfo()
-        setBilling(result || {
-          plan: 'Pro',
-          price: 99,
-          nextBilling: '2024-02-15',
-          paymentMethod: '****4242',
-        })
-        setBillingError(!result)
-        setLoadingBilling(false)
-      }
-      load()
-    }
-  }, [activeTab])
-
-  const handleCreateApiKey = async () => {
-    if (!newKeyName.trim()) return
+  // Load API keys (also used by the Retry button in the error state).
+  const loadApiKeys = useCallback(async () => {
+    setLoadingApiKeys(true)
+    setApiKeyError(null)
     try {
-      const result = await createApiKey(newKeyName)
-      if (result) {
+      const result = await fetchApiKeys()
+      if (result?.keys) {
+        setApiKeys(result.keys)
+      } else {
+        setApiKeys([])
+        setApiKeyError('Could not load API keys. Check your connection.')
+      }
+    } catch {
+      setApiKeyError('Failed to load API keys.')
+    } finally {
+      setLoadingApiKeys(false)
+    }
+  }, [])
+
+  // Load API keys when the API tab is activated. Inlined here (NOT calling
+  // loadApiKeys) so all setState calls are inside the async function after
+  // the first await — avoids the cascading-render lint violation. The
+  // cancelled flag prevents setState after unmount.
+  useEffect(() => {
+    if (activeTab !== 'api') return
+    let cancelled = false
+    const load = async () => {
+      try {
+        const result = await fetchApiKeys()
+        if (cancelled) return
+        if (result?.keys) {
+          setApiKeys(result.keys)
+          setApiKeyError(null)
+        } else {
+          setApiKeys([])
+          setApiKeyError('Could not load API keys. Check your connection.')
+        }
+      } catch {
+        if (!cancelled) setApiKeyError('Failed to load API keys.')
+      } finally {
+        if (!cancelled) setLoadingApiKeys(false)
+      }
+    }
+    load()
+    return () => { cancelled = true }
+  }, [activeTab])
+
+  // Create API key with full error feedback
+  const handleCreateApiKey = async () => {
+    if (!newKeyName.trim()) {
+      setApiKeyError('Please enter a name for your API key.')
+      return
+    }
+    setCreatingKey(true)
+    setApiKeyError(null)
+    setCreatedKey(null)
+    try {
+      const result = await createApiKey(newKeyName.trim())
+      if (result?.key) {
         setCreatedKey(result)
         setNewKeyName('')
+        // Refresh list
         const list = await fetchApiKeys()
-        setApiKeys(list?.keys || apiKeys)
+        if (list?.keys) setApiKeys(list.keys)
+      } else {
+        setApiKeyError('Failed to create API key. The API may be unavailable — check your backend connection.')
       }
     } catch (err) {
-      console.error('[v0] API key creation failed:', err)
+      const message = err instanceof Error ? err.message : 'Unknown error'
+      setApiKeyError(`Error creating key: ${message}`)
+    } finally {
+      setCreatingKey(false)
+    }
+  }
+
+  const [copiedKeyErr, setCopiedKeyErr] = useState(false)
+  const handleCopyKey = async () => {
+    if (!createdKey?.key) return
+    try {
+      await navigator.clipboard.writeText(createdKey.key)
+      setCopiedKey(true)
+      setCopiedKeyErr(false)
+      setTimeout(() => setCopiedKey(false), 2000)
+    } catch {
+      // Clipboard API rejects in non-secure contexts or on permission denial.
+      // The key is shown in a readonly input the user can select manually.
+      setCopiedKeyErr(true)
+      setTimeout(() => setCopiedKeyErr(false), 3000)
     }
   }
 
   const handleRevokeKey = async (id: string) => {
+    setRevokingId(id)
     try {
       const success = await revokeApiKey(id)
       if (success) {
-        setApiKeys(apiKeys.filter(k => k.id !== id))
+        setApiKeys(prev => prev.filter(k => k.id !== id))
+      } else {
+        setApiKeyError('Failed to revoke key.')
       }
-    } catch (err) {
-      console.error('[v0] API key revocation failed:', err)
+    } catch {
+      setApiKeyError('Failed to revoke key.')
+    } finally {
+      setRevokingId(null)
+    }
+  }
+
+  const handleToggleIntegration = async (id: string, currentlyConnected: boolean) => {
+    setTogglingId(id)
+    setIntegrationError(null)
+    const next = !currentlyConnected
+    // Optimistic update
+    setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: next } : i))
+    try {
+      const res = await fetch('/api/settings/integrations', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, connected: next }),
+      })
+      if (!res.ok) {
+        // Revert on failure
+        setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: currentlyConnected } : i))
+        setIntegrationError(`Failed to ${next ? 'connect' : 'disconnect'} integration. Please try again.`)
+      } else {
+        // Sync global context so other dashboard pages reflect the change
+        refreshIntegrationsCtx()
+      }
+    } catch {
+      setIntegrations(prev => prev.map(i => i.id === id ? { ...i, connected: currentlyConnected } : i))
+      setIntegrationError('Network error — could not update integration. Please try again.')
+    } finally {
+      setTogglingId(null)
     }
   }
 
@@ -114,233 +489,284 @@ export default function SettingsPage() {
     setSaved(false)
   }
 
-  const handlePreferenceChange = (field: string) => {
-    setPreferences(prev => ({ ...prev, [field]: !prev[field] }))
-    setSaved(false)
+  // handlePreferenceChange removed — preferences toggles are disabled
+  // ("Coming soon") until backend persistence is added. The state is kept
+  // so the toggle positions render correctly from their defaults.
+
+  const handleSave = async () => {
+    setSaving(true)
+    setSaveError(null)
+    try {
+      const res = await fetch('/api/settings/profile', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fullName: profile.fullName }),
+      })
+      if (!res.ok) {
+        const d = await res.json().catch(() => ({}))
+        setSaveError(d.error ?? 'Failed to save')
+      } else {
+        setSaved(true)
+        setTimeout(() => setSaved(false), 3000)
+      }
+    } catch {
+      setSaveError('Network error — could not save')
+    } finally {
+      setSaving(false)
+    }
   }
 
-  const handleSave = () => {
-    localStorage.setItem('userProfile', JSON.stringify(profile))
-    localStorage.setItem('userPreferences', JSON.stringify(preferences))
-    setSaved(true)
-    const timer = setTimeout(() => setSaved(false), 3000)
-    return () => clearTimeout(timer)
-  }
+  const navItems = [
+    { id: 'general', label: 'General', icon: Settings2 },
+    { id: 'api', label: 'API Keys', icon: Key },
+    { id: 'billing', label: 'Billing', icon: CreditCard },
+    { id: 'integrations', label: 'Integrations', icon: Puzzle },
+  ]
 
   return (
     <DashboardLayout>
-      <div className="p-6 space-y-8">
-        {/* Header */}
-        <div className="flex justify-between items-start">
-          <div>
-            <h1 className="text-4xl font-bold text-on-surface mb-2">Settings</h1>
-            <p className="text-on-surface-variant">Manage your account and preferences.</p>
-          </div>
-          <button className="p-2 rounded-full hover:bg-surface-container-high transition-colors">
-            <Bell className="w-5 h-5 text-on-surface-variant" />
-          </button>
-        </div>
+      <PageHeader
+        title="Settings"
+        description="Manage your account and preferences"
+      />
+      <div className="p-5 space-y-6">
 
         <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
-          {/* Settings Menu */}
+          {/* Sidebar Nav */}
           <div className="lg:col-span-1">
-            <nav className="space-y-2">
-              <button
-                onClick={() => setActiveTab('general')}
-                className={`w-full text-left px-4 py-3 rounded-full font-medium text-sm transition-colors ${
-                  activeTab === 'general'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                General
-              </button>
-              <button
-                onClick={() => setActiveTab('api')}
-                className={`w-full text-left px-4 py-3 rounded-full font-medium text-sm transition-colors ${
-                  activeTab === 'api'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                API Keys
-              </button>
-              <button
-                onClick={() => setActiveTab('billing')}
-                className={`w-full text-left px-4 py-3 rounded-full font-medium text-sm transition-colors ${
-                  activeTab === 'billing'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                Billing
-              </button>
-              <button
-                onClick={() => setActiveTab('integrations')}
-                className={`w-full text-left px-4 py-3 rounded-full font-medium text-sm transition-colors ${
-                  activeTab === 'integrations'
-                    ? 'bg-primary text-primary-foreground'
-                    : 'text-on-surface-variant hover:text-on-surface hover:bg-surface-container-high'
-                }`}
-              >
-                Integrations
-              </button>
+            <nav className="space-y-1">
+              {navItems.map(({ id, label, icon: Icon }) => (
+                <button
+                  key={id}
+                  onClick={() => setActiveTab(id)}
+                  className={`w-full text-left flex items-center gap-3 px-4 py-3 rounded-full font-medium text-sm transition-colors ${
+                    activeTab === id
+                      ? 'bg-primary text-primary-foreground'
+                      : 'text-muted-foreground hover:text-foreground hover:bg-muted/60'
+                  }`}
+                >
+                  <Icon className="w-4 h-4" />
+                  {label}
+                </button>
+              ))}
             </nav>
           </div>
 
-          {/* Settings Content */}
-          <div className="lg:col-span-3 space-y-8">
+          {/* Content */}
+          <div className="lg:col-span-3 space-y-6">
+
+            {/* ── General ─────────────────────────────────────────────── */}
             {activeTab === 'general' && (
               <>
-                {/* Profile Information */}
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-6">Profile Information</h2>
-                  <div className="space-y-6">
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <h2 className="text-xl font-semibold text-foreground mb-6">Profile Information</h2>
+                  <div className="space-y-5">
                     <div>
-                      <label className="block text-sm font-medium text-on-surface mb-2">Full Name</label>
+                      <label className="block text-sm font-medium text-foreground mb-2">Full Name</label>
                       <input
                         type="text"
                         value={profile.fullName}
                         onChange={(e) => handleProfileChange('fullName', e.target.value)}
-                        className="w-full px-4 py-2 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50"
+                        className="w-full px-4 py-2.5 rounded-full bg-muted/30 border border-border text-foreground focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
                       />
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-on-surface mb-2">Email</label>
+                      <label className="block text-sm font-medium text-foreground mb-2">
+                        Email
+                        <span className="ml-2 text-[10px] font-normal text-muted-foreground/70 uppercase tracking-wider">
+                          Managed by Clerk
+                        </span>
+                      </label>
                       <input
                         type="email"
                         value={profile.email}
-                        onChange={(e) => handleProfileChange('email', e.target.value)}
-                        className="w-full px-4 py-2 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50"
+                        readOnly
+                        aria-readonly="true"
+                        className="w-full px-4 py-2.5 rounded-full bg-muted/30 border border-border text-muted-foreground cursor-not-allowed focus:outline-none"
+                        title="Email is managed by your Clerk account and cannot be changed here."
                       />
+                      <p className="mt-1.5 text-[11px] text-muted-foreground">
+                        Email changes require verification — manage via your Clerk account settings.
+                      </p>
                     </div>
                   </div>
                 </div>
 
-                {/* Preferences */}
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-6">Preferences</h2>
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <div className="flex items-center justify-between mb-6">
+                    <h2 className="text-xl font-semibold text-foreground">Preferences</h2>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full bg-muted text-muted-foreground border border-border">
+                      Coming soon
+                    </span>
+                  </div>
                   <div className="space-y-3">
-                    <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline/50 hover:border-outline transition-colors">
-                      <div>
-                        <p className="text-sm font-medium text-on-surface">Email Notifications</p>
-                        <p className="text-xs text-on-surface-variant">Receive alerts and updates</p>
+                    {[
+                      { field: 'emailNotifications', label: 'Email Notifications', desc: 'Receive alerts and updates' },
+                      { field: 'weeklyReports', label: 'Weekly Reports', desc: 'Get weekly performance summaries' },
+                    ].map(({ field, label, desc }) => (
+                      <div key={field} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 opacity-60">
+                        <div>
+                          <p className="text-sm font-medium text-foreground">{label}</p>
+                          <p className="text-xs text-muted-foreground">{desc}</p>
+                        </div>
+                        <button
+                          disabled
+                          aria-disabled="true"
+                          title="Not yet available"
+                          className={`relative w-11 h-6 rounded-full transition-colors cursor-not-allowed ${preferences[field as keyof typeof preferences] ? 'bg-primary' : 'bg-muted'}`}
+                        >
+                          <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${preferences[field as keyof typeof preferences] ? 'translate-x-5' : 'translate-x-0'}`} />
+                        </button>
                       </div>
-                      <button
-                        onClick={() => handlePreferenceChange('emailNotifications')}
-                        className={`w-10 h-6 rounded-full transition-colors ${preferences.emailNotifications ? 'bg-primary' : 'bg-outline-variant'}`}
-                      >
-                        <div className={`w-5 h-5 rounded-full bg-surface-container transition-transform ${preferences.emailNotifications ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                    <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline/50 hover:border-outline transition-colors">
-                      <div>
-                        <p className="text-sm font-medium text-on-surface">Weekly Reports</p>
-                        <p className="text-xs text-on-surface-variant">Get weekly performance summaries</p>
-                      </div>
-                      <button
-                        onClick={() => handlePreferenceChange('weeklyReports')}
-                        className={`w-10 h-6 rounded-full transition-colors ${preferences.weeklyReports ? 'bg-primary' : 'bg-outline-variant'}`}
-                      >
-                        <div className={`w-5 h-5 rounded-full bg-surface-container transition-transform ${preferences.weeklyReports ? 'translate-x-4' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
+                    ))}
                   </div>
                 </div>
 
-                {/* Danger Zone */}
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-6">Danger Zone</h2>
-                  <button className="px-6 py-2 rounded-full bg-red-500/20 text-red-400 font-medium text-sm border border-red-500/30 hover:bg-red-500/30 transition-colors">
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <h2 className="text-xl font-semibold text-foreground mb-1">Danger Zone</h2>
+                  <p className="text-sm text-muted-foreground mb-4">Permanently delete your account and all traces. This cannot be undone.</p>
+                  <button
+                    onClick={() => {
+                      if (window.confirm('Are you sure? This will permanently delete your account and all data.')) {
+                        // Account deletion via Clerk requires a backend endpoint.
+                        // Until wired up, direct the user to Clerk's user portal.
+                        window.open('https://accounts.clerk.dev/user', '_blank')
+                      }
+                    }}
+                    className="px-6 py-2 rounded-full bg-red-500/10 text-red-500 font-medium text-sm border border-red-500/30 hover:bg-red-500/20 transition-colors">
                     Delete Account
                   </button>
                 </div>
 
-                {/* Save Button */}
-                <div className="flex justify-end gap-3">
+                <div className="flex justify-end gap-3 flex-wrap">
+                  {saveError && (
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 text-red-600 border border-red-500/30 text-sm font-medium">
+                      <AlertCircle className="w-4 h-4" />
+                      {saveError}
+                    </div>
+                  )}
                   {saved && (
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-400 border border-green-500/30">
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-600 border border-green-500/30 text-sm font-medium">
                       <Check className="w-4 h-4" />
-                      <span className="text-sm font-medium">Changes saved</span>
+                      Saved
                     </div>
                   )}
                   <button
                     onClick={handleSave}
-                    className="flex items-center gap-2 px-6 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity"
+                    disabled={saving}
+                    className="flex items-center gap-2 px-6 py-2 rounded-full bg-primary text-primary-foreground font-semibold hover:opacity-90 transition-opacity disabled:opacity-60"
                   >
-                    <Save className="w-4 h-4" />
-                    <span>Save Changes</span>
+                    {saving
+                      ? <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                      : <Save className="w-4 h-4" />
+                    }
+                    {saving ? 'Saving…' : 'Save Changes'}
                   </button>
                 </div>
               </>
             )}
 
+            {/* ── API Keys ─────────────────────────────────────────────── */}
             {activeTab === 'api' && (
               <div className="space-y-6">
-                {apiError && (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>API unavailable — showing cached data</span>
+                {/* Quick Setup */}
+                <QuickSetup apiKeyPlaceholder={createdKey?.key || (apiKeys[0]?.prefix ? apiKeys[0].prefix.replace('...', '') + '…' : undefined)} />
+
+                {/* Error banner */}
+                {apiKeyError && (
+                  <div className="flex items-start gap-3 px-4 py-3 rounded-xl bg-red-500/10 border border-red-500/30 text-red-500 text-sm">
+                    <AlertCircle className="w-4 h-4 mt-0.5 shrink-0" />
+                    <span>{apiKeyError}</span>
                   </div>
                 )}
 
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h2 className="text-xl font-semibold text-on-surface mb-6">Create New API Key</h2>
+                {/* Created key reveal */}
+                {createdKey && (
+                  <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-6">
+                    <p className="text-sm text-green-600 font-semibold mb-3">✓ API Key Created Successfully</p>
+                    <div className="flex items-center gap-2 mb-3">
+                      <code className="flex-1 px-3 py-2 bg-card border border-border rounded-xl text-foreground text-xs break-all font-mono">
+                        {createdKey.key}
+                      </code>
+                      <button
+                        onClick={handleCopyKey}
+                        title={copiedKeyErr ? 'Copy failed — select the key text and press Ctrl+C' : 'Copy to clipboard'}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/20 border border-green-500/30 text-green-600 hover:bg-green-500/30 transition-colors text-xs font-medium"
+                      >
+                        {copiedKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                        {copiedKey ? 'Copied!' : copiedKeyErr ? 'Copy failed' : 'Copy'}
+                      </button>
+                    </div>
+                    <p className="text-xs text-muted-foreground">⚠ Save this key now. You won&apos;t be able to see it again.</p>
+                    <button onClick={() => setCreatedKey(null)} className="mt-3 text-xs text-muted-foreground underline underline-offset-2">Dismiss</button>
+                  </div>
+                )}
+
+                {/* Create new key */}
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <h2 className="text-xl font-semibold text-foreground mb-2">Create New API Key</h2>
+                  <p className="text-sm text-muted-foreground mb-5">Use API keys to authenticate requests from your agent code.</p>
                   <div className="flex gap-3">
                     <input
                       type="text"
-                      placeholder="Key name (e.g., Production)"
+                      placeholder="Key name (e.g., Production, Staging)"
                       value={newKeyName}
-                      onChange={(e) => setNewKeyName(e.target.value)}
-                      className="flex-1 px-4 py-2 rounded-full bg-surface-container-low border border-outline text-on-surface placeholder-on-surface-variant focus:outline-none focus:border-primary"
+                      onChange={(e) => { setNewKeyName(e.target.value); setApiKeyError(null) }}
+                      onKeyDown={(e) => e.key === 'Enter' && !creatingKey && handleCreateApiKey()}
+                      className="flex-1 px-4 py-2.5 rounded-full bg-muted/30 border border-border text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:border-primary focus:ring-1 focus:ring-primary/50 transition-colors"
                     />
                     <button
                       onClick={handleCreateApiKey}
-                      className="px-6 py-2 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:opacity-90"
+                      disabled={creatingKey || !newKeyName.trim()}
+                      className="px-6 py-2.5 rounded-full bg-primary text-primary-foreground font-medium text-sm hover:opacity-90 disabled:opacity-50 disabled:cursor-not-allowed transition-opacity flex items-center gap-2"
                     >
-                      Create
+                      {creatingKey ? (
+                        <>
+                          <div className="w-4 h-4 border-2 border-primary-foreground/30 border-t-primary-foreground rounded-full animate-spin" />
+                          Creating…
+                        </>
+                      ) : 'Create Key'}
                     </button>
                   </div>
                 </div>
 
-                {createdKey && (
-                  <div className="bg-green-500/20 border border-green-500/30 rounded-2xl p-6">
-                    <p className="text-sm text-green-400 font-semibold mb-3">API Key Created Successfully</p>
-                    <div className="flex items-center gap-2 mb-4">
-                      <code className="flex-1 px-3 py-2 bg-surface-container border border-outline rounded text-on-surface text-xs break-all font-mono">
-                        {createdKey.key}
-                      </code>
-                      <button
-                        onClick={() => navigator.clipboard.writeText(createdKey.key)}
-                        className="p-2 hover:bg-surface-container-high rounded"
-                      >
-                        <Copy className="w-4 h-4 text-green-400" />
-                      </button>
-                    </div>
-                    <p className="text-xs text-on-surface-variant">Save this key in a secure location. You won&apos;t be able to see it again.</p>
+                {/* Existing keys */}
+                <div className="bg-card border border-border rounded-xl p-6">
+                  <div className="flex items-center justify-between mb-5">
+                    <h3 className="text-lg font-semibold text-foreground">Your API Keys</h3>
+                    <button onClick={loadApiKeys} className="text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2">
+                      Refresh
+                    </button>
                   </div>
-                )}
-
-                <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                  <h3 className="text-lg font-semibold text-on-surface mb-4">Existing Keys</h3>
                   {loadingApiKeys ? (
                     <SkeletonCard />
                   ) : apiKeys.length === 0 ? (
-                    <p className="text-on-surface-variant">No API keys yet</p>
+                    <div className="text-center py-8">
+                      <Key className="w-10 h-10 text-muted-foreground/40 mx-auto mb-3" />
+                      <p className="text-sm text-muted-foreground">No API keys yet. Create one above.</p>
+                    </div>
                   ) : (
                     <div className="space-y-3">
                       {apiKeys.map((key) => (
-                        <div key={key.id} className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline">
-                          <div>
-                            <p className="text-sm font-semibold text-on-surface">{key.name}</p>
-                            <p className="text-xs text-on-surface-variant font-mono">{key.prefix}...</p>
-                            <p className="text-xs text-on-surface-variant mt-1">Created {new Date(key.created).toLocaleDateString()}</p>
+                        <div key={key.id} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border">
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm font-semibold text-foreground">{key.name}</p>
+                            <p className="text-xs text-muted-foreground font-mono mt-0.5">{key.prefix}</p>
+                            <p className="text-xs text-muted-foreground mt-1">
+                              Created {new Date(key.created).toLocaleDateString()}
+                              {key.last_used && ` · Last used ${new Date(key.last_used).toLocaleDateString()}`}
+                            </p>
                           </div>
                           <button
                             onClick={() => handleRevokeKey(key.id)}
-                            className="p-2 hover:bg-red-500/20 rounded text-red-400 transition-colors"
+                            disabled={revokingId === key.id}
+                            className="ml-4 p-2 hover:bg-red-500/10 rounded-lg text-red-500/60 hover:text-red-500 transition-colors disabled:opacity-50"
+                            title="Revoke key"
                           >
-                            <Trash2 className="w-4 h-4" />
+                            {revokingId === key.id
+                              ? <div className="w-4 h-4 border-2 border-red-500/30 border-t-red-500 rounded-full animate-spin" />
+                              : <Trash2 className="w-4 h-4" />
+                            }
                           </button>
                         </div>
                       ))}
@@ -350,82 +776,68 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {activeTab === 'billing' && (
-              <div className="space-y-6">
-                {billingError && (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>API unavailable — showing cached data</span>
-                  </div>
-                )}
+            {/* ── Billing ──────────────────────────────────────────────── */}
+            {activeTab === 'billing' && <BillingTab />}
 
-                {loadingBilling ? (
-                  <SkeletonCard />
-                ) : (
-                  <>
-                    <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                      <h2 className="text-xl font-semibold text-on-surface mb-6">Billing Summary</h2>
-                      <div className="space-y-4">
-                        <div className="flex justify-between items-start pb-4 border-b border-outline">
-                          <div>
-                            <p className="text-sm font-medium text-on-surface">Current Plan</p>
-                            <p className="text-xs text-on-surface-variant">{billing?.plan} Tier</p>
-                          </div>
-                          <p className="text-lg font-bold text-on-surface">${billing?.price}/mo</p>
-                        </div>
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <p className="text-sm font-medium text-on-surface">Next Billing Date</p>
-                            <p className="text-xs text-on-surface-variant">{new Date(billing?.nextBilling).toLocaleDateString()}</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="bg-surface-container border border-outline rounded-2xl p-6">
-                      <h3 className="text-lg font-semibold text-on-surface mb-4">Payment Method</h3>
-                      <div className="flex items-center justify-between p-4 bg-surface-container-low rounded-xl border border-outline">
-                        <div>
-                          <p className="text-sm text-on-surface">Visa ending in {billing?.paymentMethod.slice(-4)}</p>
-                        </div>
-                        <button className="px-4 py-2 text-sm text-on-surface-variant hover:text-on-surface transition-colors">
-                          Update
-                        </button>
-                      </div>
-                    </div>
-                  </>
-                )}
-              </div>
-            )}
-
+            {/* ── Integrations ─────────────────────────────────────────── */}
             {activeTab === 'integrations' && (
               <div className="space-y-6">
                 {integrationError && (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-full bg-red-500/20 border border-red-500/30 text-red-400 text-sm">
-                    <AlertCircle className="w-4 h-4" />
-                    <span>API unavailable — showing cached data</span>
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm">
+                    <AlertCircle className="w-4 h-4 shrink-0" />
+                    <span>{integrationError}</span>
+                    <button
+                      onClick={() => setIntegrationError(null)}
+                      className="ml-auto text-red-500 hover:text-red-700 shrink-0"
+                      aria-label="Dismiss"
+                    >
+                      ×
+                    </button>
                   </div>
                 )}
-
                 {loadingIntegrations ? (
-                  <div className="grid grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {Array(3).fill(0).map((_, i) => <SkeletonCard key={i} />)}
                   </div>
+                ) : integrations.length === 0 ? (
+                  <div className="rounded-xl border border-border bg-card py-16 text-center">
+                    <p className="text-sm font-medium text-foreground">Couldn&apos;t load integrations</p>
+                    <p className="text-xs text-muted-foreground mt-1 mb-4">This may be a temporary network issue.</p>
+                    <button
+                      onClick={() => refreshIntegrationsCtx()}
+                      className="px-4 py-2 rounded-full bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20 text-sm font-medium transition-colors"
+                    >
+                      Retry
+                    </button>
+                  </div>
                 ) : (
-                  <div className="grid grid-cols-3 gap-6">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                     {integrations.map((integration) => (
-                      <div key={integration.id} className="bg-surface-container border border-outline rounded-2xl p-6 hover:border-primary/50 transition-colors cursor-pointer">
-                        <div className="flex items-start justify-between mb-4">
-                          <h3 className="font-semibold text-on-surface">{integration.name}</h3>
-                          <div className={`w-3 h-3 rounded-full ${integration.connected ? 'bg-green-500' : 'bg-outline-variant'}`} />
+                      <div key={integration.id} className="bg-card border border-border rounded-xl p-6 hover:border-primary/50 transition-colors flex flex-col">
+                        <div className="flex items-start justify-between mb-3">
+                          <h3 className="font-semibold text-foreground">{integration.name}</h3>
+                          <span className={`w-2.5 h-2.5 mt-1 rounded-full shrink-0 ${integration.connected ? 'bg-green-500' : 'bg-muted'}`} />
                         </div>
-                        <p className="text-sm text-on-surface-variant mb-4">{integration.description}</p>
-                        <button className={`w-full px-4 py-2 rounded-full text-sm font-medium transition-colors ${
-                          integration.connected
-                            ? 'bg-red-500/20 text-red-400 hover:bg-red-500/30'
-                            : 'bg-primary/20 text-primary hover:bg-primary/30'
-                        }`}>
-                          {integration.connected ? 'Disconnect' : 'Connect'}
+                        <p className="text-sm text-muted-foreground leading-relaxed">{integration.description}</p>
+                        {integration.requires && (
+                          <p className="text-xs text-muted-foreground/70 mt-1.5 italic">{integration.requires}</p>
+                        )}
+                        <div className="flex-1" />
+                        <button
+                          onClick={() => handleToggleIntegration(integration.id, integration.connected)}
+                          disabled={togglingId === integration.id}
+                          className={`mt-5 w-full px-4 py-2 rounded-full text-sm font-medium transition-colors flex items-center justify-center gap-2 disabled:opacity-60 disabled:cursor-not-allowed ${
+                            integration.connected
+                              ? 'bg-red-500/10 text-red-500 hover:bg-red-500/20 border border-red-500/20'
+                              : 'bg-primary/10 text-primary hover:bg-primary/20 border border-primary/20'
+                          }`}
+                        >
+                          {togglingId === integration.id
+                            ? <div className="w-3.5 h-3.5 border-2 border-current/30 border-t-current rounded-full animate-spin" />
+                            : null}
+                          {togglingId === integration.id
+                            ? (integration.connected ? 'Disconnecting…' : 'Connecting…')
+                            : (integration.connected ? 'Disconnect' : 'Connect')}
                         </button>
                       </div>
                     ))}
@@ -433,6 +845,7 @@ export default function SettingsPage() {
                 )}
               </div>
             )}
+
           </div>
         </div>
       </div>

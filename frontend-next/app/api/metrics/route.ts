@@ -1,55 +1,72 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaRequest } from '../../../lib/supabase'
+import { supaUserRequest } from '../../../lib/supabase'
+import type { DailyMetricRow } from '../../../lib/trace-types'
 
 export async function GET() {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const rows = await supaRequest(`traces?user_id=eq.${userId}`)
+    // One tiny table — one row per day per user. No scanning 5000 traces.
+    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
+    // JWT in the Authorization header). The user_id filter in the URL is
+    // now defence-in-depth, not the only guard.
+    const rows = (await supaUserRequest(
+      `daily_metrics?user_id=eq.${encodeURIComponent(userId)}&order=date.desc&limit=90`,
+      userId
+    )) as DailyMetricRow[]
 
-    const total_cost = rows.reduce((acc: number, r: any) => acc + (r.cost_usd || 0.0), 0)
-    const total_in = rows.reduce((acc: number, r: any) => acc + (r.input_tokens || 0), 0)
-    const total_out = rows.reduce((acc: number, r: any) => acc + (r.output_tokens || 0), 0)
+    if (!rows || rows.length === 0) {
+      return NextResponse.json({
+        today: { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 },
+        last_7_days:  { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 },
+        this_month:   { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 },
+        all_time:     { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 },
+        chart: [],
+      })
+    }
 
-    const daily_burn_rate = parseFloat((total_cost * 24).toFixed(2)) || 847.50
-    const projected_monthly = parseFloat((total_cost * 24 * 30).toFixed(2)) || 25425
-    const budget = 50000
-    const spent = parseFloat((total_cost * 15).toFixed(2)) || 12563
+    const now       = new Date()
+    const todayStr  = now.toISOString().slice(0, 10)
+    // Compute the 7-days-ago boundary as a calendar-date string, NOT a Date
+    // object. The old code did `new Date(r.date) >= day7Ago` where day7Ago
+    // retained the current hours/minutes — so at 00:00:01 UTC you'd see 8
+    // days of data, and later in the day you'd see 7. Comparing ISO date
+    // strings (YYYY-MM-DD) gives exactly 7 calendar days regardless of when
+    // the request fires.
+    //
+    // "Last 7 days" = today + the 6 previous days = 7 days total. So the
+    // boundary is 6 days ago (inclusive), not 7. Using >= 6-days-ago gives
+    // exactly 7 rows: [6ago, 5ago, 4ago, 3ago, 2ago, 1ago, today].
+    const day6AgoDate = new Date(now)
+    day6AgoDate.setUTCDate(now.getUTCDate() - 6)
+    const day6AgoStr = day6AgoDate.toISOString().slice(0, 10)
+    const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
 
-    const chart = [
-      { day: '01', input: Math.round(total_in * 0.1), output: Math.round(total_out * 0.1) },
-      { day: '05', input: Math.round(total_in * 0.15), output: Math.round(total_out * 0.15) },
-      { day: '10', input: Math.round(total_in * 0.2), output: Math.round(total_out * 0.2) },
-      { day: '15', input: Math.round(total_in * 0.18), output: Math.round(total_out * 0.18) },
-      { day: '20', input: Math.round(total_in * 0.3), output: Math.round(total_out * 0.3) },
-      { day: '25', input: Math.round(total_in * 0.25), output: Math.round(total_out * 0.25) },
-      { day: '30', input: Math.round(total_in * 0.4), output: Math.round(total_out * 0.4) },
-    ]
-
-    const latency_heatmap = [
-      { time: '0:00', 'Retrieval_v2': 45, 'Synthesis_v1': 38, 'Router_fast': 28 },
-      { time: '4:00', 'Retrieval_v2': 52, 'Synthesis_v1': 42, 'Router_fast': 31 },
-      { time: '8:00', 'Retrieval_v2': 38, 'Synthesis_v1': 35, 'Router_fast': 24 },
-      { time: '12:00', 'Retrieval_v2': 65, 'Synthesis_v1': 58, 'Router_fast': 42 },
-      { time: '16:00', 'Retrieval_v2': 48, 'Synthesis_v1': 41, 'Router_fast': 29 },
-      { time: '20:00', 'Retrieval_v2': 55, 'Synthesis_v1': 48, 'Router_fast': 35 },
-    ]
+    const agg = (subset: DailyMetricRow[]) => ({
+      cost:       parseFloat(subset.reduce((a, r) => a + (r.total_cost ?? r.cost_usd ?? 0), 0).toFixed(6)),
+      tokens_in:  subset.reduce((a, r) => a + (r.input_tokens || 0), 0),
+      tokens_out: subset.reduce((a, r) => a + (r.output_tokens || 0), 0),
+      traces:     subset.reduce((a, r) => a + (r.trace_count || 0), 0),
+    })
 
     return NextResponse.json({
-      daily_burn_rate,
-      projected_monthly,
-      budget,
-      spent,
-      token_volume: {
-        input: total_in,
-        output: total_out,
-        chart,
-      },
-      latency_heatmap,
+      today:       agg(rows.filter((r) => r.date === todayStr)),
+      last_7_days: agg(rows.filter((r) => r.date >= day6AgoStr)),
+      this_month:  agg(rows.filter((r) => r.date >= monthStart)),
+      all_time:    agg(rows),
+      // chart: one point per day — frontend picks the period to display
+      chart: rows.map((r) => ({
+        date:   r.date,
+        cost:   r.cost_usd      || 0,
+        input:  r.input_tokens  || 0,
+        output: r.output_tokens || 0,
+        traces: r.trace_count   || 0,
+      })).reverse(),
     })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error('[api/metrics] request failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

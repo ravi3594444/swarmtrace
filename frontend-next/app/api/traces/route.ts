@@ -1,19 +1,29 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaRequest } from '../../../lib/supabase'
+import { supaUserRequest } from '../../../lib/supabase'
+import type { Trace } from '../../../lib/trace-types'
 
 export async function GET() {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const rows = await supaRequest(`traces?user_id=eq.${userId}&order=timestamp.desc&limit=500`)
+    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
+    // JWT in the Authorization header). The user_id filter in the URL is
+    // now defence-in-depth, not the only guard.
+    const rows = (await supaUserRequest(
+      `traces?user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=500`,
+      userId
+    )) as Trace[]
     return NextResponse.json({
-      traces: rows.map((r: any) => ({
+      traces: rows.map((r) => ({
         id: r.id,
         parent_id: r.parent_id,
         function: r.function,
         function_name: r.function, // compatible fallback
+        kind: r.kind,
+        agent_id: r.agent_id,
+        agent_name: r.agent_name,
         status: r.error ? 'ERROR' : 'SUCCESS',
         duration: Math.round((r.latency_sec || 0) * 1000),
         tokens_in: r.input_tokens || 0,
@@ -25,7 +35,8 @@ export async function GET() {
         error: r.error,
       }))
     })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error('[api/traces] request failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }

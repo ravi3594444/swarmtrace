@@ -1,23 +1,46 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaRequest } from '../../../../lib/supabase'
+import { supaUserRequest } from '../../../../lib/supabase'
+import type { DailyMetricRow } from '../../../../lib/trace-types'
 
 export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
-    const rows = await supaRequest(`traces?user_id=eq.${userId}`)
-    const total_cost = rows.reduce((acc: number, r: any) => acc + (r.cost_usd || 0.0), 0)
+    // Read from daily_metrics — pre-aggregated, tiny, never scans traces.
+    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
+    // JWT in the Authorization header). The user_id filter in the URL is
+    // now defence-in-depth, not the only guard.
+    const rows = (await supaUserRequest(
+      `daily_metrics?user_id=eq.${encodeURIComponent(userId)}&order=date.desc&limit=90`,
+      userId
+    )) as DailyMetricRow[]
+
+    const now        = new Date()
+    const monthStart = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
+
+    const allTime     = rows  ?? []
+    const thisMonth   = allTime.filter((r) => r.date >= monthStart)
+
+    const cost_this_month = parseFloat(
+      thisMonth.reduce((a, r) => a + (r.total_cost ?? r.cost_usd ?? 0), 0).toFixed(4)
+    )
+    const traces_used = allTime.reduce((a, r) => a + (r.trace_count || 0), 0)
+
+    // Calculate next billing date safely (handles December → January wrap)
+    const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
+    const next_billing = nextMonth.toISOString().slice(0, 10)
 
     return NextResponse.json({
-      plan: 'Pro',
-      traces_used: rows.length,
-      traces_limit: 100000,
-      cost_this_month: parseFloat(total_cost.toFixed(4)),
-      next_billing: '2026-07-01',
+      plan:             'Pro',
+      traces_used,
+      traces_limit:     100_000,
+      cost_this_month,
+      next_billing,
     })
-  } catch (error: any) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  } catch (error) {
+    console.error('[api/settings/billing] request failed:', error)
+    return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
 }
