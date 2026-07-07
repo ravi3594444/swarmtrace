@@ -33,16 +33,16 @@ function subscribe(callback: () => void): () => void {
 
 function getClientSnapshot(): TimeRangeKey {
   const v = window.localStorage.getItem(STORAGE_KEY)
-  return isTimeRangeKey(v) ? v : 'today'
+  return isTimeRangeKey(v) ? v : 'all'
 }
 
 function getServerSnapshot(): TimeRangeKey {
-  return 'today'
+  return 'all'
 }
 
 /** Persist the user's time-range choice across page reloads. Defaults to
- *  "today" (the product requirement) when no preference is stored. SSR-safe
- *  via useSyncExternalStore. */
+ *  "all" when no preference is stored so the dashboard never looks empty
+ *  when data exists outside today. SSR-safe via useSyncExternalStore. */
 export function useTimeRange() {
   const range = useSyncExternalStore(subscribe, getClientSnapshot, getServerSnapshot)
 
