@@ -340,9 +340,45 @@ export default function SettingsPage() {
       setProfile({ fullName: clerkFullName, email: clerkEmail })
     }
   }
-  // Preferences are read-only defaults until backend persistence is added
-  // ("Coming soon" badge in the UI). No setter needed — toggles are disabled.
-  const [preferences] = useState({ emailNotifications: true, darkMode: false, weeklyReports: false })
+  // Notification preferences persist per-user in Clerk unsafeMetadata (no
+  // extra backend table needed). Seeded lazily for the cached-session case
+  // and re-synced below when the Clerk user data arrives.
+  const readPrefs = (u: typeof user) => {
+    const p = (u?.unsafeMetadata?.preferences ?? {}) as Partial<Record<string, boolean>>
+    return {
+      emailNotifications: p.emailNotifications ?? true,
+      weeklyReports: p.weeklyReports ?? false,
+    }
+  }
+  const [preferences, setPreferences] = useState(() => readPrefs(user))
+  const [prefsError, setPrefsError] = useState<string | null>(null)
+  const [savingPref, setSavingPref] = useState<string | null>(null)
+
+  // Value-based sync (same pattern as the profile fields above): when the
+  // stored metadata values change, adopt them.
+  const clerkPrefs = readPrefs(user)
+  const clerkPrefsKey = `${clerkPrefs.emailNotifications}|${clerkPrefs.weeklyReports}`
+  const [prevClerkPrefsKey, setPrevClerkPrefsKey] = useState(clerkPrefsKey)
+  if (clerkPrefsKey !== prevClerkPrefsKey) {
+    setPrevClerkPrefsKey(clerkPrefsKey)
+    if (user) setPreferences(clerkPrefs)
+  }
+
+  const togglePreference = async (field: 'emailNotifications' | 'weeklyReports') => {
+    if (!user || savingPref) return
+    const next = { ...preferences, [field]: !preferences[field] }
+    setPreferences(next) // optimistic
+    setPrefsError(null)
+    setSavingPref(field)
+    try {
+      await user.update({ unsafeMetadata: { ...user.unsafeMetadata, preferences: next } })
+    } catch {
+      setPreferences(preferences) // revert
+      setPrefsError('Could not save preference — please try again.')
+    } finally {
+      setSavingPref(null)
+    }
+  }
   const [saved, setSaved] = useState(false)
 
   // API Keys state
@@ -510,9 +546,6 @@ export default function SettingsPage() {
     setSaved(false)
   }
 
-  // handlePreferenceChange removed — preferences toggles are disabled
-  // ("Coming soon") until backend persistence is added. The state is kept
-  // so the toggle positions render correctly from their defaults.
 
   const handleSave = async () => {
     setSaving(true)
@@ -615,31 +648,37 @@ export default function SettingsPage() {
 
                 <div className="bg-card border border-border rounded-xl p-6">
                   <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-semibold text-foreground">Preferences</h2>
-                    <span className="text-[10px] font-semibold uppercase tracking-wider px-2 py-1 rounded-full bg-muted text-muted-foreground border border-border">
-                      Coming soon
-                    </span>
+                    <h2 className="text-xl font-semibold text-foreground">Notification Preferences</h2>
+                    {prefsError && (
+                      <span className="text-xs text-red-500 font-medium">{prefsError}</span>
+                    )}
                   </div>
                   <div className="space-y-3">
                     {[
                       { field: 'emailNotifications', label: 'Email Notifications', desc: 'Receive alerts and updates' },
                       { field: 'weeklyReports', label: 'Weekly Reports', desc: 'Get weekly performance summaries' },
-                    ].map(({ field, label, desc }) => (
-                      <div key={field} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50 opacity-60">
-                        <div>
-                          <p className="text-sm font-medium text-foreground">{label}</p>
-                          <p className="text-xs text-muted-foreground">{desc}</p>
+                    ].map(({ field, label, desc }) => {
+                      const key = field as 'emailNotifications' | 'weeklyReports'
+                      const on = preferences[key]
+                      return (
+                        <div key={field} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50">
+                          <div>
+                            <p className="text-sm font-medium text-foreground">{label}</p>
+                            <p className="text-xs text-muted-foreground">{desc}</p>
+                          </div>
+                          <button
+                            onClick={() => togglePreference(key)}
+                            disabled={savingPref !== null}
+                            role="switch"
+                            aria-checked={on}
+                            aria-label={label}
+                            className={`relative w-11 h-6 rounded-full transition-colors ${on ? 'bg-primary' : 'bg-muted'} ${savingPref === field ? 'opacity-60' : ''}`}
+                          >
+                            <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : 'translate-x-0'}`} />
+                          </button>
                         </div>
-                        <button
-                          disabled
-                          aria-disabled="true"
-                          title="Not yet available"
-                          className={`relative w-11 h-6 rounded-full transition-colors cursor-not-allowed ${preferences[field as keyof typeof preferences] ? 'bg-primary' : 'bg-muted'}`}
-                        >
-                          <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${preferences[field as keyof typeof preferences] ? 'translate-x-5' : 'translate-x-0'}`} />
-                        </button>
-                      </div>
-                    ))}
+                      )
+                    })}
                   </div>
                 </div>
 
