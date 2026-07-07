@@ -45,8 +45,9 @@ import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Iterator, Optional, Tuple
 from urllib.request import Request, urlopen
 
 from swarmtrace.storage import save_trace
@@ -230,6 +231,44 @@ def _current_agent() -> Optional[Tuple[str, str]]:
     return _agent_ctx.get()
 
 
+# Session/conversation grouping — the id of the enclosing conversation, if any.
+# Set either by ``@observe(session_id=...)`` or the ``session()`` context
+# manager, and inherited by every nested traced call so a whole multi-turn
+# conversation stitches together as one thread on the dashboard.
+_session_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+    "session_ctx", default=None
+)
+
+
+def _current_session() -> Optional[str]:
+    return _session_ctx.get()
+
+
+@contextmanager
+def session(session_id: Optional[str] = None) -> Iterator[str]:
+    """Group every traced call made inside the block into one conversation.
+
+    Usage::
+
+        import swarmtrace
+
+        with swarmtrace.session("conversation-42") as sid:
+            chat_agent("hi")          # turn 1
+            chat_agent("and then?")   # turn 2 — same thread
+
+    If ``session_id`` is omitted a random one is generated and yielded, so you
+    can capture it (e.g. to correlate with your own chat/thread id). Nesting is
+    supported: an inner ``session()`` temporarily overrides the outer one and
+    the previous value is restored on exit.
+    """
+    sid = session_id or uuid.uuid4().hex
+    token = _session_ctx.set(sid)
+    try:
+        yield sid
+    finally:
+        _session_ctx.reset(token)
+
+
 # ---------------------------------------------------------------------------
 # Shared record-and-save logic
 # ---------------------------------------------------------------------------
@@ -354,6 +393,7 @@ def _flush(
     kind: str,
     agent_id: str,
     agent_name: str,
+    session_id: Optional[str] = None,
 ) -> None:
     args_repr = str(args[:2])
     if kwargs:
@@ -362,16 +402,19 @@ def _flush(
         trace_id, parent_id, func_name,
         args_repr, output, latency, error,
         timestamp, in_tok, out_tok, cost,
-        kind, agent_id, agent_name,
+        kind, agent_id, agent_name, session_id,
     )
 
-    _enqueue_remote({
+    payload = {
         "id": trace_id, "parent_id": parent_id, "function": func_name,
         "args": args_repr, "output": output or "", "latency_sec": latency,
         "error": error, "timestamp": timestamp,
         "input_tokens": in_tok, "output_tokens": out_tok, "cost_usd": cost,
         "kind": kind, "agent_id": agent_id, "agent_name": agent_name,
-    })
+    }
+    if session_id is not None:
+        payload["session_id"] = session_id
+    _enqueue_remote(payload)
 
 
 def _safe_flush(*flush_args) -> None:
@@ -385,7 +428,8 @@ def _safe_flush(*flush_args) -> None:
 # Decorator
 # ---------------------------------------------------------------------------
 
-def observe(func=None, *, kind: str = "auto", name: Optional[str] = None):
+def observe(func=None, *, kind: str = "auto", name: Optional[str] = None,
+            session_id: Optional[str] = None):
     """
     Decorator that records every call (sync or async) to the traces DB.
 
@@ -402,7 +446,7 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None):
     displayed ``agent_name`` for readability).
     """
     if func is None:
-        return lambda f: observe(f, kind=kind, name=name)
+        return lambda f: observe(f, kind=kind, name=name, session_id=session_id)
 
     if kind not in _KIND_CHOICES:
         raise ValueError(
@@ -418,6 +462,13 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None):
             enclosing_agent = _current_agent()
             timestamp = datetime.now(timezone.utc).isoformat()
             parent_token = _parent_ctx.set(trace_id)
+
+            if session_id is not None:
+                session_token = _session_ctx.set(session_id)
+                resolved_session = session_id
+            else:
+                session_token = None
+                resolved_session = _current_session()
 
             resolved_kind = _resolve_kind(kind, enclosing_agent)
 
@@ -458,11 +509,13 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None):
                     args, kwargs, output,
                     round(time.perf_counter() - start, 3),
                     error, timestamp, in_tok, out_tok, cost,
-                    resolved_kind, agent_id, agent_name,
+                    resolved_kind, agent_id, agent_name, resolved_session,
                 )
                 _parent_ctx.reset(parent_token)
                 if agent_token is not None:
                     _agent_ctx.reset(agent_token)
+                if session_token is not None:
+                    _session_ctx.reset(session_token)
 
         return async_wrapper
 
@@ -473,6 +526,13 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None):
         enclosing_agent = _current_agent()
         timestamp = datetime.now(timezone.utc).isoformat()
         parent_token = _parent_ctx.set(trace_id)
+
+        if session_id is not None:
+            session_token = _session_ctx.set(session_id)
+            resolved_session = session_id
+        else:
+            session_token = None
+            resolved_session = _current_session()
 
         resolved_kind = _resolve_kind(kind, enclosing_agent)
 
@@ -513,10 +573,12 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None):
                 args, kwargs, output,
                 round(time.perf_counter() - start, 3),
                 error, timestamp, in_tok, out_tok, cost,
-                resolved_kind, agent_id, agent_name,
+                resolved_kind, agent_id, agent_name, resolved_session,
             )
             _parent_ctx.reset(parent_token)
             if agent_token is not None:
                 _agent_ctx.reset(agent_token)
+            if session_token is not None:
+                _session_ctx.reset(session_token)
 
     return sync_wrapper

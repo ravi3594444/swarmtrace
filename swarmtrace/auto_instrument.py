@@ -257,11 +257,12 @@ def _record_async(
         args_str = f"model={model}"
         # save_trace writes to SQLite — fast local I/O, exception-safe.
         # Using module reference so tests can monkeypatch tracer.save_trace.
+        session_id = _tracer._current_session()
         _tracer.save_trace(
             trace_id, parent_id, func_name,
             args_str, output, latency, error_str,
             timestamp, in_tok, out_tok, cost,
-            "llm", agent_id, agent_name,
+            "llm", agent_id, agent_name, session_id,
         )
         _tracer._enqueue_remote({
             "id": trace_id, "parent_id": parent_id, "function": func_name,

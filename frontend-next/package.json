@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --import tsx --test scripts/test-derive-agent-cards.mjs"
+    "test": "node --import tsx --test scripts/test-*.mjs"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -17,6 +17,7 @@ type ApiSpan = {
   kind?: string
   agent_id?: string
   agent_name?: string
+  session_id?: string | null
 }
 
 function toTrace(s: ApiSpan): Trace {
@@ -35,6 +36,7 @@ function toTrace(s: ApiSpan): Trace {
     kind: (s.kind as 'agent' | 'tool' | 'llm' | 'function') ?? undefined,
     agent_id: s.agent_id,
     agent_name: s.agent_name,
+    session_id: s.session_id ?? null,
   }
 }
 

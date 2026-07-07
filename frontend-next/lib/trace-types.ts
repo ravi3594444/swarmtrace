@@ -14,6 +14,8 @@ export type Trace = {
   kind?: 'agent' | 'tool' | 'llm' | 'function'
   agent_id?: string
   agent_name?: string
+  // added in swarmtrace 0.5.0 — groups multi-turn runs into one conversation
+  session_id?: string | null
 }
 
 export type Agent = {

@@ -1,4 +1,4 @@
-from swarmtrace.tracer import observe, init
+from swarmtrace.tracer import observe, init, session
 from swarmtrace.storage import get_traces, save_trace
 from swarmtrace.budget import budget, reset as reset_budget, get_usage
 from swarmtrace.replay import show_failures
@@ -11,7 +11,7 @@ from swarmtrace import alerts
 
 __version__ = '0.4.10'
 __all__ = [
-    'observe', 'init',
+    'observe', 'init', 'session',
     'get_traces', 'save_trace',
     'budget', 'reset_budget', 'get_usage',
     'show_failures',
