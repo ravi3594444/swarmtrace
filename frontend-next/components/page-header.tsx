@@ -1,6 +1,7 @@
 'use client'
 
 import { ReactNode } from 'react'
+import { ThemeToggle } from '@/components/theme-toggle'
 
 export function PageHeader({
   title, description, badge, liveStatus, actions,
@@ -35,7 +36,10 @@ export function PageHeader({
         </div>
         {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
       </div>
-      {actions && <div className="flex items-center gap-2 shrink-0">{actions}</div>}
+      <div className="flex items-center gap-2 shrink-0">
+        {actions}
+        <ThemeToggle />
+      </div>
     </div>
   )
 }
