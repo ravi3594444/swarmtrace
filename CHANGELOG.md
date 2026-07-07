@@ -4,7 +4,7 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.10] — 2026-07-07
 
 ### Fixed
 - **Lambda disambiguation for stable `agent_id`** (`swarmtrace/tracer.py`):
@@ -66,7 +66,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   pain, not permanent.
 - ~~Two `@observe` lambdas in the same scope share `__qualname__` (`<lambda>`)
   and would collapse into one agent. Workaround: use `@observe(name='a')`.~~
-  **Resolved in [Unreleased]** — line-number disambiguation added.
+  **Resolved in [0.4.10]** — line-number disambiguation added.
 - Closures created from the same factory function share `__qualname__` and
   would collapse. Workaround: same — use `name=`.
 
