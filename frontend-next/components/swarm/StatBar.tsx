@@ -15,7 +15,7 @@ function StatCard({ label, value, unit, icon: Icon, trend, onMenuClick, menuLabe
   menuLabel?: string;
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md transition-shadow">
+    <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md transition-[background-color,border-color,color,box-shadow] duration-200">
       <div className="flex items-start justify-between mb-4">
         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</div>
         <div className="flex items-center gap-1.5">
@@ -63,24 +63,32 @@ export function StatBar({ traces }: { traces: Trace[] }) {
   return (
     <>
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard label="Total Traces"  value={String(traces.length)} icon={Hash}     trend={`${errors} error${errors !== 1 ? "s" : ""} · ${successRate}% success`} />
-        <StatCard label="Total Latency" value={totalLat.toFixed(2)}   icon={Clock}    unit="s" trend={`avg ${traces.length ? (totalLat / traces.length).toFixed(2) : "0"}s per trace`} />
-        <StatCard
+        <div className="animate-slide-in-up" style={{ animationDelay: "0ms" }}>
+          <StatCard label="Total Traces" value={String(traces.length)} icon={Hash} trend={`${errors} error${errors !== 1 ? "s" : ""} · ${successRate}% success`} />
+        </div>
+        <div className="animate-slide-in-up" style={{ animationDelay: "40ms" }}>
+          <StatCard label="Total Latency" value={totalLat.toFixed(2)} icon={Clock} unit="s" trend={`avg ${traces.length ? (totalLat / traces.length).toFixed(2) : "0"}s per trace`} />
+        </div>
+        <div className="animate-slide-in-up" style={{ animationDelay: "80ms" }}>
+          <StatCard
           label="Token Usage"
           value={totalTokens.toLocaleString()}
           icon={Activity}
           trend={`${traces.reduce((s,t)=>s+t.input_tokens,0).toLocaleString()} in / ${traces.reduce((s,t)=>s+t.output_tokens,0).toLocaleString()} out`}
           onMenuClick={() => setDrawerOpen(true)}
           menuLabel="View usage breakdown"
-        />
-        <StatCard
+          />
+        </div>
+        <div className="animate-slide-in-up" style={{ animationDelay: "120ms" }}>
+          <StatCard
           label="Total Cost"
           value={`$${totalCost.toFixed(4)}`}
           icon={Coins}
           trend={`avg $${traces.length ? (totalCost / traces.length).toFixed(4) : "0"} per trace`}
           onMenuClick={() => setDrawerOpen(true)}
           menuLabel="View spend breakdown"
-        />
+          />
+        </div>
       </div>
 
       <UsageBreakdownDrawer open={drawerOpen} onClose={() => setDrawerOpen(false)} />

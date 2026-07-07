@@ -34,12 +34,12 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
 
   return (
     <div className="fixed inset-0 z-50">
-      <div className="absolute inset-0 bg-foreground/10 backdrop-blur-sm" onClick={onClose} />
+      <div className="absolute inset-0 bg-foreground/10 backdrop-blur-sm animate-backdrop-fade-in" onClick={onClose} />
       <aside
         role="dialog"
         aria-modal="true"
         aria-label={`Trace detail: ${trace.function}`}
-        className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-border bg-card shadow-2xl fade-slide-in"
+        className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-border bg-card shadow-2xl animate-drawer-slide-in transition-[background-color,border-color,color] duration-200"
       >
         <header className="flex items-start justify-between border-b border-border px-5 py-4 bg-muted/20">
           <div className="min-w-0">

@@ -24,7 +24,7 @@ const chartTooltip = {
 
 function MetricCard({ label, value, unit, trend }: { label: string; value: string; unit?: string; trend: string }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm">
+    <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-[background-color,border-color,color] duration-200">
       <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider mb-3">{label}</div>
       <div className="text-4xl font-bold tabular-nums text-foreground leading-none tracking-tight">
         {value}{unit && <span className="ml-1.5 text-base font-medium text-muted-foreground">{unit}</span>}
@@ -41,7 +41,7 @@ function dayLabel(dateStr: string): string {
 
 function RegressionMonitorPanel({ data }: { data: MetricsData | null }) {
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
       <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <TrendingDown className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Regression Monitor</h3>
@@ -164,7 +164,7 @@ export default function MetricsPage() {
         </div>
 
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
             <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
               <h3 className="text-sm font-semibold text-foreground">Daily Cost (USD)</h3>
             </div>
@@ -185,7 +185,7 @@ export default function MetricsPage() {
             </div>
           </div>
 
-          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
             <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
               <h3 className="text-sm font-semibold text-foreground">Trace Volume</h3>
             </div>
