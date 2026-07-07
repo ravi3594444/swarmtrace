@@ -40,6 +40,7 @@ _ADDED_COLUMNS: List[Tuple[str, str]] = [
     ("kind",       "TEXT NOT NULL DEFAULT 'agent'"),
     ("agent_id",   "TEXT"),
     ("agent_name", "TEXT"),
+    ("session_id", "TEXT"),
 ]
 
 _lock = threading.Lock()
@@ -125,6 +126,7 @@ def save_trace(
     kind: str = "function",
     agent_id: Optional[str] = None,
     agent_name: Optional[str] = None,
+    session_id: Optional[str] = None,
 ) -> None:
     global _write_count
     agent_id = agent_id or id_
@@ -136,12 +138,12 @@ def save_trace(
                 "INSERT OR REPLACE INTO traces "
                 "(id, parent_id, function, args, output, latency_sec, error, "
                 "timestamp, input_tokens, output_tokens, cost_usd, "
-                "kind, agent_id, agent_name) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                "kind, agent_id, agent_name, session_id) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (id_, parent_id, function, args, output,
                  latency_sec, error, timestamp,
                  input_tokens, output_tokens, cost_usd,
-                 kind, agent_id, agent_name),
+                 kind, agent_id, agent_name, session_id),
             )
             _write_count += 1
             if _write_count % PURGE_EVERY == 0:

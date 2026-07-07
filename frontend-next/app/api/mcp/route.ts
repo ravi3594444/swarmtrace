@@ -161,6 +161,9 @@ function buildMcpServer(userId: string): McpServer {
       agent_name:    z.string().max(256).optional().describe(
         'Display name for the agent card. Defaults to `function`.'
       ),
+      session_id:    z.string().max(64).optional().describe(
+        'Conversation/session id to group multi-turn runs into one thread. Optional.'
+      ),
     },
     async (params) => {
       try {
@@ -205,6 +208,7 @@ function buildMcpServer(userId: string): McpServer {
           p_kind:          kind,
           p_agent_id:      agentId,
           p_agent_name:    agentName,
+          p_session_id:    params.session_id ?? null,
         })
 
         return {

@@ -49,3 +49,23 @@ def test_save_never_raises(storage, monkeypatch):
     # Simulate a broken connection — save_trace must swallow the error.
     monkeypatch.setattr(storage, "_get_conn", lambda: (_ for _ in ()).throw(OSError("disk")))
     _save(storage)  # must not raise
+
+
+def test_save_trace_round_trips_session_id(storage):
+    storage.save_trace(
+        "sid",
+        None,
+        "fn",
+        "()",
+        "out",
+        0.1,
+        None,
+        "2026-01-03T00:00:00+00:00",
+        1,
+        2,
+        0.003,
+        session_id="thread-42",
+    )
+    row = storage.get_by_id("sid")
+    assert row is not None
+    assert row[-1] == "thread-42"
