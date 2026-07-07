@@ -29,15 +29,15 @@ function StatusBadge({ status }: { status: Agent['status'] }) {
   )
 }
 
-function AgentCard({ agent }: { agent: Agent }) {
+function AgentCard({ agent, delayMs = 0 }: { agent: Agent; delayMs?: number }) {
   const isRunning = agent.status === 'RUNNING'
   const isError = agent.status === 'ERROR'
   const lastActive = /^\d{4}-\d{2}-\d{2}T/.test(agent.lastActive) ? formatRelativeTime(agent.lastActive) : agent.lastActive
 
   return (
-    <div className={`rounded-xl border bg-card shadow-sm overflow-hidden transition-all hover:shadow-md ${
+    <div className={`rounded-xl border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color,box-shadow] duration-200 hover:shadow-md animate-slide-in-up ${
       isError ? 'border-red-200' : 'border-border'
-    }`}>
+    }`} style={{ animationDelay: `${Math.min(delayMs, 300)}ms` }}>
       <div className={`h-1 ${isRunning ? 'bg-primary' : isError ? 'bg-red-400' : 'bg-border'}`} />
       <div className="p-5">
         <div className="flex items-start justify-between gap-3 mb-4">
@@ -152,8 +152,8 @@ export default function AgentsPage() {
             { label: 'Running', value: counts.RUNNING },
             { label: 'Idle', value: counts.IDLE },
             { label: 'Error', value: counts.ERROR },
-          ].map((s) => (
-            <div key={s.label} className="rounded-xl border border-border bg-card p-5 shadow-sm">
+          ].map((s, idx) => (
+            <div key={s.label} className="rounded-xl border border-border bg-card p-5 shadow-sm transition-[background-color,border-color,color] duration-200 animate-slide-in-up" style={{ animationDelay: `${Math.min(idx * 40, 300)}ms` }}>
               <div className="text-xs text-muted-foreground uppercase tracking-wider mb-2 font-semibold">{s.label}</div>
               <div className="text-4xl font-bold tabular-nums text-foreground leading-none tracking-tight">{s.value}</div>
             </div>
@@ -172,7 +172,7 @@ export default function AgentsPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-5">
-          {filtered.map((a) => <AgentCard key={a.id} agent={a} />)}
+          {filtered.map((a, idx) => <AgentCard key={a.id} agent={a} delayMs={idx * 40} />)}
         </div>
 
         {filtered.length === 0 && (

@@ -50,7 +50,7 @@ export default function FailuresPage() {
             { label: 'Error Rate', value: `${errorRate}%`, sub: 'of all executed spans', icon: TrendingDown },
             { label: 'Error Types', value: String(Object.keys(errorTypes).length), sub: 'distinct error classes', icon: Bug },
           ].map(({ label, value, sub, icon: Icon }) => (
-            <div key={label} className="rounded-xl border border-border bg-card p-5 shadow-sm">
+            <div key={label} className="rounded-xl border border-border bg-card p-5 shadow-sm transition-[background-color,border-color,color] duration-200">
               <div className="flex items-center gap-2 mb-3">
                 <Icon className="w-4 h-4 text-muted-foreground" />
                 <span className="text-xs text-muted-foreground uppercase tracking-wider font-bold">{label}</span>
@@ -62,7 +62,7 @@ export default function FailuresPage() {
         </div>
 
         {Object.keys(errorTypes).length > 0 && (
-          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
             <div className="border-b border-border bg-muted/30 px-4 py-3">
               <h3 className="text-sm font-semibold text-foreground">Error Breakdown</h3>
             </div>
@@ -89,7 +89,7 @@ export default function FailuresPage() {
             <div className="text-xs text-muted-foreground mt-1">All spans completed successfully</div>
           </div>
         ) : (
-          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border bg-muted/20 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
