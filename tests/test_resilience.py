@@ -28,10 +28,13 @@ class TestReliability(unittest.TestCase):
             # (the hot path only ever triggers it on a background thread).
             pricing._background_fetch()
         self.assertEqual(pricing._cache, {})
-        # A failed fetch must never raise into the caller and must yield $0
-        # rather than a guessed cost.
+        # A failed fetch must never raise into the caller; bundled pricing
+        # still provides a nonzero fallback for known models, while unknown
+        # ones stay 0.
         cost = calculate_cost("gpt-4", 1000, 1000)
-        self.assertEqual(cost, 0.0)
+        unknown_cost = calculate_cost("definitely-not-a-real-model", 1000, 1000)
+        self.assertAlmostEqual(cost, 0.09, places=2)
+        self.assertEqual(unknown_cost, 0.0)
 
     def test_tracer_storage_failure(self):
         stderr = io.StringIO()
