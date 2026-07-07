@@ -48,20 +48,32 @@ export function IntegrationsProvider({ children }: { children: ReactNode }) {
   // for manual refresh from the settings page.
   useEffect(() => {
     let cancelled = false
-    const load = async () => {
+    const attempt = async (): Promise<boolean> => {
       try {
         const res = await fetch('/api/settings/integrations')
-        if (cancelled) return
+        if (cancelled) return true
         if (res.ok) {
           const data = await res.json()
-          if (cancelled) return
+          if (cancelled) return true
           setIntegrations(data.integrations || [])
+          return true
         }
+        return false
       } catch {
-        // silently fail
-      } finally {
-        if (!cancelled) setLoading(false)
+        return false
       }
+    }
+    const load = async () => {
+      // The first request can race auth/session setup right after sign-in and
+      // fail transiently, so retry a couple of times with a short backoff
+      // before giving up.
+      for (let i = 0; i < 3; i++) {
+        if (await attempt()) break
+        if (cancelled) return
+        await new Promise((r) => setTimeout(r, 1000 * (i + 1)))
+        if (cancelled) return
+      }
+      if (!cancelled) setLoading(false)
     }
     load()
     return () => { cancelled = true }

@@ -2,9 +2,9 @@ import type { Trace } from './trace-types'
 
 // ── Time-range filtering ────────────────────────────────────────────────────
 //
-// The dashboard defaults to "Today" instead of showing all-time data. A
-// dropdown in the page header lets the user switch between Today / This Week /
-// This Month / All Time. Filtering happens client-side at the page level so
+// The dashboard defaults to "All Time" so it never looks empty when data
+// exists. A dropdown in the page header lets the user switch between Today /
+// This Week / This Month / All Time. Filtering happens client-side at the page level so
 // every widget (StatBar, CallTree, TokenChart, CostProjection, …) consumes a
 // single already-filtered array — no per-widget changes needed.
 //

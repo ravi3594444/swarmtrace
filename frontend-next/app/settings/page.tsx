@@ -308,15 +308,23 @@ export default function SettingsPage() {
   // React-recommended pattern: store the previous user ref and adjust
   // state during render if the prop changed. See:
   // https://react.dev/reference/react/useState#storing-information-from-previous-renders
-  const [profile, setProfile] = useState({ fullName: '', email: '' })
-  const [prevUser, setPrevUser] = useState(user)
-  if (user !== prevUser) {
-    setPrevUser(user)
+  // The lazy initializer covers the case where Clerk has already loaded the
+  // user before this component first renders (cached session).
+  const [profile, setProfile] = useState(() => ({
+    fullName: user?.fullName ?? user?.firstName ?? '',
+    email: user?.primaryEmailAddress?.emailAddress ?? '',
+  }))
+  // Compare on the derived *values* rather than the user object reference —
+  // Clerk can mutate its user resource in place, so identity checks miss the
+  // moment the profile data becomes available.
+  const clerkFullName = user?.fullName ?? user?.firstName ?? ''
+  const clerkEmail = user?.primaryEmailAddress?.emailAddress ?? ''
+  const clerkKey = `${clerkFullName}|${clerkEmail}`
+  const [prevClerkKey, setPrevClerkKey] = useState(clerkKey)
+  if (clerkKey !== prevClerkKey) {
+    setPrevClerkKey(clerkKey)
     if (user) {
-      setProfile({
-        fullName: user.fullName ?? user.firstName ?? '',
-        email: user.primaryEmailAddress?.emailAddress ?? '',
-      })
+      setProfile({ fullName: clerkFullName, email: clerkEmail })
     }
   }
   // Preferences are read-only defaults until backend persistence is added
