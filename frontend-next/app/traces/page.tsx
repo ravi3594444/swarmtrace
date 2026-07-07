@@ -443,6 +443,12 @@ export default function TracesPage() {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OK' | 'ERROR'>('ALL')
   const [view, setView] = useState<ViewMode>('tree')
 
+  // Custom date range (inclusive, local time). Empty string = unbounded.
+  const [fromDate, setFromDate] = useState('')
+  const [toDate, setToDate] = useState('')
+  const fromMs = useMemo(() => (fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : NaN), [fromDate])
+  const toMs = useMemo(() => (toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : NaN), [toDate])
+
   // ── Tag-based filtering ──────────────────────────────────────────────────────
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
 
@@ -464,6 +470,11 @@ export default function TracesPage() {
       const q = search.toLowerCase()
       if (!t.function.toLowerCase().includes(q) && !t.id.toLowerCase().includes(q)) return false
     }
+    if (Number.isFinite(fromMs) || Number.isFinite(toMs)) {
+      const ms = new Date(t.timestamp).getTime()
+      if (Number.isFinite(fromMs) && ms < fromMs) return false
+      if (Number.isFinite(toMs) && ms > toMs) return false
+    }
     // Tag filtering: trace must match ALL active tags
     if (activeTags.size > 0) {
       for (const tag of activeTags) {
@@ -473,7 +484,7 @@ export default function TracesPage() {
       }
     }
     return true
-  }), [traces, search, statusFilter, activeTags])
+  }), [traces, search, statusFilter, activeTags, fromMs, toMs])
 
   const roots = useMemo(() => buildSpanTree(filtered), [filtered])
   const maxLatency = useMemo(() => filtered.reduce((m, t) => Math.max(m, t.latency_sec ?? 0), 0.001), [filtered])
@@ -517,6 +528,30 @@ export default function TracesPage() {
                 onChange={(e) => setSearch(e.target.value)}
                 className="h-8 rounded-lg border border-border bg-card pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring shadow-sm w-44"
               />
+            </div>
+            <div className="flex items-center gap-1 h-8 rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground shadow-sm" title="Filter by date range">
+              <input
+                type="date" value={fromDate} max={toDate || undefined}
+                onChange={(e) => setFromDate(e.target.value)}
+                aria-label="From date"
+                className="bg-transparent text-xs text-foreground focus:outline-none w-[7.5rem]"
+              />
+              <span className="text-muted-foreground/60">–</span>
+              <input
+                type="date" value={toDate} min={fromDate || undefined}
+                onChange={(e) => setToDate(e.target.value)}
+                aria-label="To date"
+                className="bg-transparent text-xs text-foreground focus:outline-none w-[7.5rem]"
+              />
+              {(fromDate || toDate) && (
+                <button
+                  onClick={() => { setFromDate(''); setToDate('') }}
+                  aria-label="Clear date range"
+                  className="text-muted-foreground hover:text-foreground transition-colors"
+                >
+                  <X className="w-3 h-3" />
+                </button>
+              )}
             </div>
             {(['ALL', 'OK', 'ERROR'] as const).map((f) => (
               <button key={f} onClick={() => setStatusFilter(f)}
