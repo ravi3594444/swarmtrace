@@ -4,6 +4,22 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Lambda disambiguation for stable `agent_id`** (`swarmtrace/tracer.py`):
+  two distinct `@observe` lambdas in the same scope used to silently
+  collapse into one dashboard agent card because all lambdas share the
+  `__qualname__` `<lambda>` (or `outer.<locals>.<lambda>`). The
+  `_stable_agent_id` derivation now appends `co_firstlineno` to the hash
+  source when `<lambda>` appears in the qualname. Line number is stable
+  across calls of the same lambda (so repeat runs still aggregate) but
+  differs between distinct lambdas (so they don't collide). Named
+  functions are unaffected — refactoring (moving a function to a
+  different line) must not break aggregation. Closures from the same
+  factory still share a source line by definition, so they keep the
+  documented limitation (use `name=` to disambiguate).
+
 ## [0.4.9] — 2026-07-05
 
 ### Fixed
@@ -48,8 +64,9 @@ adheres to [Semantic Versioning](https://semver.org/).
   appear as orphan agent cards until they age out of the 500-row window.
   New runs get the stable hash and aggregate correctly. One-time migration
   pain, not permanent.
-- Two `@observe` lambdas in the same scope share `__qualname__` (`<lambda>`)
-  and would collapse into one agent. Workaround: use `@observe(name='a')`.
+- ~~Two `@observe` lambdas in the same scope share `__qualname__` (`<lambda>`)
+  and would collapse into one agent. Workaround: use `@observe(name='a')`.~~
+  **Resolved in [Unreleased]** — line-number disambiguation added.
 - Closures created from the same factory function share `__qualname__` and
   would collapse. Workaround: same — use `name=`.
 

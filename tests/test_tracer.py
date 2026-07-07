@@ -315,6 +315,116 @@ def test_observe_name_overrides_agent_name_and_seeds_id(records):
 
 
 # ---------------------------------------------------------------------------
+# Lambda disambiguation.
+#
+# All lambdas share the qualname '<lambda>' (or 'outer.<locals>.<lambda>'),
+# so two distinct lambdas in the same scope used to hash to the SAME
+# agent_id and silently collapse into one dashboard card. The fix appends
+# the source line number to the hash source when '<lambda>' appears in
+# the qualname — stable across calls of the same lambda (so repeat runs
+# still aggregate) but differing between distinct lambdas (so they don't
+# collide). These tests lock in both halves of that contract.
+# ---------------------------------------------------------------------------
+
+def test_distinct_lambdas_get_distinct_agent_ids(records):
+    """Two distinct lambdas (different source lines) must NOT collide
+    into one agent card. Pre-fix this silently merged them."""
+    bot_a = tracer.observe(lambda x: "a")
+    bot_b = tracer.observe(lambda x: "b")
+
+    bot_a("q1")
+    bot_b("q2")
+
+    assert len(records) == 2
+    a_id = records[0][-2]
+    b_id = records[1][-2]
+    assert a_id != b_id, (
+        "distinct lambdas collapsed into one agent_id — "
+        "the dashboard would show one card instead of two"
+    )
+
+
+def test_same_lambda_called_twice_aggregates(records):
+    """Repeat calls of the SAME lambda must share agent_id (the whole
+    point of the stable-id fix). Line-number disambiguation must not
+    break this — the same lambda is on the same line by definition."""
+    bot = tracer.observe(lambda x: f"answer to {x}")
+
+    bot("q1")
+    bot("q2")
+    bot("q3")
+
+    assert len(records) == 3
+    # Different trace ids per call...
+    ids = {r[0] for r in records}
+    assert len(ids) == 3
+    # ...but the same agent_id (stable identity for this lambda).
+    agent_ids = {r[-2] for r in records}
+    assert len(agent_ids) == 1, (
+        f"same lambda got {len(agent_ids)} distinct agent_ids — "
+        "repeat runs would not aggregate"
+    )
+
+
+def test_lambda_with_name_override_uses_name_not_lineno(records):
+    """name= takes precedence over the qualname+lineno derivation.
+    Two lambdas with different names get different ids via name hash,
+    not via line number."""
+    bot_a = tracer.observe(lambda x: "a", name="alice")
+    bot_b = tracer.observe(lambda x: "b", name="bob")
+
+    bot_a(0)
+    bot_b(0)
+
+    import hashlib
+    assert records[0][-2] == hashlib.sha256(b"alice").hexdigest()
+    assert records[1][-2] == hashlib.sha256(b"bob").hexdigest()
+    assert records[0][-1] == "alice"
+    assert records[1][-1] == "bob"
+
+
+def test_named_function_unaffected_by_lambda_disambiguation(records):
+    """Named functions must NOT include the source line number in the
+    hash source — refactoring (moving a function to a different line)
+    must not break agent aggregation. This is the regression guard
+    against accidentally applying the lambda fix to all functions."""
+    @tracer.observe
+    def my_named_agent():
+        return "ok"
+
+    my_named_agent()
+
+    import hashlib
+    expected = hashlib.sha256(
+        f"{my_named_agent.__module__}.{my_named_agent.__qualname__}".encode()
+    ).hexdigest()
+    # No '@lineno' suffix — named functions keep the original derivation.
+    assert records[0][-2] == expected
+    assert "@" not in records[0][-2]  # paranoid check: id is pure hex
+
+
+def test_distinct_lambdas_in_same_outer_function_get_distinct_ids(records):
+    """Two lambdas defined inside the SAME outer function share the
+    qualname 'outer.<locals>.<lambda>' — the most common collision
+    case. The line-number fix must disambiguate them too."""
+
+    def make_bots():
+        # Defined on different source lines → different co_firstlineno.
+        bot_first = tracer.observe(lambda x: "first")
+        bot_second = tracer.observe(lambda x: "second")
+        return bot_first, bot_second
+
+    bot_first, bot_second = make_bots()
+    bot_first(0)
+    bot_second(0)
+
+    assert len(records) == 2
+    assert records[0][-2] != records[1][-2], (
+        "two lambdas in the same outer function still collide"
+    )
+
+
+# ---------------------------------------------------------------------------
 # SDK ↔ API contract test
 #
 # /api/agents/route.ts groups traces by agent_id and filters groups that

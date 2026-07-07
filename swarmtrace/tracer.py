@@ -283,8 +283,37 @@ def _stable_agent_id(func, name: Optional[str]) -> str:
     ``@observe(kind="agent")`` keeps a fresh ``trace_id`` so that swarm
     sub-agents (orchestrator/researcher/summarizer within one run) stay
     distinct, per ``test_nested_agents_each_get_their_own_agent_id``.
+
+    Lambda disambiguation: all lambdas share the qualname ``<lambda>``
+    (or ``outer.<locals>.<lambda>`` when nested), so two distinct lambdas
+    in the same scope would hash to the SAME agent_id and silently
+    collapse into one dashboard card — exactly the bug the stable-id
+    fix was meant to prevent. We disambiguate by appending the source
+    line number (``co_firstlineno``) to the hash source ONLY when the
+    qualname contains ``<lambda>``. The line number is stable across
+    calls of the same lambda (so repeat runs still aggregate) but
+    differs between distinct lambdas (so they don't collide).
+
+    Named functions are NOT affected — refactoring (moving a function
+    to a different line) must not break aggregation. Two lambdas
+    defined on the same source line still collide; that's a rare
+    pathological case and the user can disambiguate with ``name=``.
+
+    Closures from the same factory (``make_bot.<locals>.bot``) are also
+    NOT affected — they share the same source line by definition, so
+    line-number disambiguation can't help. They keep the documented
+    limitation (collision unless ``name=`` is used).
     """
-    src = name if name else f"{func.__module__}.{func.__qualname__}"
+    if name:
+        src = name
+    else:
+        src = f"{func.__module__}.{func.__qualname__}"
+        # Lambda disambiguation — see docstring above.
+        qualname = getattr(func, "__qualname__", "") or ""
+        if "<lambda>" in qualname:
+            code = getattr(func, "__code__", None)
+            lineno = getattr(code, "co_firstlineno", "?")
+            src = f"{src}@{lineno}"
     return hashlib.sha256(src.encode("utf-8")).hexdigest()
 
 
