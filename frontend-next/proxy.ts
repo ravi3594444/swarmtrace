@@ -4,6 +4,9 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 // their own auth (X-API-Key for ingest/events, Clerk for mcp via resolveApiKey).
 const isPublicRoute = createRouteMatcher([
   "/",
+  "/contact",
+  "/privacy",
+  "/terms",
   "/api/ingest(.*)",
   "/api/events(.*)",
   "/api/mcp(.*)",

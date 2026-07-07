@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
 export function FooterSection() {
@@ -12,39 +13,37 @@ export function FooterSection() {
           <div>
             <h3 className="font-semibold mb-4">Product</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><a href="#" className="hover:text-foreground transition-colors">Features</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">How it works</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Pricing</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Documentation</a></li>
+              <li><Link href="/#features" className="hover:text-foreground transition-colors">Features</Link></li>
+              <li><Link href="/#how-it-works" className="hover:text-foreground transition-colors">How it works</Link></li>
+              <li><Link href="/#pricing" className="hover:text-foreground transition-colors">Pricing</Link></li>
+              <li><a href="https://github.com/ravi3594444/swarmtrace#readme" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Documentation</a></li>
             </ul>
           </div>
 
           <div>
             <h3 className="font-semibold mb-4">Company</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><a href="#" className="hover:text-foreground transition-colors">About</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Blog</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Careers</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Contact</a></li>
+              <li><Link href="/#developers" className="hover:text-foreground transition-colors">About</Link></li>
+              <li><Link href="/contact" className="hover:text-foreground transition-colors">Contact</Link></li>
             </ul>
           </div>
 
           <div>
             <h3 className="font-semibold mb-4">Resources</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><a href="#" className="hover:text-foreground transition-colors">GitHub</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">PyPI</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Community</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Support</a></li>
+              <li><a href="https://github.com/ravi3594444/swarmtrace" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">GitHub</a></li>
+              <li><a href="https://pypi.org/project/swarmtrace/" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">PyPI</a></li>
+              <li><a href="https://github.com/ravi3594444/swarmtrace/discussions" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Community</a></li>
+              <li><Link href="/contact" className="hover:text-foreground transition-colors">Support</Link></li>
             </ul>
           </div>
 
           <div>
             <h3 className="font-semibold mb-4">Legal</h3>
             <ul className="space-y-2 text-sm text-muted-foreground">
-              <li><a href="#" className="hover:text-foreground transition-colors">Privacy</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Terms</a></li>
-              <li><a href="#" className="hover:text-foreground transition-colors">Security</a></li>
+              <li><Link href="/privacy" className="hover:text-foreground transition-colors">Privacy</Link></li>
+              <li><Link href="/terms" className="hover:text-foreground transition-colors">Terms</Link></li>
+              <li><a href="https://github.com/ravi3594444/swarmtrace/security" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Security</a></li>
             </ul>
           </div>
         </div>
@@ -72,38 +71,6 @@ export function FooterSection() {
                   <path d="M9 18c-4.51 2-5-2-7-2" />
                 </svg>
               </a>
-            </Button>
-            <Button variant="ghost" size="icon">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M22 4s-.7 2.1-2 3.4c1.6 10-9.4 17.3-18 11.6 2.2.1 4.4-.6 6-2C3 15.5.5 9.6 3 5c2.2 2.6 5.6 4.1 9 4-.9-4.2 4-6.6 7-3.8 1.1 0 3-1.2 3-1.2z" />
-              </svg>
-            </Button>
-            <Button variant="ghost" size="icon">
-              <svg
-                xmlns="http://www.w3.org/2000/svg"
-                width="20"
-                height="20"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <path d="M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z" />
-                <rect width="4" height="12" x="2" y="9" />
-                <circle cx="4" cy="4" r="2" />
-              </svg>
             </Button>
           </div>
 
