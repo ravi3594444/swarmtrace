@@ -160,7 +160,7 @@ export function Sidebar() {
 
   return (
     <aside
-      className="shrink-0 flex flex-col h-screen sticky top-0 bg-sidebar border-r border-sidebar-border transition-all duration-200 ease-in-out overflow-hidden"
+      className="shrink-0 flex flex-col h-screen sticky top-0 bg-sidebar border-r border-sidebar-border transition-[width,background-color,border-color,color] duration-200 ease-in-out overflow-hidden"
       style={{ width: open ? 224 : 56 }}
     >
       {/* Logo + toggle */}
