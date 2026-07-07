@@ -151,6 +151,12 @@ function validateTrace(payload: unknown): { row?: Record<string, unknown>; error
     typeof p.agent_name === 'string' && p.agent_name.length > 0
       ? p.agent_name.slice(0, 256)
       : p.function
+  // session_id (swarmtrace 0.5.0) groups multi-turn runs into one conversation.
+  // Optional — older SDKs omit it, so it defaults to null.
+  const sessionId =
+    typeof p.session_id === 'string' && p.session_id.length > 0
+      ? p.session_id.slice(0, 64)
+      : null
 
   return {
     row: {
@@ -168,6 +174,7 @@ function validateTrace(payload: unknown): { row?: Record<string, unknown>; error
       kind:          kind,
       agent_id:      agentId,
       agent_name:    agentName,
+      session_id:    sessionId,
     },
   }
 }
@@ -242,6 +249,7 @@ export async function POST(req: Request) {
       p_kind:          row.kind,
       p_agent_id:      row.agent_id,
       p_agent_name:    row.agent_name,
+      p_session_id:    row.session_id ?? null,
     })
 
     // ── 2. Update last_used (non-fatal) ───────────────────────────────────

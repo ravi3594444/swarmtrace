@@ -24,6 +24,7 @@ export async function GET() {
         kind: r.kind,
         agent_id: r.agent_id,
         agent_name: r.agent_name,
+        session_id: r.session_id ?? null,
         status: r.error ? 'ERROR' : 'SUCCESS',
         duration: Math.round((r.latency_sec || 0) * 1000),
         tokens_in: r.input_tokens || 0,

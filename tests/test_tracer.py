@@ -83,6 +83,62 @@ def test_async_trace_saved(records):
     assert records[0][4] == "3"
 
 
+def test_explicit_session_id_is_saved(records):
+    @tracer.observe(session_id="conv-1")
+    def chat():
+        return "ok"
+
+    chat()
+    assert records[0][14] == "conv-1"
+
+
+def test_session_context_propagates_to_nested_calls_and_payload(records, monkeypatch):
+    payloads = []
+    monkeypatch.setattr(tracer, "_enqueue_remote", lambda payload: payloads.append(payload))
+
+    @tracer.observe
+    def child():
+        return "child"
+
+    @tracer.observe
+    def parent():
+        child()
+        return "parent"
+
+    with tracer.session("thread-1"):
+        parent()
+
+    child_row = next(r for r in records if r[2] == "child")
+    parent_row = next(r for r in records if r[2] == "parent")
+    assert child_row[14] == "thread-1"
+    assert parent_row[14] == "thread-1"
+    assert child_row[1] == parent_row[0]
+    assert [p["session_id"] for p in payloads] == ["thread-1", "thread-1"]
+
+
+def test_nested_session_restores_outer_on_exit(records):
+    @tracer.observe
+    def ping():
+        return "ok"
+
+    with tracer.session("outer"):
+        ping()
+        with tracer.session("inner"):
+            ping()
+        ping()
+
+    assert [row[14] for row in records] == ["outer", "inner", "outer"]
+
+
+def test_call_without_session_has_none(records):
+    @tracer.observe
+    def plain():
+        return "ok"
+
+    plain()
+    assert records[0][14] is None
+
+
 # ---------------------------------------------------------------------------
 # kind / agent attribution
 # ---------------------------------------------------------------------------
@@ -93,7 +149,7 @@ def test_default_kind_is_agent_and_self_attributed(records):
         return "ok"
 
     my_agent()
-    kind, agent_id, agent_name = records[0][-3:]
+    kind, agent_id, agent_name = records[0][-4:-1]
     assert kind == "agent"
     # Bare @observe at top level now gets a STABLE agent_id derived from the
     # function's qualified name, so repeat runs aggregate into one dashboard
@@ -130,21 +186,21 @@ def test_nested_tool_and_llm_calls_attribute_to_enclosing_agent(records):
     # now a stable hash; nested spans inherit it via the enclosing-agent
     # context. Reading from position -2 keeps this test correct regardless
     # of how agent_id is derived.
-    orch_id = by_func["orchestrator"][-2]
+    orch_id = by_func["orchestrator"][-3]
 
     # Nested llm/tool spans roll up into the orchestrator's agent identity.
-    assert by_func["call_llm"][-3] == "llm"
-    assert by_func["call_llm"][-2] == orch_id
-    assert by_func["call_llm"][-1] == "orchestrator"
+    assert by_func["call_llm"][-4] == "llm"
+    assert by_func["call_llm"][-3] == orch_id
+    assert by_func["call_llm"][-2] == "orchestrator"
 
-    assert by_func["search_web"][-3] == "tool"
-    assert by_func["search_web"][-2] == orch_id
-    assert by_func["search_web"][-1] == "orchestrator"
+    assert by_func["search_web"][-4] == "tool"
+    assert by_func["search_web"][-3] == orch_id
+    assert by_func["search_web"][-2] == "orchestrator"
 
     # The orchestrator itself is its own agent.
-    assert by_func["orchestrator"][-3] == "agent"
-    assert by_func["orchestrator"][-2] == orch_id
-    assert by_func["orchestrator"][-1] == "orchestrator"
+    assert by_func["orchestrator"][-4] == "agent"
+    assert by_func["orchestrator"][-3] == orch_id
+    assert by_func["orchestrator"][-2] == "orchestrator"
 
 
 def test_nested_agents_each_get_their_own_agent_id(records):
@@ -177,14 +233,14 @@ def test_nested_agents_each_get_their_own_agent_id(records):
         f"{orchestrator.__module__}.{orchestrator.__qualname__}".encode()
     ).hexdigest()
 
-    kind, orch_aid, orch_aname = by_func["orchestrator"][-3:]
+    kind, orch_aid, orch_aname = by_func["orchestrator"][-4:-1]
     assert kind == "agent"
     assert orch_aid == orch_expected            # stable hash
     assert orch_aid != by_func["orchestrator"][0]  # NOT the row id
     assert orch_aname == "orchestrator"
 
     for name in ("researcher", "summarizer"):
-        kind, agent_id, agent_name = by_func[name][-3:]
+        kind, agent_id, agent_name = by_func[name][-4:-1]
         assert kind == "agent"
         assert agent_id == by_func[name][0]     # explicit kind="agent" → fresh trace id
         assert agent_name == name
@@ -192,7 +248,7 @@ def test_nested_agents_each_get_their_own_agent_id(records):
     # researcher/summarizer are nested under orchestrator (parent_id),
     # but each is still its own agent identity, not orchestrator's.
     assert by_func["researcher"][1] == by_func["orchestrator"][0]
-    assert by_func["researcher"][-2] != by_func["orchestrator"][-2]
+    assert by_func["researcher"][-3] != by_func["orchestrator"][-3]
 
 
 def test_orphan_tool_call_self_attributes_but_is_not_an_agent(records):
@@ -201,7 +257,7 @@ def test_orphan_tool_call_self_attributes_but_is_not_an_agent(records):
         return "ok"
 
     standalone_tool()
-    kind, agent_id, agent_name = records[0][-3:]
+    kind, agent_id, agent_name = records[0][-4:-1]
     assert kind == "tool"
     assert agent_id == records[0][0]      # falls back to self
     assert agent_name == "standalone_tool"
@@ -229,12 +285,12 @@ def test_async_kind_and_agent_attribution(records):
     by_func = {r[2]: r for r in records}
     # aorchestrator is a bare @observe → stable agent_id (position -2),
     # NOT its row id (position 0). Read from -2 to stay correct.
-    orch_id = by_func["aorchestrator"][-2]
+    orch_id = by_func["aorchestrator"][-3]
 
-    assert by_func["aorchestrator"][-3] == "agent"
-    assert by_func["acall_llm"][-3] == "llm"
-    assert by_func["acall_llm"][-2] == orch_id
-    assert by_func["acall_llm"][-1] == "aorchestrator"
+    assert by_func["aorchestrator"][-4] == "agent"
+    assert by_func["acall_llm"][-4] == "llm"
+    assert by_func["acall_llm"][-3] == orch_id
+    assert by_func["acall_llm"][-2] == "aorchestrator"
 
 
 # ---------------------------------------------------------------------------
@@ -258,8 +314,8 @@ def test_bare_observe_stable_agent_id_across_runs(records):
     # Different trace ids (each call is its own span)...
     assert records[0][0] != records[1][0]
     # ...but the SAME agent_id (stable identity for the entrypoint).
-    assert records[0][-2] == records[1][-2]
-    assert records[0][-1] == "my_entrypoint"
+    assert records[0][-3] == records[1][-3]
+    assert records[0][-2] == "my_entrypoint"
 
 
 def test_explicit_kind_agent_keeps_fresh_id_across_runs(records):
@@ -275,8 +331,8 @@ def test_explicit_kind_agent_keeps_fresh_id_across_runs(records):
     assert len(records) == 2
     # Fresh trace id AND fresh agent_id per call.
     assert records[0][0] != records[1][0]
-    assert records[0][-2] != records[1][-2]
-    assert records[0][-2] == records[0][0]   # explicit kind="agent" → agent_id == trace_id
+    assert records[0][-3] != records[1][-3]
+    assert records[0][-3] == records[0][0]   # explicit kind="agent" → agent_id == trace_id
 
 
 def test_observe_name_overrides_agent_name_and_seeds_id(records):
@@ -297,9 +353,9 @@ def test_observe_name_overrides_agent_name_and_seeds_id(records):
     by_func = {r[2]: r for r in records}
     import hashlib
 
-    a_id = by_func["entrypoint_a"][-2]
-    a_name = by_func["entrypoint_a"][-1]
-    b_id = by_func["entrypoint_b"][-2]
+    a_id = by_func["entrypoint_a"][-3]
+    a_name = by_func["entrypoint_a"][-2]
+    b_id = by_func["entrypoint_b"][-3]
 
     # name= overrides the displayed agent_name.
     assert a_name == "alice_bot"
@@ -311,7 +367,7 @@ def test_observe_name_overrides_agent_name_and_seeds_id(records):
     # Repeat run of entrypoint_a shares the same stable id.
     a_rows = [r for r in records if r[2] == "entrypoint_a"]
     assert len(a_rows) == 2
-    assert a_rows[0][-2] == a_rows[1][-2]
+    assert a_rows[0][-3] == a_rows[1][-3]
 
 
 # ---------------------------------------------------------------------------
@@ -336,8 +392,8 @@ def test_distinct_lambdas_get_distinct_agent_ids(records):
     bot_b("q2")
 
     assert len(records) == 2
-    a_id = records[0][-2]
-    b_id = records[1][-2]
+    a_id = records[0][-3]
+    b_id = records[1][-3]
     assert a_id != b_id, (
         "distinct lambdas collapsed into one agent_id — "
         "the dashboard would show one card instead of two"
@@ -359,7 +415,7 @@ def test_same_lambda_called_twice_aggregates(records):
     ids = {r[0] for r in records}
     assert len(ids) == 3
     # ...but the same agent_id (stable identity for this lambda).
-    agent_ids = {r[-2] for r in records}
+    agent_ids = {r[-3] for r in records}
     assert len(agent_ids) == 1, (
         f"same lambda got {len(agent_ids)} distinct agent_ids — "
         "repeat runs would not aggregate"
@@ -377,10 +433,10 @@ def test_lambda_with_name_override_uses_name_not_lineno(records):
     bot_b(0)
 
     import hashlib
-    assert records[0][-2] == hashlib.sha256(b"alice").hexdigest()
-    assert records[1][-2] == hashlib.sha256(b"bob").hexdigest()
-    assert records[0][-1] == "alice"
-    assert records[1][-1] == "bob"
+    assert records[0][-3] == hashlib.sha256(b"alice").hexdigest()
+    assert records[1][-3] == hashlib.sha256(b"bob").hexdigest()
+    assert records[0][-2] == "alice"
+    assert records[1][-2] == "bob"
 
 
 def test_named_function_unaffected_by_lambda_disambiguation(records):
@@ -399,8 +455,8 @@ def test_named_function_unaffected_by_lambda_disambiguation(records):
         f"{my_named_agent.__module__}.{my_named_agent.__qualname__}".encode()
     ).hexdigest()
     # No '@lineno' suffix — named functions keep the original derivation.
-    assert records[0][-2] == expected
-    assert "@" not in records[0][-2]  # paranoid check: id is pure hex
+    assert records[0][-3] == expected
+    assert "@" not in records[0][-3]  # paranoid check: id is pure hex
 
 
 def test_distinct_lambdas_in_same_outer_function_get_distinct_ids(records):
@@ -419,7 +475,7 @@ def test_distinct_lambdas_in_same_outer_function_get_distinct_ids(records):
     bot_second(0)
 
     assert len(records) == 2
-    assert records[0][-2] != records[1][-2], (
+    assert records[0][-3] != records[1][-3], (
         "two lambdas in the same outer function still collide"
     )
 
@@ -443,7 +499,7 @@ def _row_dict(t):
     """Convert a save_trace positional-args tuple to the dict shape the API
     receives from Supabase."""
     (id_, parent_id, func, args, output, lat, err, ts, in_t, out_t, cost,
-     kind, agent_id, agent_name) = t
+     kind, agent_id, agent_name, _session_id) = t
     return {
         "id": id_, "parent_id": parent_id, "function": func,
         "agent_id": agent_id, "agent_name": agent_name, "kind": kind,

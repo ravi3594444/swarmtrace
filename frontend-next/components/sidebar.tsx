@@ -6,6 +6,7 @@ import { useState, useEffect } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
+  MessagesSquare, GitCompareArrows,
 } from 'lucide-react'
 import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 
@@ -13,7 +14,9 @@ const navItems = [
   { href: '/overview', label: 'Overview', icon: LayoutGrid },
   { href: '/agents',   label: 'Agents',   icon: Users },
   { href: '/traces',   label: 'Traces',   icon: ActivitySquare },
+  { href: '/threads',  label: 'Threads',  icon: MessagesSquare },
   { href: '/metrics',  label: 'Metrics',  icon: BarChart3 },
+  { href: '/compare',  label: 'Compare',  icon: GitCompareArrows },
   { href: '/failures', label: 'Failures', icon: AlertTriangle },
   { href: '/settings', label: 'Settings', icon: Settings },
 ]
