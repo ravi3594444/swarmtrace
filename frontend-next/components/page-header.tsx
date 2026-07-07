@@ -1,7 +1,9 @@
 'use client'
 
 import { ReactNode } from 'react'
+import { Search } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
+import { openCommandPalette } from '@/components/command-palette'
 
 export function PageHeader({
   title, description, badge, liveStatus, actions,
@@ -38,6 +40,16 @@ export function PageHeader({
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {actions}
+        <button
+          type="button"
+          onClick={openCommandPalette}
+          title="Search (Ctrl+K)"
+          aria-label="Open search"
+          className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-zinc-300 dark:hover:border-zinc-600 transition-colors shadow-sm"
+        >
+          <Search className="w-3.5 h-3.5" />
+          <kbd className="text-[10px] border border-border rounded px-1 py-px">Ctrl K</kbd>
+        </button>
         <ThemeToggle />
       </div>
     </div>
