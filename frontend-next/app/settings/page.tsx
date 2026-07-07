@@ -300,6 +300,19 @@ def my_agent(prompt: str) -> str:
 // ─── Main Page ────────────────────────────────────────────────────────────────
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
+
+  // Deep-link support: /settings?tab=api|billing|integrations (used by the
+  // command palette). Read once on mount from window.location so the page
+  // stays statically rendered (useSearchParams would require a Suspense
+  // boundary here).
+  useEffect(() => {
+    const tab = new URLSearchParams(window.location.search).get('tab')
+    if (tab && ['general', 'api', 'billing', 'integrations'].includes(tab)) {
+      // Deferred to a microtask so the setState is not synchronous within the
+      // effect (avoids the cascading-render lint rule and hydration mismatch).
+      queueMicrotask(() => setActiveTab(tab))
+    }
+  }, [])
   const { user } = useUser()
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
