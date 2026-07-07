@@ -10,5 +10,5 @@
 ## Recommendations
 - [ ] Implement Clerk-Supabase RLS.
 - [ ] Configure Upstash Redis.
-- [ ] Add pricing fallback.
+- [x] Add pricing fallback.
 - [ ] Implement trace retention policy.

@@ -47,11 +47,13 @@ def test_calculate_cost_never_blocks_on_slow_fetch(monkeypatch):
     monkeypatch.setattr(pricing.urllib.request, "urlopen", slow_urlopen)
 
     start = time.perf_counter()
-    cost = pricing.calculate_cost("gpt-4", 100, 100)
+    cost = pricing.calculate_cost("gpt-4o-mini", 1_000_000, 0)
+    unknown_cost = pricing.calculate_cost("definitely-not-a-real-model", 100, 100)
     elapsed = time.perf_counter() - start
 
     assert elapsed < 0.5, f"calculate_cost() blocked the hot path for {elapsed:.2f}s"
-    assert cost == 0.0  # cache still empty while the background fetch is in flight
+    assert cost == pytest.approx(0.15, abs=0.001)
+    assert unknown_cost == 0.0
 
 
 def test_failed_refresh_after_prior_success_backs_off_full_ttl(monkeypatch):
@@ -148,3 +150,29 @@ def test_warm_cache_does_not_block_import_thread(monkeypatch):
     elapsed = time.perf_counter() - start
 
     assert elapsed < 0.5
+
+
+def test_live_price_overrides_bundled(monkeypatch):
+    """When the live table has a model that's also bundled, live wins."""
+    monkeypatch.setattr(pricing, "_cache", {
+        "gpt-4o-mini": {
+            "input_cost_per_token": 0.000001,
+            "output_cost_per_token": 0.000001,
+        }
+    })
+    monkeypatch.setattr(pricing, "_cache_ts", time.time())
+
+    cost = pricing.calculate_cost("gpt-4o-mini", 1_000_000, 0)
+    # Live price ($1/M) — not the bundled snapshot price ($0.15/M).
+    assert cost == pytest.approx(1.0, abs=0.001)
+
+
+def test_custom_price_overrides_bundled(monkeypatch):
+    """set_model_pricing() must win over the bundled snapshot too."""
+    monkeypatch.setattr(pricing, "_CUSTOM", {})
+    pricing.set_model_pricing("gpt-4o-mini", input_per_million=2.0, output_per_million=2.0)
+    try:
+        cost = pricing.calculate_cost("gpt-4o-mini", 1_000_000, 0)
+        assert cost == pytest.approx(2.0, abs=0.001)
+    finally:
+        pricing._CUSTOM.pop("gpt-4o-mini", None)

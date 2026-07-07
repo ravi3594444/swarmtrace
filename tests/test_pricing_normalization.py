@@ -97,7 +97,8 @@ def test_normalize_lowercases():
 # This is the core test. 'gpt-4' must NOT pick up 'gpt-4o's price via
 # substring match. The old code would have matched because:
 #   "gpt-4" in "gpt-4o"  →  True  (substring fallback)
-# With the fix, 'gpt-4' is not in the table → returns 0.0.
+# With the bundled fallback, 'gpt-4' now has its own price and still must
+# not be mis-priced as 'gpt-4o'.
 
 def test_gpt4_does_not_steal_gpt4o_price(monkeypatch):
     """THE regression test: 'gpt-4' must not be priced as 'gpt-4o'."""
@@ -108,8 +109,8 @@ def test_gpt4_does_not_steal_gpt4o_price(monkeypatch):
 
     # gpt-4o is in the table → has a real price
     assert cost_gpt4o > 0, "gpt-4o should have a price from the mock table"
-    # gpt-4 is NOT in the table → must be 0.0, not gpt-4o's price
-    assert cost_gpt4 == 0.0, (
+    # gpt-4 is bundled → must keep its own price, not gpt-4o's price.
+    assert cost_gpt4 == pytest.approx(0.06, abs=0.001), (
         f"gpt-4 mis-priced as {cost_gpt4} (gpt-4o is {cost_gpt4o}) — "
         "substring-matching bug reintroduced?"
     )
@@ -125,7 +126,7 @@ def test_gpt4_does_not_steal_gpt4_turbo_price(monkeypatch):
     cost_gpt4_turbo = pricing.calculate_cost("gpt-4-turbo", input_tokens=1000, output_tokens=500)
 
     assert cost_gpt4_turbo > 0
-    assert cost_gpt4 == 0.0, (
+    assert cost_gpt4 == pytest.approx(0.06, abs=0.001), (
         f"gpt-4 mis-priced as {cost_gpt4} (gpt-4-turbo is {cost_gpt4_turbo})"
     )
 
@@ -239,7 +240,7 @@ def test_no_model_steals_another_models_price(monkeypatch):
     # Substrings of real table keys — none of these are in the table
     # themselves, so they must all return 0.0 (not steal the parent's price)
     not_in_table = [
-        "gpt-4",          # substring of gpt-4o, gpt-4-turbo, gpt-4o-mini
+        "gpt-4-prototype",  # substring of gpt-4, gpt-4o, gpt-4-turbo, gpt-4o-mini
         "gpt-4o-mini-",   # different from gpt-4o-mini
         "claude-3",       # substring of claude-3-5-sonnet, claude-3-haiku
         "claude",         # substring of all claude models

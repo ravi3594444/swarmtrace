@@ -1,6 +1,7 @@
 """
 Live model pricing — fetched from LiteLLM's community-maintained registry.
-Falls back to cached data (or zero) if the fetch fails or times out.
+Falls back to cached data, then a bundled static snapshot, if the fetch fails
+or times out.
 
 Thread-safety / hot-path guarantee: ``calculate_cost()`` (called inline from
 ``tracer._extract_token_info`` and ``auto_instrument._record_async``, both on
@@ -34,9 +35,65 @@ _refresh_lock = threading.Lock()        # guards the "launch a refresh thread" d
 _refresh_in_progress = False            # ensures only one fetch thread runs at a time
 _CUSTOM: dict[str, tuple[float, float]] = {}
 
+# Dated fallback snapshot of common model prices. Live LiteLLM prices override
+# this when available; keep it curated rather than exhaustive.
+_BUNDLED_MODEL_PRICING: dict[str, dict[str, float]] = {
+    # OpenAI
+    "gpt-4o": {"input_cost_per_token": 0.000005, "output_cost_per_token": 0.000015},
+    "gpt-4o-mini": {"input_cost_per_token": 0.00000015, "output_cost_per_token": 0.0000006},
+    "gpt-4-turbo": {"input_cost_per_token": 0.00001, "output_cost_per_token": 0.00003},
+    "gpt-4": {"input_cost_per_token": 0.00003, "output_cost_per_token": 0.00006},
+    "gpt-3.5-turbo": {"input_cost_per_token": 0.0000005, "output_cost_per_token": 0.0000015},
+    "o1": {"input_cost_per_token": 0.000015, "output_cost_per_token": 0.00006},
+    "o1-mini": {"input_cost_per_token": 0.000003, "output_cost_per_token": 0.000012},
+    "o3-mini": {"input_cost_per_token": 0.0000011, "output_cost_per_token": 0.0000044},
+
+    # Anthropic
+    "claude-3-5-sonnet": {"input_cost_per_token": 0.000003, "output_cost_per_token": 0.000015},
+    "claude-3-5-haiku": {"input_cost_per_token": 0.0000008, "output_cost_per_token": 0.000004},
+    "claude-3-opus": {"input_cost_per_token": 0.000015, "output_cost_per_token": 0.000075},
+    "claude-3-haiku": {"input_cost_per_token": 0.00000025, "output_cost_per_token": 0.00000125},
+    "claude-sonnet-4": {"input_cost_per_token": 0.000003, "output_cost_per_token": 0.000015},
+    "claude-opus-4": {"input_cost_per_token": 0.000015, "output_cost_per_token": 0.000075},
+
+    # Google Gemini
+    "gemini-1.5-pro": {"input_cost_per_token": 0.0000035, "output_cost_per_token": 0.0000105},
+    "gemini-1.5-flash": {"input_cost_per_token": 0.00000035, "output_cost_per_token": 0.00000105},
+    "gemini-2.0-flash": {"input_cost_per_token": 0.0000001, "output_cost_per_token": 0.0000004},
+    "gemini-2.0-flash-lite": {"input_cost_per_token": 0.000000075, "output_cost_per_token": 0.0000003},
+    "gemini-2.5-pro": {"input_cost_per_token": 0.00000125, "output_cost_per_token": 0.00001},
+
+    # Mistral
+    "mistral-large-latest": {"input_cost_per_token": 0.000002, "output_cost_per_token": 0.000006},
+    "mistral-small-latest": {"input_cost_per_token": 0.0000002, "output_cost_per_token": 0.0000006},
+    "open-mistral-nemo": {"input_cost_per_token": 0.00000005, "output_cost_per_token": 0.00000015},
+    "codestral-latest": {"input_cost_per_token": 0.000001, "output_cost_per_token": 0.000003},
+    "ministral-8b-latest": {"input_cost_per_token": 0.0000001, "output_cost_per_token": 0.0000003},
+
+    # DeepSeek
+    "deepseek-chat": {"input_cost_per_token": 0.00000014, "output_cost_per_token": 0.00000028},
+    "deepseek-reasoner": {"input_cost_per_token": 0.00000055, "output_cost_per_token": 0.00000219},
+
+    # Groq / Llama
+    "llama-3.1-70b-versatile": {"input_cost_per_token": 0.00000059, "output_cost_per_token": 0.00000079},
+    "llama-3.1-8b-instant": {"input_cost_per_token": 0.00000005, "output_cost_per_token": 0.00000008},
+    "llama3-70b-8192": {"input_cost_per_token": 0.0000007, "output_cost_per_token": 0.0000009},
+    "llama3-8b-8192": {"input_cost_per_token": 0.0000001, "output_cost_per_token": 0.00000012},
+    "mixtral-8x7b-32768": {"input_cost_per_token": 0.0000007, "output_cost_per_token": 0.0000007},
+
+    # Cohere
+    "command-r": {"input_cost_per_token": 0.000001, "output_cost_per_token": 0.000002},
+    "command-r-plus": {"input_cost_per_token": 0.000003, "output_cost_per_token": 0.000015},
+
+    # xAI
+    "grok-beta": {"input_cost_per_token": 0.000005, "output_cost_per_token": 0.000015},
+    "grok-2-latest": {"input_cost_per_token": 0.000002, "output_cost_per_token": 0.00001},
+    "grok-3-latest": {"input_cost_per_token": 0.000003, "output_cost_per_token": 0.000015},
+}
+
 
 def _needs_refresh() -> bool:
-    return not _cache or (time.time() - _cache_ts) >= _CACHE_TTL
+    return _cache_ts == 0.0 or (time.time() - _cache_ts) >= _CACHE_TTL
 
 
 def _background_fetch() -> None:
@@ -96,6 +153,25 @@ def _fetch_live() -> dict:
         return _cache
 
 
+def _lookup_pricing_entry(table: dict, model: str) -> dict | None:
+    """Look up pricing by exact, raw, then normalized model name."""
+    candidates = []
+    for candidate in (model, model.lower(), _normalize_model(model)):
+        if candidate and candidate not in candidates:
+            candidates.append(candidate)
+    for candidate in candidates:
+        entry = table.get(candidate)
+        if entry is not None:
+            return entry
+    return None
+
+
+def _price_from_entry(entry: dict, input_tokens: int, output_tokens: int) -> float:
+    inp = entry.get("input_cost_per_token", 0) * 1_000_000
+    out = entry.get("output_cost_per_token", 0) * 1_000_000
+    return round((input_tokens * inp + output_tokens * out) / 1_000_000, 8)
+
+
 def set_model_pricing(model: str, input_per_million: float, output_per_million: float) -> None:
     """Override pricing for any model (takes precedence over live table)."""
     _CUSTOM[model.lower()] = (input_per_million, output_per_million)
@@ -142,24 +218,13 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
         return round((input_tokens * inp + output_tokens * out) / 1_000_000, 8)
 
     # Live pricing table (single fetch per hour, thread-safe).
-    table = _fetch_live()
-    if not table:
-        return 0.0
+    entry = _lookup_pricing_entry(_fetch_live(), model)
+    if entry is not None:
+        return _price_from_entry(entry, input_tokens, output_tokens)
 
-    # Lookup order:
-    #   1. Exact case-insensitive match
-    #   2. Normalized match (strip provider prefix + date suffix)
-    # No substring matching — see _normalize_model() for why.
-    entry = table.get(key) or table.get(model)
-    if not entry:
-        norm = _normalize_model(model)
-        if norm != key:  # only try if normalization actually changed something
-            entry = table.get(norm)
-
-    if entry:
-        inp = entry.get("input_cost_per_token", 0) * 1_000_000
-        out = entry.get("output_cost_per_token", 0) * 1_000_000
-        return round((input_tokens * inp + output_tokens * out) / 1_000_000, 8)
+    entry = _lookup_pricing_entry(_BUNDLED_MODEL_PRICING, model)
+    if entry is not None:
+        return _price_from_entry(entry, input_tokens, output_tokens)
 
     return 0.0
 
@@ -167,7 +232,8 @@ def warm_cache() -> None:
     """Kick off a background fetch so the cache is warm before the first agent call.
 
     Called at module import time. If the fetch fails or the network is
-    unavailable, calculate_cost() falls back to 0.0 — no crash, no block.
+    unavailable, calculate_cost() falls back to the bundled snapshot — no
+    crash, no block.
     """
     _maybe_trigger_refresh()
 
