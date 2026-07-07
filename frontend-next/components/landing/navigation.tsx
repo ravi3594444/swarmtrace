@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { useState } from "react"
 import Link from "next/link"
 import { Menu, X } from "lucide-react"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 const navLinks = [
   { label: "Features",     href: "#features"     },
@@ -44,6 +45,7 @@ export function Navigation() {
           </nav>
 
           <div className="hidden md:flex items-center gap-4">
+            <ThemeToggle />
             <Button variant="outline" size="sm" asChild>
               <Link href="/sign-in">Sign In</Link>
             </Button>
@@ -53,12 +55,15 @@ export function Navigation() {
           </div>
 
           {/* Mobile menu button */}
-          <button
-            className="md:hidden p-2"
-            onClick={() => setIsOpen(!isOpen)}
-          >
-            {isOpen ? <X size={20} /> : <Menu size={20} />}
-          </button>
+          <div className="md:hidden flex items-center gap-2">
+            <ThemeToggle />
+            <button
+              className="p-2"
+              onClick={() => setIsOpen(!isOpen)}
+            >
+              {isOpen ? <X size={20} /> : <Menu size={20} />}
+            </button>
+          </div>
         </div>
 
         {/* Mobile Navigation */}
