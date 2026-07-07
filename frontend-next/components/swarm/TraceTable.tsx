@@ -2,7 +2,9 @@
 
 import { Fragment, useMemo, useState } from "react";
 import type { Trace } from "@/lib/trace-types";
-import { ArrowUpDown, ArrowUp, ArrowDown } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from "lucide-react";
+
+const PAGE_SIZES = [25, 50, 100];
 
 type SortKey = "id" | "function" | "latency_sec" | "input_tokens" | "output_tokens" | "cost_usd" | "timestamp";
 
@@ -40,6 +42,8 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
 }) {
   const [sortKey, setSortKey] = useState<SortKey>("timestamp");
   const [asc, setAsc]         = useState(true);
+  const [page, setPage]       = useState(0);
+  const [pageSize, setPageSize] = useState(25);
 
   const sorted = useMemo(() => {
     const arr = [...traces];
@@ -52,6 +56,13 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
   }, [traces, sortKey, asc]);
 
   const toggle = (k: SortKey) => { if (k === sortKey) setAsc(!asc); else { setSortKey(k); setAsc(true); } };
+
+  // Clamp instead of resetting in an effect: if filters shrink the data set
+  // below the current page, fall back to the last valid page.
+  const pageCount = Math.max(1, Math.ceil(sorted.length / pageSize));
+  const safePage = Math.min(page, pageCount - 1);
+  const start = safePage * pageSize;
+  const pageRows = sorted.slice(start, start + pageSize);
 
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
@@ -74,7 +85,7 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
             </tr>
           </thead>
           <tbody className="divide-y divide-border/50">
-            {sorted.map((t) => {
+            {pageRows.map((t) => {
               const ok = !t.error;
               return (
                 <Fragment key={t.id}>
@@ -113,6 +124,47 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
           </tbody>
         </table>
       </div>
+      {sorted.length > 0 && (
+        <div className="flex items-center justify-between border-t border-border bg-muted/20 px-4 py-2.5">
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>Rows per page</span>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
+              className="h-7 rounded-md border border-border bg-card px-1.5 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              aria-label="Rows per page"
+            >
+              {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] text-muted-foreground tabular-nums">
+              {start + 1}–{Math.min(start + pageSize, sorted.length)} of {sorted.length}
+            </span>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => setPage(Math.max(safePage - 1, 0))}
+                disabled={safePage === 0}
+                aria-label="Previous page"
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+              </button>
+              <span className="text-[11px] text-muted-foreground tabular-nums px-1">
+                {safePage + 1} / {pageCount}
+              </span>
+              <button
+                onClick={() => setPage(Math.min(safePage + 1, pageCount - 1))}
+                disabled={safePage >= pageCount - 1}
+                aria-label="Next page"
+                className="flex items-center justify-center w-7 h-7 rounded-md border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+              >
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
