@@ -192,7 +192,7 @@ function CostProjectionWidget({ traces }: { traces: Trace[] }) {
     v < 0.01 ? `$${v.toFixed(6)}` : v < 1 ? `$${v.toFixed(4)}` : `$${v.toFixed(2)}`
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
       <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <TrendingUp className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Cost Projection</h3>
@@ -269,7 +269,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
     : null
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
       <button
         onClick={() => setOpen(v => !v)}
         className="flex items-center gap-2 w-full border-b border-border bg-muted/30 px-4 py-3 text-left"
@@ -409,7 +409,7 @@ function TokenBudgetPanel({ traces }: { traces: Trace[] }) {
   const maxTotal = Math.max(1, agentTokens[0] ? agentTokens[0].input + agentTokens[0].output : 0)
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
       <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <Coins className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Token Budget Monitor</h3>
@@ -476,7 +476,7 @@ function RegressionPanel({ traces }: { traces: Trace[] }) {
   }, [traces])
 
   return (
-    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+    <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
       <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <TrendingDown className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Regression Monitor</h3>
@@ -597,7 +597,7 @@ export default function OverviewPage() {
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
           {/* Activity chart — 2/3 width */}
-          <div className="xl:col-span-2 rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+          <div className="xl:col-span-2 rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
             <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
               <div className="flex items-center gap-2">
                 <Activity className="w-4 h-4 text-muted-foreground" />
@@ -630,7 +630,7 @@ export default function OverviewPage() {
 
           {/* Live Activity — 1/3 width. Shows FOV realtime events if agent_id is available,
               falls back to the polled event feed for older SDK traces. */}
-          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col">
+          <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col transition-[background-color,border-color,color] duration-200">
             <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3 shrink-0">
               <div className="flex items-center gap-2">
                 <Info className="w-4 h-4 text-muted-foreground" />

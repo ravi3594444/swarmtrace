@@ -237,7 +237,7 @@
 }
 
 .animate-slide-in-up {
-  animation: slideInUp 0.5s ease-out forwards;
+  animation: slideInUp 0.5s ease-out both;
 }
 
 /* Added utility classes for new animations */
@@ -247,6 +247,49 @@
 
 .animate-fade-in {
   animation: fade-in 0.2s ease-out forwards;
+}
+
+@keyframes backdrop-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes drawer-slide-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes palette-pop-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.animate-backdrop-fade-in {
+  animation: backdrop-fade-in 0.18s ease-out forwards;
+}
+
+.animate-drawer-slide-in {
+  animation: drawer-slide-in 0.2s ease-out forwards;
+}
+
+.animate-palette-pop-in {
+  animation: palette-pop-in 0.18s ease-out forwards;
 }
 
 /* ─── Landing page animations ─────────────────────────────────────────────── */
@@ -264,6 +307,17 @@
 @media (prefers-reduced-motion: reduce) {
   .marquee {
     animation: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
 
