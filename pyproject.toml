@@ -29,6 +29,7 @@ swarmtrace = "swarmtrace.cli:view"
 swarmtrace-export = "swarmtrace.export:main"
 swarmtrace-replay = "swarmtrace.cli:main_replay"
 swarmtrace-alerts = "swarmtrace.cli:main_alerts"
+swarmtrace-resync = "swarmtrace.cli:main_resync"
 
 [tool.setuptools]
 packages = ["swarmtrace"]
