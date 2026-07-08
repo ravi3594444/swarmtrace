@@ -68,4 +68,10 @@ def test_save_trace_round_trips_session_id(storage):
     )
     row = storage.get_by_id("sid")
     assert row is not None
-    assert row[-1] == "thread-42"
+    # Row layout: id, parent_id, function, args, output, latency_sec, error,
+    # timestamp, input_tokens, output_tokens, cost_usd, kind, agent_id,
+    # agent_name, session_id, synced. session_id is index 14, synced is 15.
+    assert row[14] == "thread-42"
+    # New rows start unsynced (synced=0) until the background sender
+    # confirms a successful remote POST.
+    assert row[15] == 0

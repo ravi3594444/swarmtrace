@@ -43,6 +43,14 @@ _ADDED_COLUMNS: List[Tuple[str, str]] = [
     ("agent_id",   "TEXT"),
     ("agent_name", "TEXT"),
     ("session_id", "TEXT"),
+    # synced: 0 = pending remote ingest (or remote ingest failed), 1 = remote
+    # ingest confirmed success. The tracer's background sender marks a row
+    # synced=1 only after _send_remote returns without raising; the
+    # `swarmtrace resync` CLI replays every row where synced=0 so a
+    # transient endpoint outage doesn't permanently lose traces. Defaults
+    # to 0 (NOT NULL DEFAULT 0) so existing INSERT statements that predate
+    # this column still produce unsynced rows that resync can pick up.
+    ("synced",     "INTEGER NOT NULL DEFAULT 0"),
 ]
 
 _lock = threading.Lock()
@@ -190,6 +198,46 @@ def get_by_id(trace_id: str) -> Optional[TraceRow]:
             ).fetchone()
     except Exception:
         return None
+
+
+def mark_synced(trace_id: str, synced: int = 1) -> None:
+    """Set the ``synced`` flag on a single trace row.
+
+    Called by the tracer's background sender after a confirmed-successful
+    remote POST (``synced=1``), and by the ``swarmtrace resync`` CLI when
+    re-sending a previously-failed row succeeds. Swallows exceptions so a
+    storage hiccup never crashes the worker thread or the CLI.
+    """
+    try:
+        with _lock:
+            conn = _get_conn()
+            conn.execute(
+                "UPDATE traces SET synced = ? WHERE id = ?",
+                (1 if synced else 0, trace_id),
+            )
+            conn.commit()
+    except Exception as exc:
+        _log.warning("mark_synced warning: %s", exc)
+
+
+def get_unsynced_traces(limit: int = 100) -> List[TraceRow]:
+    """Return up to ``limit`` trace rows that haven't been confirmed synced.
+
+    Used by the ``swarmtrace resync`` CLI to find rows whose remote POST
+    failed (or never happened because the endpoint was unreachable). Rows
+    are returned oldest-first so the resync replays them in the order they
+    were captured.
+    """
+    try:
+        with _lock:
+            conn = _get_conn()
+            return conn.execute(
+                "SELECT * FROM traces WHERE synced = 0 "
+                "ORDER BY timestamp ASC LIMIT ?",
+                (limit,),
+            ).fetchall()
+    except Exception:
+        return []
 
 def purge_all() -> None:
     global _write_count
