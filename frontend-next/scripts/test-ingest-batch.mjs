@@ -24,7 +24,15 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { validateTrace, normalizeIngestPayload, validateIngest } from '../lib/validate-ingest.ts'
+import { gzipSync } from 'node:zlib'
+
+import {
+  validateTrace,
+  normalizeIngestPayload,
+  validateIngest,
+  decodeIngestBody,
+  MAX_DECOMPRESSED_BYTES,
+} from '../lib/validate-ingest.ts'
 
 function mkTrace(overrides = {}) {
   return {
@@ -192,5 +200,45 @@ describe('validateIngest — end-to-end both shapes', () => {
     assert.equal(rows.length, 20)
     assert.equal(rows[0].id, 'trace-0')
     assert.equal(rows[19].id, 'trace-19')
+  })
+})
+
+describe('decodeIngestBody — gzip round-trip (the SDK batch wire format)', () => {
+  // Byte-for-byte what the SDK's _send_batch_remote puts on the wire:
+  // gzip(JSON({"traces": [...]})) with Content-Encoding: gzip.
+  const toArrayBuffer = (buf) => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+
+  test('gzipped batch body decodes and validates end-to-end', async () => {
+    const payload = { traces: [mkTrace({ id: 'gz-1' }), mkTrace({ id: 'gz-2' })] }
+    const wire = toArrayBuffer(gzipSync(Buffer.from(JSON.stringify(payload))))
+    const decoded = JSON.parse(await decodeIngestBody(wire, 'gzip'))
+    const { rows, error } = validateIngest(decoded)
+    assert.equal(error, undefined)
+    assert.deepEqual(rows.map(r => r.id), ['gz-1', 'gz-2'])
+  })
+
+  test('plain (non-gzip) body still decodes when Content-Encoding is absent', async () => {
+    const payload = mkTrace({ id: 'plain-1' })
+    const wire = toArrayBuffer(Buffer.from(JSON.stringify(payload)))
+    const decoded = JSON.parse(await decodeIngestBody(wire, null))
+    const { rows } = validateIngest(decoded)
+    assert.equal(rows.length, 1)
+    assert.equal(rows[0].id, 'plain-1')
+  })
+
+  test('gzip bytes WITHOUT decompression are not valid JSON (the pre-fix bug)', () => {
+    const wire = gzipSync(Buffer.from(JSON.stringify({ traces: [mkTrace()] })))
+    assert.throws(() => JSON.parse(new TextDecoder().decode(wire)))
+  })
+
+  test('invalid gzip data rejects', async () => {
+    const wire = toArrayBuffer(Buffer.from('not gzip at all'))
+    await assert.rejects(decodeIngestBody(wire, 'gzip'))
+  })
+
+  test('decompression bomb over the size bound rejects', async () => {
+    // Highly compressible payload that inflates past MAX_DECOMPRESSED_BYTES.
+    const bomb = gzipSync(Buffer.alloc(MAX_DECOMPRESSED_BYTES + 1, 0x61))
+    await assert.rejects(decodeIngestBody(toArrayBuffer(bomb), 'gzip'), /too large/)
   })
 })
