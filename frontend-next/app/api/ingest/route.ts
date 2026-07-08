@@ -1,7 +1,7 @@
 export const runtime = 'edge'
 
 const MAX_BODY_BYTES  = 64 * 1024
-const MAX_TEXT_LEN    = 4000
+const MAX_BATCH_SIZE = 50
 const SUPA_TIMEOUT_MS = 5000
 
 // ── Key auth cache ────────────────────────────────────────────────────────────
@@ -124,60 +124,10 @@ function jsonResponse(status: number, body: unknown) {
   })
 }
 
-const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function'])
-
-function validateTrace(payload: unknown): { row?: Record<string, unknown>; error?: string } {
-  if (typeof payload !== 'object' || payload === null || Array.isArray(payload))
-    return { error: 'Body must be a JSON object' }
-  const p = payload as Record<string, unknown>
-  if (typeof p.id !== 'string' || p.id.length === 0 || p.id.length > 64)
-    return { error: 'id must be a non-empty string of at most 64 characters' }
-  if (typeof p.function !== 'string' || p.function.length === 0 || p.function.length > 256)
-    return { error: 'function must be a non-empty string of at most 256 characters' }
-  if (typeof p.timestamp !== 'string' || Number.isNaN(Date.parse(p.timestamp)))
-    return { error: 'timestamp must be a valid ISO 8601 string' }
-  const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, MAX_TEXT_LEN) : '')
-  const num  = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
-
-  // kind/agent_id/agent_name were added in swarmtrace 0.3.0. Older SDK versions
-  // (or anything posting to /ingest directly) won't send them — default to
-  // kind='agent', agent_id=id, agent_name=function, which reproduces the
-  // pre-0.3.0 "every trace is its own agent" behavior exactly, so old
-  // clients keep working without becoming phantom sub-agents of anything.
-  const kind = typeof p.kind === 'string' && VALID_KINDS.has(p.kind) ? p.kind : 'agent'
-  const agentId =
-    typeof p.agent_id === 'string' && p.agent_id.length > 0 ? p.agent_id.slice(0, 64) : p.id
-  const agentName =
-    typeof p.agent_name === 'string' && p.agent_name.length > 0
-      ? p.agent_name.slice(0, 256)
-      : p.function
-  // session_id (swarmtrace 0.5.0) groups multi-turn runs into one conversation.
-  // Optional — older SDKs omit it, so it defaults to null.
-  const sessionId =
-    typeof p.session_id === 'string' && p.session_id.length > 0
-      ? p.session_id.slice(0, 64)
-      : null
-
-  return {
-    row: {
-      id:            p.id,
-      parent_id:     typeof p.parent_id === 'string' ? p.parent_id.slice(0, 64) : null,
-      function:      p.function,
-      args:          text(p.args),
-      output:        text(p.output),
-      latency_sec:   num(p.latency_sec),
-      error:         typeof p.error === 'string' ? p.error.slice(0, MAX_TEXT_LEN) : null,
-      timestamp:     p.timestamp,
-      input_tokens:  Math.max(0, Math.trunc(num(p.input_tokens))),
-      output_tokens: Math.max(0, Math.trunc(num(p.output_tokens))),
-      cost_usd:      Math.max(0, num(p.cost_usd)),
-      kind:          kind,
-      agent_id:      agentId,
-      agent_name:    agentName,
-      session_id:    sessionId,
-    },
-  }
-}
+// Validation logic lives in lib/validate-ingest.ts so it can be unit-tested
+// without standing up the edge runtime. The route imports the shape-detector
+// + validator; tests import the same functions directly.
+import { validateIngest, type TraceRow } from '@/lib/validate-ingest'
 
 export async function POST(req: Request) {
   const apiKey = req.headers.get('X-API-Key')
@@ -222,35 +172,49 @@ export async function POST(req: Request) {
     try { payload = JSON.parse(new TextDecoder().decode(bodyBytes)) }
     catch { return jsonResponse(400, { error: 'Body must be valid JSON' }) }
 
-    const { row, error } = validateTrace(payload)
-    if (!row) return jsonResponse(400, { error })
+    const { rows, error } = validateIngest(payload)
+    if (!rows) return jsonResponse(400, error)
 
-    // ── 1. Atomic upsert + metrics increment (idempotent on retry) ────────
-    // Single RPC that upserts the trace AND increments daily_metrics only
-    // if the trace was a fresh insert (not a retry upsert). Fixes the
-    // double-count bug where the SDK retries a POST whose RPCs succeeded
-    // server-side but whose HTTP response didn't reach the client in time.
-    // Old code called upsert_trace + increment_daily_metrics as two separate
-    // RPCs — the second ran unconditionally on every retry. See
-    // supabase/migrations/0007_atomic_ingest.sql.
-    await supaRpc('upsert_trace_with_metrics', {
-      p_id:            row.id,
-      p_user_id:       user_id,
-      p_parent_id:     row.parent_id ?? null,
-      p_function:      row.function,
-      p_args:          row.args,
-      p_output:        row.output,
-      p_latency_sec:   row.latency_sec,
-      p_error:         row.error ?? null,
-      p_timestamp:     row.timestamp,
-      p_input_tokens:  row.input_tokens,
-      p_output_tokens: row.output_tokens,
-      p_cost_usd:      row.cost_usd,
-      p_kind:          row.kind,
-      p_agent_id:      row.agent_id,
-      p_agent_name:    row.agent_name,
-      p_session_id:    row.session_id ?? null,
-    })
+    // Cap batch size — a single POST with 50 traces is fine; 5000 is a
+    // runaway SDK or a misuse. Rejecting early keeps Supabase RPC latency
+    // bounded and prevents one fat batch from starving other users.
+    if (rows.length > MAX_BATCH_SIZE) {
+      return jsonResponse(413, {
+        error: `Batch too large: ${rows.length} traces (max ${MAX_BATCH_SIZE}). Split into smaller batches.`,
+      })
+    }
+
+    // ── Insert each trace via the atomic upsert+metrics RPC ───────────────
+    // One RPC per trace (not one per batch) because the RPC is itself atomic
+    // per-row (ON CONFLICT DO UPDATE + conditional metrics increment). A
+    // batch RPC would be a future optimization, but the current shape keeps
+    // the migration surface small and the retry semantics identical to the
+    // single-object path — if the batch fails mid-way, the SDK retries the
+    // whole batch and every row is idempotent.
+    //
+    // On a confirmed-successful insert, the SDK marks the row synced=1 in
+    // its local SQLite DB (task 3). If this whole batch RPC sequence fails,
+    // the SDK leaves all rows synced=0 and the resync CLI replays them.
+    for (const row of rows as TraceRow[]) {
+      await supaRpc('upsert_trace_with_metrics', {
+        p_id:            row.id,
+        p_user_id:       user_id,
+        p_parent_id:     row.parent_id ?? null,
+        p_function:      row.function,
+        p_args:          row.args,
+        p_output:        row.output,
+        p_latency_sec:   row.latency_sec,
+        p_error:         row.error ?? null,
+        p_timestamp:     row.timestamp,
+        p_input_tokens:  row.input_tokens,
+        p_output_tokens: row.output_tokens,
+        p_cost_usd:      row.cost_usd,
+        p_kind:          row.kind,
+        p_agent_id:      row.agent_id,
+        p_agent_name:    row.agent_name,
+        p_session_id:    row.session_id ?? null,
+      })
+    }
 
     // ── 2. Update last_used (non-fatal) ───────────────────────────────────
     try {
