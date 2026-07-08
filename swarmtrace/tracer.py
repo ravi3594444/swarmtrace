@@ -50,7 +50,7 @@ from datetime import datetime, timezone
 from typing import Iterator, Optional, Tuple
 from urllib.request import Request, urlopen
 
-from swarmtrace.storage import save_trace
+from swarmtrace.storage import save_trace, mark_synced
 from swarmtrace.pricing import calculate_cost
 from swarmtrace.redact import redact
 
@@ -156,25 +156,37 @@ def _worker() -> None:
     a corrupt payload, or an OS-level error) is caught at the outer loop so
     the thread never dies silently.  task_done() is called in a finally block
     so the queue's join() never deadlocks even when an item raises.
-    """
-    _RESTART_DELAY = 1.0   # seconds to wait before restarting after a crash
 
+    Sync flag: on a confirmed-successful send, the row is marked synced=1 in
+    the local SQLite DB. On failure (3 retries exhausted), the row stays
+    synced=0 so the ``swarmtrace resync`` CLI can pick it up later. This
+    means a transient endpoint outage never permanently loses traces — they
+    sit in the local DB until either the endpoint recovers or the user runs
+    resync manually.
+    """
     while True:
         payload: Optional[dict] = None
         try:
             payload = _send_queue.get()
             key, url = _remote_config()
             if key and url:
+                sent_ok = False
                 # Retry with exponential backoff (3 attempts)
                 for attempt in range(3):
                     try:
                         _send_remote(payload, key, url)
+                        sent_ok = True
                         break
                     except Exception as exc:
                         if attempt < 2:
                             time.sleep(2 ** attempt)   # 1 s then 2 s
                         else:
                             _log.error("remote ingest failed after 3 attempts: %s", exc)
+                # Mark synced only on confirmed success — failed rows stay
+                # synced=0 so resync can replay them. mark_synced swallows
+                # storage errors itself, so this can't crash the worker.
+                if sent_ok:
+                    mark_synced(payload.get("id", ""))
         except Exception as exc:
             # Outer error boundary — log and keep the thread alive.
             _log.error("worker error (thread continues): %s", exc)
@@ -209,6 +221,87 @@ def _enqueue_remote(payload: dict) -> None:
         # The old approach had a race where two threads both popped an item then
         # both tried to push, losing 2 traces instead of 1.
         _log.error("ingest queue full — trace dropped")
+
+
+# ---------------------------------------------------------------------------
+# Resync — replay unsynced traces to the remote endpoint.
+# Used by the ``swarmtrace resync`` CLI. Reads rows where synced=0 from the
+# local SQLite DB and POSTs each one to /api/ingest, marking synced=1 on
+# success. Synchronous (no background queue) so the CLI can report progress
+# and exit code. Returns (attempted, succeeded, failed) counts.
+# ---------------------------------------------------------------------------
+
+def _row_to_payload(row: tuple) -> dict:
+    """Convert a traces table row tuple into the /api/ingest payload shape.
+
+    Row layout matches the SELECT * column order in storage.py:
+    id, parent_id, function, args, output, latency_sec, error, timestamp,
+    input_tokens, output_tokens, cost_usd, kind, agent_id, agent_name,
+    session_id, synced.
+    """
+    (id_, parent_id, func, args, output, latency, error, timestamp,
+     in_tok, out_tok, cost, kind, agent_id, agent_name,
+     session_id, _synced) = row
+    payload = {
+        "id": id_, "parent_id": parent_id, "function": func,
+        "args": args or "", "output": output or "", "latency_sec": latency,
+        "error": error, "timestamp": timestamp,
+        "input_tokens": in_tok or 0, "output_tokens": out_tok or 0,
+        "cost_usd": cost or 0.0,
+        "kind": kind, "agent_id": agent_id, "agent_name": agent_name,
+    }
+    if session_id is not None:
+        payload["session_id"] = session_id
+    return payload
+
+
+def resync(batch_size: int = 100, retries: int = 3) -> tuple[int, int, int]:
+    """Re-send unsynced traces to the remote endpoint.
+
+    Reads up to ``batch_size`` unsynced rows from the local DB and POSTs
+    each to ``/api/ingest``. On success, marks the row ``synced=1``. On
+    failure (after ``retries`` attempts with backoff), leaves the row
+    ``synced=0`` so the next resync run retries it.
+
+    Returns ``(attempted, succeeded, failed)``. If the remote endpoint
+    isn't configured (no API key / endpoint), returns ``(0, 0, 0)`` — the
+    caller (CLI) reports this as "remote not configured" rather than
+    treating it as an error.
+    """
+    from swarmtrace.storage import get_unsynced_traces
+
+    key, url = _remote_config()
+    if not (key and url):
+        return (0, 0, 0)
+
+    rows = get_unsynced_traces(limit=batch_size)
+    if not rows:
+        return (0, 0, 0)
+
+    attempted = len(rows)
+    succeeded = 0
+    failed = 0
+    for row in rows:
+        payload = _row_to_payload(row)
+        trace_id = payload["id"]
+        sent_ok = False
+        for attempt in range(retries):
+            try:
+                _send_remote(payload, key, url)
+                sent_ok = True
+                break
+            except Exception as exc:
+                if attempt < retries - 1:
+                    time.sleep(2 ** attempt)
+                else:
+                    _log.error("resync: failed to send trace %s after %d attempts: %s",
+                               trace_id, retries, exc)
+        if sent_ok:
+            mark_synced(trace_id, 1)
+            succeeded += 1
+        else:
+            failed += 1
+    return (attempted, succeeded, failed)
 
 
 # Thread-safe & async-safe parent tracking
