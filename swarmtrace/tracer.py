@@ -38,9 +38,9 @@ import contextvars
 import functools
 import hashlib
 import json
+import logging
 import os
 import queue
-import sys
 import threading
 import time
 import uuid
@@ -53,6 +53,8 @@ from urllib.request import Request, urlopen
 from swarmtrace.storage import save_trace
 from swarmtrace.pricing import calculate_cost
 from swarmtrace.redact import redact
+
+_log = logging.getLogger("swarmtrace")
 
 # ---------------------------------------------------------------------------
 # Remote ingest configuration (lazy — env vars are read at call time)
@@ -83,16 +85,16 @@ def init(
         from swarmtrace.fov import patch_all as fov_patch_all
         fov_patch_all(watch_dir=fov_watch_dir)
     else:
-        # fov=False is the default, and on its own prints nothing — a user on
+        # fov=False is the default, and on its own emits nothing — a user on
         # Kaggle/Colab/serverless/MCP has no way to tell "not traced" apart
-        # from "quietly working". One line makes the default explicit and
-        # points at the upgrade path without requiring it.
-        print(
-            "[swarmtrace] tracing: @observe spans"
-            + (" + auto-instrumented LLM calls" if auto_instrument else "")
-            + " | http/stream/filesystem/browser capture is off — "
-              "pass init(fov=True) (pip install swarmtrace[fov] for browser screenshots)",
-            file=sys.stderr,
+        # from "quietly working". One info-level log makes the default
+        # explicit and points at the upgrade path without requiring it.
+        # The host app's logging config decides whether this surfaces; we
+        # don't attach handlers ourselves.
+        _log.info(
+            "tracing: @observe spans%s | http/stream/filesystem/browser capture is off — "
+            "pass init(fov=True) (pip install swarmtrace[fov] for browser screenshots)",
+            " + auto-instrumented LLM calls" if auto_instrument else "",
         )
     if alerts:
         from swarmtrace.alerts import start as _alerts_start
@@ -172,13 +174,10 @@ def _worker() -> None:
                         if attempt < 2:
                             time.sleep(2 ** attempt)   # 1 s then 2 s
                         else:
-                            print(
-                                f"[swarmtrace] remote ingest failed after 3 attempts: {exc}",
-                                file=sys.stderr,
-                            )
+                            _log.error("remote ingest failed after 3 attempts: %s", exc)
         except Exception as exc:
             # Outer error boundary — log and keep the thread alive.
-            print(f"[swarmtrace] worker error (thread continues): {exc}", file=sys.stderr)
+            _log.error("worker error (thread continues): %s", exc)
         finally:
             # Always mark the item done so queue.join() never deadlocks.
             if payload is not None:
@@ -209,7 +208,7 @@ def _enqueue_remote(payload: dict) -> None:
         # FIX #6: don't do racy get_nowait()+put_nowait() — just log and drop.
         # The old approach had a race where two threads both popped an item then
         # both tried to push, losing 2 traces instead of 1.
-        print("[swarmtrace] ingest queue full — trace dropped", file=sys.stderr)
+        _log.error("ingest queue full — trace dropped")
 
 
 # Thread-safe & async-safe parent tracking
@@ -431,7 +430,7 @@ def _safe_flush(*flush_args) -> None:
     try:
         _flush(*flush_args)
     except Exception as exc:
-        print(f"[swarmtrace] trace flush warning: {exc}", file=sys.stderr)
+        _log.warning("trace flush warning: %s", exc)
 
 
 # ---------------------------------------------------------------------------
