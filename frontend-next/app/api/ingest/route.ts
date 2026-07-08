@@ -127,7 +127,7 @@ function jsonResponse(status: number, body: unknown) {
 // Validation logic lives in lib/validate-ingest.ts so it can be unit-tested
 // without standing up the edge runtime. The route imports the shape-detector
 // + validator; tests import the same functions directly.
-import { validateIngest, type TraceRow } from '@/lib/validate-ingest'
+import { validateIngest, decodeIngestBody, type TraceRow } from '@/lib/validate-ingest'
 
 export async function POST(req: Request) {
   const apiKey = req.headers.get('X-API-Key')
@@ -168,9 +168,13 @@ export async function POST(req: Request) {
       setCache(keyHash, user_id)
     }
 
+    // The SDK's batch path gzips the body and sets Content-Encoding: gzip.
+    // Request bodies are NOT auto-decompressed by the runtime, so inflate
+    // explicitly (with a decompressed-size bound) before JSON-parsing.
     let payload: unknown
-    try { payload = JSON.parse(new TextDecoder().decode(bodyBytes)) }
-    catch { return jsonResponse(400, { error: 'Body must be valid JSON' }) }
+    try {
+      payload = JSON.parse(await decodeIngestBody(bodyBytes, req.headers.get('content-encoding')))
+    } catch { return jsonResponse(400, { error: 'Body must be valid JSON (gzip supported via Content-Encoding: gzip)' }) }
 
     const { rows, error } = validateIngest(payload)
     if (!rows) return jsonResponse(400, error)
