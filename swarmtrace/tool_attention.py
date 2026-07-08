@@ -1,9 +1,13 @@
 import json
-from swarmtrace.storage import save_trace
-from swarmtrace.tracer import _current_agent
+import logging
+import time
 import uuid
 from datetime import datetime, timezone
-import time
+
+from swarmtrace.storage import save_trace
+from swarmtrace.tracer import _current_agent
+
+_log = logging.getLogger("swarmtrace.tool_attention")
 
 
 class ToolAttention:
@@ -47,7 +51,7 @@ class ToolAttention:
 
             if self.verbose:
                 total_tokens = sum(len(json.dumps(t.get("schema", {}))) // 4 for t in self.tools)
-                print(f"[ToolAttention] Indexed {len(self.tools)} tools | Full schema: ~{total_tokens} tokens")
+                _log.info("Indexed %d tools | Full schema: ~%d tokens", len(self.tools), total_tokens)
 
         except ImportError as e:
             raise ImportError(
@@ -94,11 +98,11 @@ class ToolAttention:
         latency       = round(time.time() - start, 4)
 
         if self.verbose:
-            print(f"[ToolAttention] Query: {query[:50]}")
-            print(f"[ToolAttention] Selected {len(selected)}/{len(self.tools)} tools in {latency}s")
-            print(f"[ToolAttention] Tokens: {full_tokens} → {active_tokens} ({savings_pct}% reduction)")
+            _log.info("Query: %s", query[:50])
+            _log.info("Selected %d/%d tools in %ss", len(selected), len(self.tools), latency)
+            _log.info("Tokens: %d → %d (%s%% reduction)", full_tokens, active_tokens, savings_pct)
             for t in selected:
-                print(f"[ToolAttention]   ✓ {t['name']}")
+                _log.info("  ✓ %s", t['name'])
 
         # Save to swarmtrace — attribute to whichever @observe(kind="agent")
         # call is currently in progress (if any), tagged as a tool call so

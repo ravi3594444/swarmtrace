@@ -22,13 +22,15 @@ Production guarantees
 """
 
 import functools
-import sys
+import logging
 import time
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from swarmtrace.pricing import calculate_cost
 import swarmtrace.tracer as _tracer
+
+_log = logging.getLogger("swarmtrace")
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +274,7 @@ def _record_async(
             "kind": "llm", "agent_id": agent_id, "agent_name": agent_name,
         })
     except Exception as exc:
-        print(f"[swarmtrace] auto-instrument record warning: {exc}", file=sys.stderr)
+        _log.warning("auto-instrument record warning: %s", exc)
 
 
 def _already_patched(target) -> bool:
@@ -658,13 +660,7 @@ def patch_all() -> dict:
             results[name] = bool(patch())
         except Exception as exc:
             results[name] = False
-            print(
-                f"[swarmtrace] auto-instrument warning ({patch.__name__}): {exc}",
-                file=sys.stderr,
-            )
+            _log.warning("auto-instrument warning (%s): %s", patch.__name__, exc)
     active = [name for name, ok in results.items() if ok]
-    print(
-        f"[swarmtrace] llm auto-instrument active: {', '.join(active) or 'none installed'}",
-        file=sys.stderr,
-    )
+    _log.info("llm auto-instrument active: %s", ', '.join(active) or 'none installed')
     return results

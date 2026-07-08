@@ -1,5 +1,6 @@
 import contextlib
 import io
+import logging
 import unittest
 from unittest.mock import patch
 
@@ -37,15 +38,21 @@ class TestReliability(unittest.TestCase):
         self.assertEqual(unknown_cost, 0.0)
 
     def test_tracer_storage_failure(self):
-        stderr = io.StringIO()
+        # When _flush raises, _safe_flush must (a) not re-raise and (b) emit
+        # a warning containing "trace flush warning" and the exception message.
+        # Originally verified via redirect_stderr (because the impl used
+        # print(file=sys.stderr)); now verified via assertLogs because the
+        # impl uses logging.getLogger("swarmtrace") per the library's
+        # logging policy (no handlers attached — host app's decision).
         with patch('swarmtrace.tracer._flush', side_effect=Exception("DB Corrupted")):
-            with contextlib.redirect_stderr(stderr):
+            with self.assertLogs("swarmtrace", level="WARNING") as cm:
                 _safe_flush(
                     "id", None, "func", [], {}, "out", 0.1, None, "ts",
                     0, 0, 0.0, "auto", "agent-id", "agent-name",
                 )
-        self.assertIn("trace flush warning", stderr.getvalue())
-        self.assertIn("DB Corrupted", stderr.getvalue())
+        joined = "\n".join(cm.output)
+        self.assertIn("trace flush warning", joined)
+        self.assertIn("DB Corrupted", joined)
 
 
 if __name__ == "__main__":

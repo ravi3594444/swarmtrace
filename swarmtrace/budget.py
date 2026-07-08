@@ -20,10 +20,13 @@ Usage::
 
 import asyncio
 import functools
+import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from typing import Optional
+
+_log = logging.getLogger("swarmtrace.budget")
 
 _session_tokens: dict[str, int] = {}
 _session_start:  dict[str, float] = {}
@@ -119,19 +122,19 @@ def _track(
     bar = "█" * filled + "░" * (20 - filled)
 
     if pct >= 1.0:
-        msg = f"[swarmtrace] 🛑 OVER BUDGET: {func_name} [{bar}] {total:,}/{max_tokens:,} tokens"
-        print(msg)
+        msg = f"OVER BUDGET: {func_name} [{bar}] {total:,}/{max_tokens:,} tokens"
+        _log.error(msg)
         if hard_stop:
-            raise RuntimeError(msg)
+            raise RuntimeError(f"[swarmtrace] {msg}")
     elif pct >= warn_at:
-        print(
-            f"[swarmtrace] ⚠️  WARNING: {func_name} [{bar}] "
-            f"{total:,}/{max_tokens:,} tokens ({pct*100:.0f}%) — near limit!"
+        _log.warning(
+            "WARNING: %s [%s] %s/%s tokens (%d%%) — near limit!",
+            func_name, bar, f"{total:,}", f"{max_tokens:,}", int(pct * 100),
         )
     else:
-        print(
-            f"[swarmtrace] 💰 Budget: {func_name} [{bar}] "
-            f"{total:,}/{max_tokens:,} tokens ({pct*100:.0f}%)"
+        _log.info(
+            "Budget: %s [%s] %s/%s tokens (%d%%)",
+            func_name, bar, f"{total:,}", f"{max_tokens:,}", int(pct * 100),
         )
 
 

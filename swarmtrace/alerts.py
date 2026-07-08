@@ -45,9 +45,9 @@ Usage::
 from __future__ import annotations
 
 import json
+import logging
 import os
 import sqlite3
-import sys
 import threading
 import time
 import uuid
@@ -58,6 +58,8 @@ from urllib.error import URLError
 from urllib.request import Request, urlopen
 
 from swarmtrace.storage import get_all_traces, TraceRow
+
+_log = logging.getLogger("swarmtrace.alerts")
 
 # ---------------------------------------------------------------------------
 # Schema — keep the alerts table in a SEPARATE SQLite file so the trace DB
@@ -126,7 +128,7 @@ def _save(alert: "Alert") -> None:
             )
             conn.commit()
     except Exception as exc:
-        print(f"[swarmtrace.alerts] save warning: {exc}", file=sys.stderr)
+        _log.warning("save warning: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -441,10 +443,7 @@ def deliver(alert: Alert, webhook: str, *, retries: int = 3) -> bool:
             if attempt < retries - 1:
                 time.sleep(2 ** attempt)
             else:
-                print(
-                    f"[swarmtrace.alerts] webhook delivery failed: {exc}",
-                    file=sys.stderr,
-                )
+                _log.error("webhook delivery failed: %s", exc)
     return False
 
 
@@ -516,10 +515,7 @@ class AlertRunner:
             try:
                 self._tick()
             except Exception as exc:
-                print(
-                    f"[swarmtrace.alerts] tick failed: {exc}",
-                    file=sys.stderr,
-                )
+                _log.error("tick failed: %s", exc)
             # Wait, but stay responsive to stop().
             self._stop.wait(self.interval)
 
@@ -661,7 +657,7 @@ def list_alerts(
             rows = conn.execute(query, params).fetchall()
         return [_row_to_alert(r).to_dict() for r in rows]
     except Exception as exc:
-        print(f"[swarmtrace.alerts] list warning: {exc}", file=sys.stderr)
+        _log.warning("list warning: %s", exc)
         return []
 
 
@@ -677,7 +673,7 @@ def acknowledge(alert_id: str) -> bool:
             conn.commit()
             return cur.rowcount > 0
     except Exception as exc:
-        print(f"[swarmtrace.alerts] ack warning: {exc}", file=sys.stderr)
+        _log.warning("ack warning: %s", exc)
         return False
 
 
