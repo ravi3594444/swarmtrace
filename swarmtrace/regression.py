@@ -1,5 +1,8 @@
+import logging
 import os
 import time
+
+_log = logging.getLogger("swarmtrace.regression")
 
 DEFAULT_THRESHOLD = 0.6
 
@@ -44,8 +47,6 @@ def score_similarity(output_a: str, output_b: str, llm=None) -> float:
     falling back to 0.5 (neutral) — so neither a flaky scorer nor a bad
     response can ever crash ``compare()``.
     """
-    import sys
-
     if llm is None:
         llm = _get_llm()
     prompt = f"""Compare these two AI outputs and return ONLY a number between 0.0 and 1.0.
@@ -64,10 +65,8 @@ Reply with just the number, nothing else."""
     try:
         raw = llm(prompt)
     except Exception as exc:
-        print(
-            f"[swarmtrace] warning: similarity LLM call failed ({exc!r}) "
-            f"— defaulting to 0.5 (neutral).",
-            file=sys.stderr,
+        _log.warning(
+            "similarity LLM call failed (%r) — defaulting to 0.5 (neutral).", exc,
         )
         return 0.5
 
@@ -77,10 +76,9 @@ Reply with just the number, nothing else."""
         # Non-numeric (or non-string/None) output — warn and default to
         # neutral 0.5 so neither a regression nor a false pass is silently
         # reported.
-        print(
-            f"[swarmtrace] warning: similarity LLM returned non-numeric output "
-            f"{raw!r:.60} — defaulting to 0.5 (neutral). Check your LLM callable.",
-            file=sys.stderr,
+        _log.warning(
+            "similarity LLM returned non-numeric output %.60r — defaulting to 0.5 (neutral). "
+            "Check your LLM callable.", raw,
         )
         return 0.5
 
@@ -103,9 +101,12 @@ def compare(func, inputs: list, version_a_prompt: str, version_b_prompt: str,
     if llm is None:
         llm = _get_llm()  # resolve once up front — fail fast, not mid-run
 
-    print(f"\n[swarmtrace Regression] Comparing v1 vs v2 on {len(inputs)} inputs...\n")
-    print(f"{'INPUT':<30} {'V1 LATENCY':<12} {'V2 LATENCY':<12} {'SIMILARITY':<12} {'REGRESSION?'}")
-    print("-" * 85)
+    _log.info("Comparing v1 vs v2 on %d inputs...", len(inputs))
+    _log.info(
+        "%-30s %-12s %-12s %-12s %s",
+        "INPUT", "V1 LATENCY", "V2 LATENCY", "SIMILARITY", "REGRESSION?",
+    )
+    _log.info("-" * 85)
 
     regressions = 0
 
@@ -123,15 +124,17 @@ def compare(func, inputs: list, version_a_prompt: str, version_b_prompt: str,
         if regressed:
             regressions += 1
 
-        flag = "\U0001f534 YES" if regressed else "\u2705 NO"
+        flag = "🔴 YES" if regressed else "✅ NO"
         short_input = input_text[:28] + ".." if len(input_text) > 28 else input_text
-        print(f"{short_input:<30} {str(lat_a)+'s':<12} {str(lat_b)+'s':<12} {str(similarity):<12} {flag}")
+        _log.info(
+            "%-30s %-12s %-12s %-12s %s",
+            short_input, f"{lat_a}s", f"{lat_b}s", str(similarity), flag,
+        )
 
-    print(f"\n{'='*85}")
-    print(f"Result: {regressions}/{len(inputs)} regressions detected")
+    _log.info("=" * 85)
+    _log.info("Result: %d/%d regressions detected", regressions, len(inputs))
     if regressions > 0:
-        print("\u26a0\ufe0f  WARNING: Your new prompt may have regressed!")
+        _log.warning("⚠️  WARNING: Your new prompt may have regressed!")
     else:
-        print("\u2705 No regressions. Safe to ship.")
-    print()
+        _log.info("✅ No regressions. Safe to ship.")
     return regressions
