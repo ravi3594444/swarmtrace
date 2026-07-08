@@ -6,9 +6,32 @@ import { useState, useEffect } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
-  MessagesSquare, GitCompareArrows,
+  MessagesSquare, GitCompareArrows, Compass,
 } from 'lucide-react'
 import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
+import { useOnboardingTour } from './onboarding/OnboardingTour'
+
+/** "Take a tour" trigger — replays the new-user onboarding tour on demand. */
+function TakeTourButton({ collapsed }: { collapsed: boolean }) {
+  const { startTour } = useOnboardingTour()
+  return (
+    <button
+      type="button"
+      onClick={startTour}
+      title="Take a tour"
+      aria-label="Take a tour"
+      className={`group flex items-center gap-3 rounded-lg text-sm font-medium text-sidebar-foreground transition-all duration-150 hover:bg-sidebar-border/60 hover:text-foreground ${
+        collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'
+      }`}
+    >
+      <Compass
+        className={`shrink-0 text-muted-foreground group-hover:text-foreground ${collapsed ? 'w-5 h-5' : 'w-[19px] h-[19px]'}`}
+        strokeWidth={1.7}
+      />
+      {!collapsed && <span className="truncate">Take a tour</span>}
+    </button>
+  )
+}
 
 const navItems = [
   { href: '/overview', label: 'Overview', icon: LayoutGrid },
@@ -35,6 +58,7 @@ function NavItem({
   return (
     <Link href={href}>
       <div
+        data-tour={`nav-${label.toLowerCase()}`}
         title={collapsed ? label : undefined}
         className={`
           group relative flex items-center gap-3 rounded-lg text-sm font-medium
@@ -201,6 +225,7 @@ export function Sidebar() {
         {navItems.map((item) => (
           <NavItem key={item.href} {...item} collapsed={!open} />
         ))}
+        <TakeTourButton collapsed={!open} />
       </nav>
 
       {/* User footer */}
