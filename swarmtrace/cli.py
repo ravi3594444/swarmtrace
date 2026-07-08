@@ -277,5 +277,57 @@ def main_alerts():
         sys.exit(1)
 
 
+# ---------- resync ----------
+
+def main_resync():
+    """swarmtrace-resync — re-send traces that failed to reach the remote endpoint.
+
+    Reads rows from the local SQLite DB where synced=0 (i.e. the background
+    sender's 3 retries were exhausted, or the endpoint was unreachable when
+    the trace was captured) and POSTs each one to /api/ingest again. On
+    success, the row is marked synced=1.
+
+    Use this after an endpoint outage, a network change, or any time the
+    dashboard is missing traces you know were captured locally.
+
+    Usage:
+      swarmtrace-resync [--limit N]    # default: re-send up to 100 unsynced rows
+
+    Exit code:
+      0  all attempted rows sent successfully (or nothing to send)
+      1  one or more rows still failed (re-run to retry)
+    """
+    from swarmtrace.tracer import resync as _resync
+
+    limit = 100
+    args = sys.argv[1:]
+    for i, arg in enumerate(args):
+        if arg in ("-h", "--help"):
+            print(main_resync.__doc__)
+            return
+        if arg == "--limit" and i + 1 < len(args):
+            try:
+                limit = max(1, int(args[i + 1]))
+            except ValueError:
+                pass
+        elif arg.startswith("--limit="):
+            try:
+                limit = max(1, int(arg.split("=", 1)[1]))
+            except ValueError:
+                pass
+
+    attempted, succeeded, failed = _resync(batch_size=limit)
+
+    if attempted == 0:
+        print("No unsynced traces found. (Remote endpoint configured and "
+              "up-to-date, or SWARMTRACE_API_KEY/SWARMTRACE_ENDPOINT not set.)")
+        return
+
+    print(f"Resync complete: {succeeded}/{attempted} traces sent successfully.")
+    if failed:
+        print(f"{failed} trace(s) still failed — re-run swarmtrace-resync to retry.")
+        sys.exit(1)
+
+
 if __name__ == "__main__":
     view()
