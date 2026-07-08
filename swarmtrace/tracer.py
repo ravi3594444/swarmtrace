@@ -52,6 +52,7 @@ from urllib.request import Request, urlopen
 
 from swarmtrace.storage import save_trace
 from swarmtrace.pricing import calculate_cost
+from swarmtrace.redact import redact
 
 # ---------------------------------------------------------------------------
 # Remote ingest configuration (lazy — env vars are read at call time)
@@ -398,6 +399,15 @@ def _flush(
     args_repr = str(args[:2])
     if kwargs:
         args_repr = f"{args_repr} kwargs={list(kwargs.keys())}"
+    # PII redaction — single call site, applied once to args/output/error
+    # so the local SQLite DB and the remote ingest endpoint see the SAME
+    # scrubbed payload.  Redacting here (not in save_trace / _enqueue_remote)
+    # means the two never disagree about what was stored.  See redact.py
+    # for the categories scrubbed and the deliberate non-PII pass-through
+    # (16-digit trace IDs, UUIDs, SHA-256 hashes are NOT touched).
+    args_repr = redact(args_repr)
+    output = redact(output)
+    error = redact(error)
     save_trace(
         trace_id, parent_id, func_name,
         args_repr, output, latency, error,
