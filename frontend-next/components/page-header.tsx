@@ -42,6 +42,7 @@ export function PageHeader({
         {actions}
         <button
           type="button"
+          data-tour="global-search"
           onClick={openCommandPalette}
           title="Search (Ctrl+K)"
           aria-label="Open search"
