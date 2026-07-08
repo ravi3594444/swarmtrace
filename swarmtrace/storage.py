@@ -12,11 +12,13 @@ Design notes:
   a storage hiccup never crashes the agent being traced.
 """
 
+import logging
 import os
 import sqlite3
-import sys
 import threading
 from typing import List, Optional, Tuple
+
+_log = logging.getLogger("swarmtrace")
 
 DB_PATH = os.environ.get("SWARMTRACE_DB_PATH", os.path.expanduser("~/.swarmtrace.db"))
 
@@ -153,7 +155,7 @@ def save_trace(
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
             conn.commit()
     except Exception as exc:
-        print(f"[swarmtrace] storage warning: {exc}", file=sys.stderr)
+        _log.warning("storage warning: %s", exc)
 
 def get_traces(limit: int = 20) -> List[TraceRow]:
     try:

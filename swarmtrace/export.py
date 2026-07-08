@@ -1,7 +1,10 @@
 import json
 import csv
+import logging
 import sys
 from swarmtrace.storage import get_all_traces
+
+_log = logging.getLogger("swarmtrace.export")
 
 
 def _traces_to_dicts(rows):
@@ -15,19 +18,19 @@ def export_json(path="swarmtrace_export.json"):
     data = _traces_to_dicts(get_all_traces())
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
-    print(f"Exported {len(data)} traces to {path}")
+    _log.info("Exported %d traces to %s", len(data), path)
 
 
 def export_csv(path="swarmtrace_export.csv"):
     data = _traces_to_dicts(get_all_traces())
     if not data:
-        print("No traces to export.")
+        _log.info("No traces to export.")
         return
     with open(path, "w", newline="") as f:
         writer = csv.DictWriter(f, fieldnames=data[0].keys())
         writer.writeheader()
         writer.writerows(data)
-    print(f"Exported {len(data)} traces to {path}")
+    _log.info("Exported %d traces to %s", len(data), path)
 
 
 def main():

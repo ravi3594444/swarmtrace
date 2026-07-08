@@ -36,9 +36,9 @@ from __future__ import annotations
 import base64
 import functools
 import json
+import logging
 import os
 import queue
-import sys
 import threading
 import time
 import uuid
@@ -47,6 +47,8 @@ from datetime import datetime, timezone
 
 # ── context from tracer ──────────────────────────────────────────────────────
 from swarmtrace.tracer import _current_agent, _remote_config
+
+_log = logging.getLogger("swarmtrace.fov")
 
 # ── local event storage ──────────────────────────────────────────────────────
 from swarmtrace.storage import _get_conn, _lock as _storage_lock
@@ -127,7 +129,7 @@ def _save_event_local(event: dict) -> None:
                 _purge_old_events(conn)
             conn.commit()
     except Exception as exc:
-        print(f"[swarmtrace/fov] event save warning: {exc}", file=sys.stderr)
+        _log.warning("event save warning: %s", exc)
 
 
 # ---------------------------------------------------------------------------
@@ -151,7 +153,7 @@ def _send_event_remote(payload: dict, key: str, base_url: str) -> None:
         )
         urllib.request.urlopen(req, timeout=5)
     except Exception as exc:
-        print(f"[swarmtrace/fov] remote event warning: {exc}", file=sys.stderr)
+        _log.warning("remote event warning: %s", exc)
 
 
 def _fov_worker() -> None:
@@ -195,7 +197,7 @@ def _enqueue_fov_event(event: dict) -> None:
         _FOV_QUEUE.put_nowait(event)
     except queue.Full:
         # FIX #6 (FOV queue): don't do racy get+put — just log and skip
-        print("[swarmtrace/fov] event queue full — event dropped", file=sys.stderr)
+        _log.error("event queue full — event dropped")
 
 
 def _save_event(event: dict) -> None:
@@ -290,8 +292,7 @@ def _screenshot_sync(page) -> str:
             raise
         # Transient error (timeout, etc.) — log and return "" so the
         # streamer retries next tick without deregistering.
-        import sys
-        print(f"[swarmtrace/fov] screenshot failed: {str(exc)[:120]}", file=sys.stderr)
+        _log.warning("screenshot failed: %s", str(exc)[:120])
         return ""
 
 
@@ -876,7 +877,7 @@ def patch_all(watch_dir: str = ".") -> dict:
         "filesystem":  patch_filesystem(watch_dir),
     }
     active = [k for k, v in results.items() if v]
-    print(f"[swarmtrace/fov] patches active: {', '.join(active) or 'none'}", file=sys.stderr)
+    _log.info("patches active: %s", ', '.join(active) or 'none')
     return results
 
 

@@ -1,8 +1,11 @@
+import logging
 import time
 import uuid
 from datetime import datetime, timezone
 from swarmtrace.storage import save_trace
 from swarmtrace.tracer import _parent_ctx, _current_parent, _current_agent
+
+_log = logging.getLogger("swarmtrace.scraper")
 
 def scrape(url: str, verbose=True):
     """
@@ -21,7 +24,7 @@ def scrape(url: str, verbose=True):
 
     indent = "  " if parent_id else ""
     if verbose:
-        print(f"[swarmtrace] {indent}▶ scrape started (id={trace_id}) url={url[:60]}")
+        _log.info("%s▶ scrape started (id=%s) url=%s", indent, trace_id, url[:60])
 
     start = time.perf_counter()
     error = None
@@ -43,7 +46,10 @@ def scrape(url: str, verbose=True):
         cost = round(output_tokens * 0.80 / 1_000_000, 8)
         status = "✗ FAILED" if error else "✓ done"
         if verbose:
-            print(f"[swarmtrace] {indent}{status}: scrape | {latency}s | {bytes_scraped} bytes | ${cost}")
+            _log.info(
+                "%s%s: scrape | %ss | %d bytes | $%s",
+                indent, status, latency, bytes_scraped, cost,
+            )
         save_trace(
             trace_id, parent_id, "scrape",
             url, result[:200] if result else None,
