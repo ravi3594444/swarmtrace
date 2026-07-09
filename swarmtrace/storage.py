@@ -108,14 +108,34 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE traces ADD COLUMN {name} {decl}")
 
 def _purge_old_rows(conn: sqlite3.Connection) -> None:
+    """Evict oldest rows when the DB exceeds MAX_ROWS.
+
+    Only purges rows that have already been synced to the remote endpoint
+    (synced=1). Unsynced rows (synced=0) are preserved so the resync CLI
+    can still replay them — purging an unsynced row is silent data loss,
+    because that trace was captured but never reached the dashboard and
+    there's no other copy.
+
+    If the DB fills with unsynced rows (sustained backend outage with no
+    recovery), this function will NOT evict them — the DB can grow beyond
+    MAX_ROWS. That's deliberate: better to grow the local DB (bounded by
+    disk) than to silently drop traces the user thinks are safe. The
+    operator should see the growth via metrics/alerting (TODO: wire into
+    the alerts module) and either fix the endpoint or run resync manually.
+    """
     row_count: int = conn.execute("SELECT COUNT(*) FROM traces").fetchone()[0]
-    if row_count > MAX_ROWS:
-        excess = row_count - MAX_ROWS
-        conn.execute(
-            "DELETE FROM traces WHERE id IN "
-            "(SELECT id FROM traces ORDER BY timestamp ASC LIMIT ?)",
-            (excess,),
-        )
+    if row_count <= MAX_ROWS:
+        return
+    excess = row_count - MAX_ROWS
+    # Only evict synced rows. If there aren't enough synced rows to satisfy
+    # `excess`, we evict what we can and leave the unsynced rows in place
+    # (the DB stays over MAX_ROWS — see docstring for why).
+    conn.execute(
+        "DELETE FROM traces WHERE id IN "
+        "(SELECT id FROM traces WHERE synced = 1 "
+        "ORDER BY timestamp ASC LIMIT ?)",
+        (excess,),
+    )
 
 # ---------------------------------------------------------------------------
 # Public API
