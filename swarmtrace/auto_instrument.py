@@ -28,6 +28,7 @@ from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from swarmtrace.pricing import calculate_cost
+from swarmtrace.redact import redact
 import swarmtrace.tracer as _tracer
 
 _log = logging.getLogger("swarmtrace")
@@ -254,7 +255,15 @@ def _record_async(
         agent_id, agent_name = agent or (trace_id, func_name)
         timestamp = datetime.now(timezone.utc).isoformat()
         latency = round(time.perf_counter() - start, 3)
-        error_str = str(error) if error else None
+        # Redact the error string — LLM auth errors (esp. older OpenAI
+        # clients, some Anthropic error shapes) can echo the API key back
+        # in the exception message. This is the exact PII leak that
+        # swarmtrace/redact.py was built to catch, but the original
+        # Task 1 commit missed this path because the args_str/output
+        # strings here are synthesized ("model=…") and don't carry user
+        # content. The error string DOES — it comes from the provider's
+        # exception, which we don't control.
+        error_str = redact(str(error)) if error else None
         output = None if error else f"model={model} tokens={in_tok}in/{out_tok}out"
         args_str = f"model={model}"
         # save_trace writes to SQLite — fast local I/O, exception-safe.
