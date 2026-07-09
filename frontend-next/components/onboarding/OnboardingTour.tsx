@@ -18,12 +18,15 @@ import {
   createContext, useCallback, useContext, useEffect, useState,
 } from 'react'
 import { createPortal } from 'react-dom'
-import { useRouter } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { TOUR_STEPS, type TourStep } from './tour-steps'
 
 const STORAGE_PREFIX = 'swarmtrace-onboarding-completed:'
+// Per-tab keys so an in-progress tour survives the remounts that happen when a
+// dashboard route changes (each page mounts its own DashboardLayout).
+const RUNNING_KEY = 'swarmtrace-onboarding-running'
+const STEP_KEY = 'swarmtrace-onboarding-step'
 const SPOTLIGHT_PADDING = 8
 
 type Rect = { top: number; left: number; width: number; height: number }
@@ -211,21 +214,29 @@ function TourCard({
   )
 }
 
+function readStep(): number {
+  if (typeof window === 'undefined') return 0
+  try {
+    const raw = window.sessionStorage.getItem(STEP_KEY)
+    const n = raw == null ? 0 : parseInt(raw, 10)
+    return Number.isFinite(n) && n >= 0 && n < TOUR_STEPS.length ? n : 0
+  } catch {
+    return 0
+  }
+}
+
 function TourOverlay({
   onFinish,
 }: {
   onFinish: () => void
 }) {
-  const router = useRouter()
-  const [index, setIndex] = useState(0)
+  // Resume from the persisted step so a route-driven remount doesn't reset the
+  // tour. The overlay only renders client-side (via a portal), so reading
+  // sessionStorage in the initializer can't cause a hydration mismatch.
+  const [index, setIndex] = useState(readStep)
   const [rect, setRect] = useState<Rect | null>(null)
   const step = TOUR_STEPS[index]
   const total = TOUR_STEPS.length
-
-  // Navigate to the step's route (if any) before locating the target.
-  useEffect(() => {
-    if (step.route) router.push(step.route)
-  }, [step.route, router])
 
   // Locate the target element, retrying briefly while the page mounts.
   useEffect(() => {
@@ -258,17 +269,27 @@ function TourOverlay({
     }
   }, [step.target])
 
-  const next = useCallback(() => {
-    setIndex((i) => {
-      if (i >= total - 1) {
-        onFinish()
-        return i
+  const goTo = useCallback((i: number) => {
+    const clamped = Math.max(0, Math.min(i, total - 1))
+    setIndex(clamped)
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem(STEP_KEY, String(clamped))
+      } catch {
+        // sessionStorage may be unavailable; tour still works within the page.
       }
-      return i + 1
-    })
-  }, [total, onFinish])
+    }
+  }, [total])
 
-  const prev = useCallback(() => setIndex((i) => Math.max(0, i - 1)), [])
+  const next = useCallback(() => {
+    if (index >= total - 1) {
+      onFinish()
+      return
+    }
+    goTo(index + 1)
+  }, [index, total, goTo, onFinish])
+
+  const prev = useCallback(() => goTo(index - 1), [index, goTo])
 
   // Keyboard navigation.
   useEffect(() => {
@@ -327,28 +348,64 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
 
   const finish = useCallback(() => {
     setActive(false)
-    if (typeof window !== 'undefined' && user?.id) {
+    if (typeof window !== 'undefined') {
       try {
-        window.localStorage.setItem(storageKey(user.id), '1')
+        window.sessionStorage.removeItem(RUNNING_KEY)
+        window.sessionStorage.removeItem(STEP_KEY)
       } catch {
-        // localStorage may be unavailable (private mode); tour just re-shows.
+        // sessionStorage may be unavailable; nothing to clean up.
+      }
+      if (user?.id) {
+        try {
+          window.localStorage.setItem(storageKey(user.id), '1')
+        } catch {
+          // localStorage may be unavailable (private mode); tour just re-shows.
+        }
       }
     }
   }, [user?.id])
 
-  const startTour = useCallback(() => setActive(true), [])
+  const startTour = useCallback(() => {
+    if (typeof window !== 'undefined') {
+      try {
+        window.sessionStorage.setItem(RUNNING_KEY, '1')
+        window.sessionStorage.setItem(STEP_KEY, '0')
+      } catch {
+        // sessionStorage may be unavailable; tour still runs this session.
+      }
+    }
+    setActive(true)
+  }, [])
 
-  // Auto-start once for users who haven't seen the tour yet.
+  // Resume an in-progress tour after a remount, or auto-start once for users
+  // who haven't seen it yet.
   useEffect(() => {
-    if (!isLoaded || !isSignedIn || !user?.id) return
     if (typeof window === 'undefined') return
+    let running = false
+    try {
+      running = window.sessionStorage.getItem(RUNNING_KEY) === '1'
+    } catch {
+      running = false
+    }
+    if (running) {
+      setActive(true)
+      return
+    }
+    if (!isLoaded || !isSignedIn || !user?.id) return
     let seen = false
     try {
       seen = window.localStorage.getItem(storageKey(user.id)) === '1'
     } catch {
       seen = false
     }
-    if (!seen) setActive(true)
+    if (!seen) {
+      try {
+        window.sessionStorage.setItem(RUNNING_KEY, '1')
+      } catch {
+        // sessionStorage may be unavailable; auto-start still works this load.
+      }
+      setActive(true)
+    }
   }, [isLoaded, isSignedIn, user?.id])
 
   return (
