@@ -9,8 +9,8 @@ import {
  *
  * `target` is a CSS selector for the element to spotlight. When it is
  * undefined the step is rendered as a centred modal (used for the welcome
- * and finish steps). `route` navigates the dashboard to that page before the
- * step is shown so the user sees the real feature while reading about it.
+ * and finish steps). The tour stays on the current page and spotlights the
+ * sidebar entry for each feature rather than navigating between routes.
  */
 export type TourStep = {
   id: string
@@ -18,7 +18,6 @@ export type TourStep = {
   body: string
   icon: LucideIcon
   target?: string
-  route?: string
   placement?: 'right' | 'left' | 'top' | 'bottom'
 }
 
@@ -42,7 +41,6 @@ export const TOUR_STEPS: TourStep[] = [
       "usage over time. Start here to know your swarm's health at a glance.",
     icon: LayoutGrid,
     target: '[data-tour="nav-overview"]',
-    route: '/overview',
     placement: 'right',
   },
   {
@@ -54,7 +52,6 @@ export const TOUR_STEPS: TourStep[] = [
       "clean card per agent with rolled-up tokens, cost and error counts.",
     icon: Users,
     target: '[data-tour="nav-agents"]',
-    route: '/agents',
     placement: 'right',
   },
   {
@@ -66,7 +63,6 @@ export const TOUR_STEPS: TourStep[] = [
       "what order, how long each took, and the inputs and outputs.",
     icon: ActivitySquare,
     target: '[data-tour="nav-traces"]',
-    route: '/traces',
     placement: 'right',
   },
   {
@@ -78,7 +74,6 @@ export const TOUR_STEPS: TourStep[] = [
       "follow the whole exchange instead of isolated traces.",
     icon: MessagesSquare,
     target: '[data-tour="nav-threads"]',
-    route: '/threads',
     placement: 'right',
   },
   {
@@ -90,7 +85,6 @@ export const TOUR_STEPS: TourStep[] = [
       "become a problem in production.",
     icon: BarChart3,
     target: '[data-tour="nav-metrics"]',
-    route: '/metrics',
     placement: 'right',
   },
   {
@@ -102,7 +96,6 @@ export const TOUR_STEPS: TourStep[] = [
       "model swap against your baseline.",
     icon: GitCompareArrows,
     target: '[data-tour="nav-compare"]',
-    route: '/compare',
     placement: 'right',
   },
   {
@@ -114,7 +107,6 @@ export const TOUR_STEPS: TourStep[] = [
       "trace to debug the root cause fast.",
     icon: AlertTriangle,
     target: '[data-tour="nav-failures"]',
-    route: '/failures',
     placement: 'right',
   },
   {
@@ -126,7 +118,6 @@ export const TOUR_STEPS: TourStep[] = [
       "code.",
     icon: Settings,
     target: '[data-tour="nav-settings"]',
-    route: '/settings',
     placement: 'right',
   },
   {
