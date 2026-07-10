@@ -12,10 +12,10 @@ import { reportFetchError } from './report-fetch-error'
 export async function fetchOverview() {
   try {
     const res = await fetch('/api/overview')
-    if (!res.ok) { reportFetchError('overview'); return null }
+    if (!res.ok) { reportFetchError('overview', () => { fetchOverview() }); return null }
     return res.json()
   } catch {
-    reportFetchError('overview')
+    reportFetchError('overview', () => { fetchOverview() })
     return null
   }
 }
@@ -24,10 +24,10 @@ export async function fetchAgents(since?: number | null) {
   try {
     const url = since != null ? `/api/agents?since=${since}` : '/api/agents'
     const res = await fetch(url)
-    if (!res.ok) { reportFetchError('agents'); return null }
+    if (!res.ok) { reportFetchError('agents', () => { fetchAgents(since) }); return null }
     return res.json()
   } catch {
-    reportFetchError('agents')
+    reportFetchError('agents', () => { fetchAgents(since) })
     return null
   }
 }
@@ -35,10 +35,10 @@ export async function fetchAgents(since?: number | null) {
 export async function fetchTraces() {
   try {
     const res = await fetch('/api/traces')
-    if (!res.ok) { reportFetchError('traces'); return null }
+    if (!res.ok) { reportFetchError('traces', () => { fetchTraces() }); return null }
     return res.json()
   } catch {
-    reportFetchError('traces')
+    reportFetchError('traces', () => { fetchTraces() })
     return null
   }
 }
@@ -48,10 +48,10 @@ export async function fetchMetrics() {
     // cache: 'no-store' — always fresh. Staleness is managed by the
     // visibility-aware Realtime subscription in metrics/page.tsx.
     const res = await fetch('/api/metrics', { cache: 'no-store' })
-    if (!res.ok) { reportFetchError('metrics'); return null }
+    if (!res.ok) { reportFetchError('metrics', () => { fetchMetrics() }); return null }
     return res.json()
   } catch {
-    reportFetchError('metrics')
+    reportFetchError('metrics', () => { fetchMetrics() })
     return null
   }
 }
@@ -59,10 +59,10 @@ export async function fetchMetrics() {
 export async function fetchApiKeys() {
   try {
     const res = await fetch('/api/settings/api-keys')
-    if (!res.ok) { reportFetchError('API keys'); return null }
+    if (!res.ok) { reportFetchError('API keys', () => { fetchApiKeys() }); return null }
     return res.json()
   } catch {
-    reportFetchError('API keys')
+    reportFetchError('API keys', () => { fetchApiKeys() })
     return null
   }
 }
@@ -96,10 +96,10 @@ export async function revokeApiKey(id: string) {
 export async function fetchBillingInfo() {
   try {
     const res = await fetch('/api/settings/billing')
-    if (!res.ok) { reportFetchError('billing info'); return null }
+    if (!res.ok) { reportFetchError('billing info', () => { fetchBillingInfo() }); return null }
     return res.json()
   } catch {
-    reportFetchError('billing info')
+    reportFetchError('billing info', () => { fetchBillingInfo() })
     return null
   }
 }

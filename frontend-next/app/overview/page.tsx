@@ -8,7 +8,7 @@ import { StatBar } from '@/components/swarm/StatBar'
 import { CallTree } from '@/components/swarm/CallTree'
 import { TokenChart } from '@/components/swarm/TokenChart'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
-import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { FirstRunEmptyState, isFirstRun, markHasTraces } from '@/components/first-run-empty-state'
 import { useOnboardingTour } from '@/components/onboarding/OnboardingTour'
 import LiveActivity from '@/components/LiveActivity'
@@ -42,7 +42,7 @@ function EventRow({ type, message }: { type: string; message: string }) {
       onClick={() => isDense && setExpanded((v) => !v)}
       className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 ${isDense ? 'cursor-pointer' : 'cursor-default'}`}
     >
-      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[9px] font-bold uppercase mt-0.5 ${isAlert ? 'bg-red-50 text-destructive border-red-200' : 'bg-muted text-muted-foreground border-border'}`}>
+      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-bold uppercase mt-0.5 ${isAlert ? 'bg-red-50 text-destructive border-red-200' : 'bg-muted text-muted-foreground border-border'}`}>
         {type}
       </span>
       <p className={`text-xs text-foreground leading-relaxed min-w-0 flex-1 font-mono ${expanded ? 'whitespace-pre-wrap break-all' : 'truncate'}`}>
@@ -520,6 +520,7 @@ export default function OverviewPage() {
   const [selected, setSelected] = useState<Trace | null>(null)
   const [activity, setActivity] = useState<{ time: string; requests: number }[]>([])
   const [events, setEvents] = useState<OverviewEvent[]>([])
+  const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
 
   // Single source of truth for the time-windowed view: filter the polled
   // traces once by the selected range, then hand the filtered array to every
@@ -530,18 +531,20 @@ export default function OverviewPage() {
     [traces, range],
   )
 
+  // Fetch overview data (activity chart + events feed). Tracks lastUpdated
+  // for the PageHeader timestamp + manual refresh.
+  const loadOverview = () => {
+    fetchOverview().then((d) => {
+      if (!d) return
+      if (d.activity?.length) setActivity(d.activity)
+      if (d.events?.length) setEvents(d.events)
+      setLastUpdated(new Date())
+    })
+  }
   useEffect(() => {
-    let mounted = true
-    const load = () => {
-      fetchOverview().then((d) => {
-        if (!mounted || !d) return
-        if (d.activity?.length) setActivity(d.activity)
-        if (d.events?.length) setEvents(d.events)
-      })
-    }
-    load()
-    const id = setInterval(load, 30_000)
-    return () => { mounted = false; clearInterval(id) }
+    loadOverview()
+    const id = setInterval(loadOverview, 30_000)
+    return () => clearInterval(id)
   }, [])
 
   // Derive unique agents from traces that have agent_id
@@ -590,9 +593,7 @@ export default function OverviewPage() {
   const showFirstRun = firstRunChecked && !loading && traces.length === 0 && isFirstRun()
 
   if (loading) return (
-    <DashboardLayout>
-      <SwarmLoadingScreen message="Connecting to swarm…" />
-    </DashboardLayout>
+    <DashboardSkeleton title="Overview" description="Live swarm health and execution summary" />
   )
 
   // First-run: show onboarding empty state with the 3-step setup guide.
@@ -617,6 +618,8 @@ export default function OverviewPage() {
         title="Overview"
         description="Live swarm health and execution summary"
         liveStatus={isLive ? 'live' : 'paused'}
+        lastUpdated={lastUpdated}
+        onRefresh={loadOverview}
         actions={
           <div className="flex items-center gap-3">
             <TimeRangeDropdown value={range} onChange={setRange} />
