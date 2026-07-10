@@ -607,59 +607,68 @@ export default function TracesPage() {
         </div>
       )}
 
-      {/* Tree — resizable split panel */}
+      {/* Tree — resizable split panel. Uses dynamic viewport height (dvh)
+          to fill the screen below the PageHeader. The calc accounts for:
+          - 48px mobile top bar (pt-12) on small screens, 0 on lg+
+          - ~64px PageHeader height (varies slightly with toolbar wrapping,
+            but 64px is the common case; overflow-y on the list handles the
+            rest). Using 100dvh (dynamic viewport height) instead of 100vh
+          so mobile browser chrome (address bar show/hide) doesn't cause
+          the tree to overflow/underflow. */}
       {view === 'tree' && (
-        <div className="h-[calc(100vh-64px)]">
-          <PanelGroup direction="horizontal" className="h-full">
-            <Panel defaultSize={selected ? 58 : 100} minSize={38}>
-              <div className="h-full flex flex-col overflow-hidden">
-                <div className="flex items-center justify-between border-b border-border bg-card px-4 py-2 shrink-0">
-                  <span className="text-xs text-muted-foreground">
-                    <span className="font-semibold text-foreground tabular-nums">{filtered.length}</span> spans
-                    {errorCount > 0 && <span className="ml-2 text-red-600 font-medium">· {errorCount} error{errorCount > 1 ? 's' : ''}</span>}
-                    {filtered.length !== traces.length && <span className="ml-1 text-muted-foreground/60">(of {traces.length})</span>}
-                    {activeTags.size > 0 && (
-                      <span className="ml-2 text-primary font-medium">· {activeTags.size} tag filter{activeTags.size > 1 ? 's' : ''} active</span>
+        <div className="p-6 pt-3">
+          <div className="h-[calc(100dvh-48px-64px-1.5rem)] lg:h-[calc(100dvh-64px-1.5rem)] border border-border bg-card rounded-xl overflow-hidden shadow-sm">
+            <PanelGroup direction="horizontal" className="h-full">
+              <Panel defaultSize={selected ? 58 : 100} minSize={38}>
+                <div className="h-full flex flex-col overflow-hidden">
+                  <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-2 shrink-0">
+                    <span className="text-xs text-muted-foreground">
+                      <span className="font-semibold text-foreground tabular-nums">{filtered.length}</span> spans
+                      {errorCount > 0 && <span className="ml-2 text-red-600 font-medium">· {errorCount} error{errorCount > 1 ? 's' : ''}</span>}
+                      {filtered.length !== traces.length && <span className="ml-1 text-muted-foreground/60">(of {traces.length})</span>}
+                      {activeTags.size > 0 && (
+                        <span className="ml-2 text-primary font-medium">· {activeTags.size} tag filter{activeTags.size > 1 ? 's' : ''} active</span>
+                      )}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/20 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">
+                    <div className="w-4 shrink-0" />
+                    <div className="w-1.5 shrink-0" />
+                    <div className="flex-1">Span / Function</div>
+                    <div className="w-12 text-right hidden lg:block">Kind</div>
+                    <div className="w-16 text-right hidden lg:block">ID</div>
+                    <div className="w-14 hidden xl:block" />
+                    <div className="w-14 text-right">Latency</div>
+                    <div className="w-14 text-right hidden xl:block">Tokens</div>
+                    <div className="w-16 text-right">Cost</div>
+                    <div className="w-10 shrink-0" />
+                  </div>
+
+                  <div className="flex-1 overflow-y-auto">
+                    {roots.length === 0 ? (
+                      <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">
+                        {traces.length === 0 ? 'No spans yet.' : 'No spans match your filters.'}
+                      </div>
+                    ) : (
+                      roots.map((root) => (
+                        <SpanRow key={root.id} node={root} depth={0} selected={selected} onSelect={setSelected} maxLatency={maxLatency} />
+                      ))
                     )}
-                  </span>
+                  </div>
                 </div>
+              </Panel>
 
-                <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/20 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">
-                  <div className="w-4 shrink-0" />
-                  <div className="w-1.5 shrink-0" />
-                  <div className="flex-1">Span / Function</div>
-                  <div className="w-12 text-right hidden lg:block">Kind</div>
-                  <div className="w-16 text-right hidden lg:block">ID</div>
-                  <div className="w-14 hidden xl:block" />
-                  <div className="w-14 text-right">Latency</div>
-                  <div className="w-14 text-right hidden xl:block">Tokens</div>
-                  <div className="w-16 text-right">Cost</div>
-                  <div className="w-10 shrink-0" />
-                </div>
-
-                <div className="flex-1 overflow-y-auto">
-                  {roots.length === 0 ? (
-                    <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">
-                      {traces.length === 0 ? 'No spans yet.' : 'No spans match your filters.'}
-                    </div>
-                  ) : (
-                    roots.map((root) => (
-                      <SpanRow key={root.id} node={root} depth={0} selected={selected} onSelect={setSelected} maxLatency={maxLatency} />
-                    ))
-                  )}
-                </div>
-              </div>
-            </Panel>
-
-            {selected && (
-              <>
-                <PanelResizeHandle className="w-1 bg-border hover:bg-primary/40 transition-colors cursor-col-resize" />
-                <Panel defaultSize={42} minSize={28} maxSize={65}>
-                  <TraceDetail trace={selected} allTraces={traces} onClose={() => setSelected(null)} onJump={setSelected} />
-                </Panel>
-              </>
-            )}
-          </PanelGroup>
+              {selected && (
+                <>
+                  <PanelResizeHandle className="w-1 bg-border hover:bg-primary/40 transition-colors cursor-col-resize" />
+                  <Panel defaultSize={42} minSize={28} maxSize={65}>
+                    <TraceDetail trace={selected} allTraces={traces} onClose={() => setSelected(null)} onJump={setSelected} />
+                  </Panel>
+                </>
+              )}
+            </PanelGroup>
+          </div>
         </div>
       )}
     </DashboardLayout>
