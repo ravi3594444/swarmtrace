@@ -28,6 +28,8 @@
 
 const MAX_TEXT_LEN = 4000
 
+import { redact } from './redact'
+
 // Bound on the DECOMPRESSED body size. The route already caps the wire
 // (compressed) bytes at 64 KB, but gzip can expand ~1000x, so a small
 // malicious payload could balloon after inflation. 1 MB comfortably fits
@@ -141,15 +143,28 @@ export function validateTrace(payload: unknown): { row?: TraceRow; error?: strin
       ? p.session_id.slice(0, 64)
       : null
 
+  // PII redaction — defense-in-depth at the ingest boundary. The SDK already
+  // redacts (swarmtrace/redact.py) before sending, but any client posting
+  // directly (curl, MCP, a third-party SDK port) bypasses the SDK. Redacting
+  // here means PII never lands in Supabase regardless of which client sent
+  // it. Applied to args/output/error (the three free-text fields that can
+  // carry user content). Slicing happens first (so we don't redact past the
+  // truncation boundary), then redaction runs on the sliced value.
+  // See lib/redact.ts for the categories scrubbed and the Luhn-gated
+  // credit-card logic (which avoids false-positiving on 16-digit trace IDs).
+  const argsRaw = text(p.args)
+  const outputRaw = text(p.output)
+  const errorRaw = typeof p.error === 'string' ? p.error.slice(0, MAX_TEXT_LEN) : null
+
   return {
     row: {
       id:            p.id,
       parent_id:     typeof p.parent_id === 'string' ? p.parent_id.slice(0, 64) : null,
       function:      p.function,
-      args:          text(p.args),
-      output:        text(p.output),
+      args:          redact(argsRaw)!,
+      output:        redact(outputRaw)!,
       latency_sec:   num(p.latency_sec),
-      error:         typeof p.error === 'string' ? p.error.slice(0, MAX_TEXT_LEN) : null,
+      error:         redact(errorRaw),
       timestamp:     p.timestamp,
       input_tokens:  Math.max(0, Math.trunc(num(p.input_tokens))),
       output_tokens: Math.max(0, Math.trunc(num(p.output_tokens))),
