@@ -129,6 +129,45 @@ def test_patch_openai_records_error_with_zero_tokens(records, monkeypatch):
     assert row[-4] == "llm"
 
 
+def test_patch_openai_redacts_api_key_in_error_message(records, monkeypatch):
+    """LLM auth errors can echo the API key back in the exception message.
+    The auto-instrument path must redact it before saving/enqueuing —
+    this is the PII leak that the original Task 1 commit missed because
+    the args_str/output strings are synthesized ("model=…") and don't
+    carry user content, but the error string DOES (it comes from the
+    provider's exception, which we don't control)."""
+    from openai import OpenAI
+    from openai.resources.chat.completions import Completions
+
+    fake_key = "sk-ant-" + "X" * 50
+    # Simulate an auth error that echoes the key (a real failure mode
+    # for some older OpenAI client versions and Anthropic error shapes).
+    def boom(self, **kw):
+        raise RuntimeError(
+            f"AuthenticationError: invalid api key '{fake_key}' (status 401)"
+        )
+
+    monkeypatch.setattr(Completions, "create", boom)
+    ai.patch_openai()
+
+    client = OpenAI(api_key="test")
+    with pytest.raises(RuntimeError):
+        client.chat.completions.create(model="gpt-4o-mini", messages=[])
+
+    assert len(records) == 1
+    row = records[0]
+    error_str = row[6]  # error column
+    # The API key must NOT appear in the stored error string.
+    assert fake_key not in error_str, (
+        f"API key leaked into stored error: {error_str!r}"
+    )
+    assert "[REDACTED]" in error_str, (
+        f"Expected [REDACTED] marker, got: {error_str!r}"
+    )
+    # The non-PII part of the error message is preserved.
+    assert "AuthenticationError" in error_str
+
+
 # ---------------------------------------------------------------------------
 # Anthropic
 # ---------------------------------------------------------------------------
