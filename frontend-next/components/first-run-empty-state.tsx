@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react'
 import { CheckCircle, Copy, Terminal, KeyRound, Code2, ArrowRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { useOnboardingTour } from '@/components/onboarding/OnboardingTour'
 
 /**
  * FirstRunEmptyState — shown on the Overview page when the user has zero
@@ -46,9 +47,10 @@ def my_agent(prompt: str) -> str:
     # your agent logic here
     return "response"`
 
-export function FirstRunEmptyState({ onWatchTour }: { onWatchTour?: () => void }) {
+export function FirstRunEmptyState() {
   const [copied, setCopied] = useState(false)
   const [apiKey, setApiKey] = useState<string | null>(null)
+  const { startTour } = useOnboardingTour()
 
   // Check if the user already has an API key (step 2 done). We can't
   // call the API from a server component, so this is a client-side check
@@ -170,11 +172,9 @@ export function FirstRunEmptyState({ onWatchTour }: { onWatchTour?: () => void }
 
       {/* Footer actions */}
       <div className="flex flex-col sm:flex-row items-center gap-3 mt-10">
-        {onWatchTour && (
-          <Button variant="outline" size="sm" onClick={onWatchTour}>
-            Watch the tour
-          </Button>
-        )}
+        <Button variant="outline" size="sm" onClick={startTour}>
+          Watch the tour
+        </Button>
         <Button size="sm" asChild>
           <a href="https://github.com/ravi3594444/swarmtrace#readme" target="_blank" rel="noopener noreferrer">
             Full docs <ArrowRight className="w-3.5 h-3.5 ml-1" />
