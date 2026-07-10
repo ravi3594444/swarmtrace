@@ -10,7 +10,6 @@ import { TokenChart } from '@/components/swarm/TokenChart'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { FirstRunEmptyState, isFirstRun, markHasTraces } from '@/components/first-run-empty-state'
-import { useOnboardingTour } from '@/components/onboarding/OnboardingTour'
 import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
 import { filterTracesByRange } from '@/lib/trace-utils'
@@ -581,7 +580,6 @@ export default function OverviewPage() {
   // SSR). `showFirstRun` is then derived from the current trace count + the
   // localStorage check — no cascading renders. The markHasTraces() side effect
   // runs when traces arrive but doesn't call setState.
-  const { startTour } = useOnboardingTour()
   const [firstRunChecked, setFirstRunChecked] = useState(false)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- post-hydration localStorage read; runs once.
@@ -605,7 +603,7 @@ export default function OverviewPage() {
           title="Overview"
           description="Live swarm health and execution summary"
         />
-        <FirstRunEmptyState onWatchTour={startTour} />
+        <FirstRunEmptyState />
       </DashboardLayout>
     )
   }
