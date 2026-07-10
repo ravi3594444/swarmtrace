@@ -45,18 +45,19 @@ const navItems = [
 ]
 
 function NavItem({
-  href, label, icon: Icon, collapsed,
+  href, label, icon: Icon, collapsed, onNavigate,
 }: {
   href: string
   label: string
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>
   collapsed: boolean
+  onNavigate?: () => void
 }) {
   const pathname = usePathname()
   const isActive = pathname === href
 
   return (
-    <Link href={href}>
+    <Link href={href} onClick={onNavigate}>
       <div
         data-tour={`nav-${label.toLowerCase()}`}
         title={collapsed ? label : undefined}
@@ -180,16 +181,73 @@ function LogoutButton() {
 }
 
 export function Sidebar() {
-  const [open, setOpen] = useState(true)
+  const [open, setOpen] = useState(true)            // desktop collapse state
+  const [mobileOpen, setMobileOpen] = useState(false) // mobile drawer state
   const { user } = useUser()
   const email = user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? 'Account'
   const initials = (user?.fullName ?? email).slice(0, 2).toUpperCase()
 
+  // Close the mobile drawer on Escape (matches the logout modal pattern).
+  useEffect(() => {
+    if (!mobileOpen) return
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setMobileOpen(false)
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
+
+  // The sidebar <aside> is shared between desktop (persistent) and mobile
+  // (off-canvas drawer). On mobile it's translated off-screen by default
+  // and slides in when mobileOpen is true. On desktop it's always visible
+  // and the collapse toggle (open state) controls its width.
   return (
-    <aside
-      className="shrink-0 flex flex-col h-screen sticky top-0 bg-sidebar border-r border-sidebar-border transition-[width,background-color,border-color,color] duration-200 ease-in-out overflow-hidden"
-      style={{ width: open ? 224 : 56 }}
-    >
+    <>
+      {/* ── Mobile top bar (lg:hidden) ────────────────────────────────────
+          A thin fixed bar with a hamburger to open the sidebar drawer.
+          Only visible on screens below the lg: breakpoint. */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 h-12 flex items-center justify-between px-4 bg-sidebar border-b border-sidebar-border">
+        <button
+          onClick={() => setMobileOpen(true)}
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          aria-label="Open navigation menu"
+        >
+          <Menu className="w-5 h-5" />
+        </button>
+        <div className="flex items-center gap-2">
+          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
+            <Zap className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />
+          </div>
+          <span className="text-sm font-bold tracking-tight text-foreground">
+            Swarm<span className="text-primary">Trace</span>
+          </span>
+        </div>
+        <div className="w-8" /> {/* spacer to center the logo */}
+      </div>
+
+      {/* ── Mobile backdrop ───────────────────────────────────────────────
+          Click anywhere outside the sidebar to close. */}
+      {mobileOpen && (
+        <div
+          className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
+          onClick={() => setMobileOpen(false)}
+          aria-hidden="true"
+        />
+      )}
+
+      {/* ── Sidebar (desktop persistent + mobile drawer) ──────────────────
+          On mobile: fixed, translated -100% when closed, 0 when open.
+          On desktop: sticky, width controlled by `open` state. */}
+      <aside
+        className={`
+          shrink-0 flex flex-col h-screen bg-sidebar border-r border-sidebar-border
+          transition-[width,background-color,border-color,color,transform] duration-200 ease-in-out overflow-hidden
+          /* Mobile: fixed drawer, slides in from the left */
+          fixed lg:sticky top-0 z-50 lg:z-auto
+          ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+        `}
+        style={{ width: open ? 224 : 56 }}
+      >
       {/* Logo + toggle */}
       <div className={`flex items-center border-b border-sidebar-border ${open ? 'px-4 py-4 gap-2.5 justify-between' : 'px-0 py-4 justify-center'}`}>
         {open && (
@@ -204,12 +262,22 @@ export function Sidebar() {
             </div>
           </div>
         )}
+        {/* Desktop collapse toggle (hidden on mobile — the drawer has its own close button) */}
         <button
           onClick={() => setOpen((v) => !v)}
-          className={`w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0 ${!open ? 'mx-auto' : ''}`}
+          className={`hidden lg:flex w-7 h-7 rounded-lg items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0 ${!open ? 'mx-auto' : ''}`}
           title={open ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
         >
           {open ? <X className="w-3.5 h-3.5" /> : <Menu className="w-4 h-4" />}
+        </button>
+        {/* Mobile close button (hidden on desktop) */}
+        <button
+          onClick={() => setMobileOpen(false)}
+          className="lg:hidden w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+          aria-label="Close navigation menu"
+        >
+          <X className="w-4 h-4" />
         </button>
       </div>
 
@@ -221,9 +289,9 @@ export function Sidebar() {
         </div>
       )}
 
-      <nav className={`flex-1 overflow-y-auto overflow-x-hidden py-3 ${open ? 'px-3 space-y-0.5' : 'px-0 space-y-1 flex flex-col items-center'}`}>
+      <nav aria-label="Dashboard navigation" className={`flex-1 overflow-y-auto overflow-x-hidden py-3 ${open ? 'px-3 space-y-0.5' : 'px-0 space-y-1 flex flex-col items-center'}`}>
         {navItems.map((item) => (
-          <NavItem key={item.href} {...item} collapsed={!open} />
+          <NavItem key={item.href} {...item} collapsed={!open} onNavigate={() => setMobileOpen(false)} />
         ))}
         <TakeTourButton collapsed={!open} />
       </nav>
@@ -247,5 +315,6 @@ export function Sidebar() {
         </div>
       )}
     </aside>
+    </>
   )
 }

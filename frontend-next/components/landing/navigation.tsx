@@ -60,6 +60,9 @@ export function Navigation() {
             <button
               className="p-2"
               onClick={() => setIsOpen(!isOpen)}
+              aria-expanded={isOpen}
+              aria-controls="mobile-nav-menu"
+              aria-label={isOpen ? "Close menu" : "Open menu"}
             >
               {isOpen ? <X size={20} /> : <Menu size={20} />}
             </button>
@@ -68,7 +71,7 @@ export function Navigation() {
 
         {/* Mobile Navigation */}
         {isOpen && (
-          <div className="md:hidden mt-4 pb-4 border-t border-border/20">
+          <div id="mobile-nav-menu" className="md:hidden mt-4 pb-4 border-t border-border/20">
             <div className="flex flex-col gap-4">
               {navLinks.map(({ label, href }) => (
                 <a
