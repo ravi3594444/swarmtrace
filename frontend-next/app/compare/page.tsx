@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useState, useEffect } from 'react'
+import { useMemo, useState } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
@@ -60,14 +60,14 @@ function OutputPanel({ title, trace }: { title: string; trace: Trace | undefined
 
 export default function ComparePage() {
   const { traces, loading } = useSwarmTraces(10000)
-  const [idA, setIdA] = useState('')
-  const [idB, setIdB] = useState('')
-
-  // Seed defaults once traces arrive: pick two most recent distinct traces.
-  useEffect(() => {
-    if (!idA && traces[0]) setIdA(traces[0].id)
-    if (!idB && traces[1]) setIdB(traces[1].id)
-  }, [traces, idA, idB])
+  // null = "no explicit user selection yet" — falls back to the two most
+  // recent traces. Derived directly from `traces` instead of seeded via a
+  // useEffect + setState, which was re-running (and re-rendering) on every
+  // poll tick once traces had already loaded.
+  const [selectedIdA, setIdA] = useState<string | null>(null)
+  const [selectedIdB, setIdB] = useState<string | null>(null)
+  const idA = selectedIdA ?? traces[0]?.id ?? ''
+  const idB = selectedIdB ?? traces[1]?.id ?? ''
 
   const traceA = useMemo(() => traces.find((t) => t.id === idA), [traces, idA])
   const traceB = useMemo(() => traces.find((t) => t.id === idB), [traces, idB])

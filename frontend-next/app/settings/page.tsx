@@ -8,6 +8,7 @@ import { Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settin
 import { fetchApiKeys, createApiKey, revokeApiKey, fetchBillingInfo } from '@/lib/api'
 import { useIntegrations, type Integration } from '@/contexts/IntegrationsContext'
 import { SkeletonCard } from '@/components/skeleton'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
@@ -316,6 +317,7 @@ export default function SettingsPage() {
   const { user } = useUser()
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   // Seed profile from Clerk user data WITHOUT a set-state-in-effect.
   // React-recommended pattern: store the previous user ref and adjust
@@ -686,16 +688,24 @@ export default function SettingsPage() {
                   <h2 className="text-xl font-semibold text-foreground mb-1">Danger Zone</h2>
                   <p className="text-sm text-muted-foreground mb-4">Permanently delete your account and all traces. This cannot be undone.</p>
                   <button
-                    onClick={() => {
-                      if (window.confirm('Are you sure? This will permanently delete your account and all data.')) {
-                        // Account deletion via Clerk requires a backend endpoint.
-                        // Until wired up, direct the user to Clerk's user portal.
-                        window.open('https://accounts.clerk.dev/user', '_blank')
-                      }
-                    }}
+                    onClick={() => setDeleteDialogOpen(true)}
                     className="px-6 py-2 rounded-full bg-red-500/10 text-red-500 font-medium text-sm border border-red-500/30 hover:bg-red-500/20 transition-colors">
                     Delete Account
                   </button>
+                  <ConfirmDialog
+                    open={deleteDialogOpen}
+                    title="Delete your account?"
+                    description="This permanently deletes your account and every trace, agent, and API key on it. There's no undo."
+                    confirmationPhrase="DELETE"
+                    confirmLabel="Delete account"
+                    onCancel={() => setDeleteDialogOpen(false)}
+                    onConfirm={() => {
+                      setDeleteDialogOpen(false)
+                      // Account deletion via Clerk requires a backend endpoint.
+                      // Until wired up, direct the user to Clerk's user portal.
+                      window.open('https://accounts.clerk.dev/user', '_blank')
+                    }}
+                  />
                 </div>
 
                 <div className="flex justify-end gap-3 flex-wrap">
