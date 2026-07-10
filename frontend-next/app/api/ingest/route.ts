@@ -1,4 +1,11 @@
-export const runtime = 'edge'
+// Runs on the Node.js runtime (Vercel's default). DecompressionStream, used
+// by decodeIngestBody() below for gzip-batched payloads, is not supported on
+// Vercel's Edge runtime (confirmed via build: "A Node.js API is used
+// (DecompressionStream) which is not supported in the Edge Runtime") — it
+// would throw on every gzip-compressed batch send. Vercel also deprecated
+// standalone Edge Functions in June 2025 in favor of Node.js/Fluid compute,
+// which has full Web API + npm support, so there's no upside to staying on
+// 'edge' here.
 
 const MAX_BODY_BYTES  = 64 * 1024
 const MAX_BATCH_SIZE = 50

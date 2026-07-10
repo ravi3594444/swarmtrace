@@ -5,6 +5,7 @@ import { GeistMono } from "geist/font/mono"
 import { Analytics } from "@vercel/analytics/next"
 import { ClerkProvider } from "@clerk/nextjs"
 import { ThemeProvider } from "@/components/theme-provider"
+import { Toaster } from "@/components/ui/toaster"
 import { IntegrationsProvider } from "@/contexts/IntegrationsContext"
 import "./globals.css"
 
@@ -72,6 +73,7 @@ export default function RootLayout({
             <IntegrationsProvider>
               {children}
               <Analytics />
+              <Toaster />
             </IntegrationsProvider>
           </ThemeProvider>
         </body>
