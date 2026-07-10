@@ -33,16 +33,17 @@ function subscribe(callback: () => void): () => void {
 
 function getClientSnapshot(): TimeRangeKey {
   const v = window.localStorage.getItem(STORAGE_KEY)
-  return isTimeRangeKey(v) ? v : 'all'
+  return isTimeRangeKey(v) ? v : 'today'
 }
 
 function getServerSnapshot(): TimeRangeKey {
-  return 'all'
+  return 'today'
 }
 
 /** Persist the user's time-range choice across page reloads. Defaults to
- *  "all" when no preference is stored so the dashboard never looks empty
- *  when data exists outside today. SSR-safe via useSyncExternalStore. */
+ *  "today" so the dashboard shows current activity on first visit — old
+ *  data doesn't clutter the view. Users can switch to "All Time" and the
+ *  choice persists. SSR-safe via useSyncExternalStore. */
 export function useTimeRange() {
   const range = useSyncExternalStore(subscribe, getClientSnapshot, getServerSnapshot)
 
