@@ -1,6 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaRequest, supaUserRequest } from '../../../../lib/supabase'
+import { supaUserRequest, RlsEnforcementError } from '../../../../lib/supabase'
 import crypto from 'crypto'
 
 interface ApiKeyRow {
@@ -68,7 +68,7 @@ export async function POST(req: Request) {
       revoked: false,
     }
 
-    await supaRequest('api_keys', {
+    await supaUserRequest('api_keys', userId, {
       method: 'POST',
       body: JSON.stringify(payload),
     })
@@ -76,6 +76,10 @@ export async function POST(req: Request) {
     // Return the raw key ONCE — it is never retrievable again
     return NextResponse.json({ key: rawKey })
   } catch (error) {
+    if (error instanceof RlsEnforcementError) {
+      console.error('[api/settings/api-keys] POST RLS enforcement failed:', error.message)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     console.error('[api/settings/api-keys] POST failed:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
