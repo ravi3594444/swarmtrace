@@ -74,7 +74,7 @@ function TreeNode({
         <span className="w-14 shrink-0 text-right tabular-nums text-muted-foreground font-mono">
           {node.latency_sec.toFixed(2)}s
         </span>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[9px] font-bold uppercase ${
+        <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${
           ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
              : "bg-red-50 text-destructive border border-red-200"
         }`}>

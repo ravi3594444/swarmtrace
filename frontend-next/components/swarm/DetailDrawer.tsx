@@ -77,7 +77,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
                           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${sOk ? "bg-emerald-500" : "bg-red-400"}`} />
                           <span className="flex-1 truncate text-xs text-foreground">{s.function}</span>
                           <span className="text-[11px] text-muted-foreground">{s.id}</span>
-                          <span className={`rounded-full px-1.5 py-0.5 border text-[9px] font-bold uppercase ${sOk ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                          <span className={`rounded-full px-1.5 py-0.5 border text-[10px] font-bold uppercase ${sOk ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
                             {sOk ? "OK" : "ERR"}
                           </span>
                         </button>

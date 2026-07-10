@@ -5,6 +5,7 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 import { AnimatedSphere } from "./animated-sphere";
+import { SocialProofBadges } from "./social-proof-badges";
 
 const words = ["trace", "debug", "monitor", "fix"];
 
@@ -52,13 +53,20 @@ export function HeroSection() {
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12 pt-40 w-full">
 
         {/* Eyebrow */}
-        <div className={`mb-8 transition-all duration-700 ${
+        <div className={`mb-4 transition-all duration-700 ${
           isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         }`}>
           <span className="inline-flex items-center gap-3 text-sm font-mono text-muted-foreground">
             <span className="w-8 h-px bg-foreground/30" />
             Now on PyPI — pip install swarmtrace
           </span>
+        </div>
+
+        {/* Social proof badges (GitHub stars + PyPI downloads) */}
+        <div className={`transition-all duration-700 delay-100 ${
+          isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
+        }`}>
+          <SocialProofBadges />
         </div>
 
         {/* Big headline */}

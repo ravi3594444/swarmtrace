@@ -6,7 +6,7 @@ import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { SmartJson } from '@/components/swarm/SmartJson'
 import { CallChainCrumbs } from '@/components/swarm/CallChainCrumbs'
-import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { Waterfall } from '@/components/swarm/Waterfall'
 import { TraceTable } from '@/components/swarm/TraceTable'
 import type { Trace } from '@/lib/trace-types'
@@ -316,7 +316,7 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
 
         {/* Kind badge */}
         {node.kind && node.kind !== 'function' && (
-          <span className="hidden lg:inline-block text-[9px] font-bold uppercase rounded-full px-1.5 py-0.5 border border-border bg-muted/40 text-muted-foreground shrink-0">
+          <span className="hidden lg:inline-block text-[10px] font-bold uppercase rounded-full px-1.5 py-0.5 border border-border bg-muted/40 text-muted-foreground shrink-0">
             {node.kind}
           </span>
         )}
@@ -341,7 +341,7 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
           ${(node.cost_usd ?? 0).toFixed(4)}
         </span>
 
-        <span className={`text-[9px] font-bold uppercase rounded-full px-1.5 py-0.5 border shrink-0 ${hasErr ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
+        <span className={`text-[10px] font-bold uppercase rounded-full px-1.5 py-0.5 border shrink-0 ${hasErr ? 'bg-red-50 text-red-700 border-red-200' : 'bg-emerald-50 text-emerald-700 border-emerald-200'}`}>
           {hasErr ? 'ERR' : 'OK'}
         </span>
       </div>
@@ -490,9 +490,7 @@ export default function TracesPage() {
   const maxLatency = useMemo(() => filtered.reduce((m, t) => Math.max(m, t.latency_sec ?? 0), 0.001), [filtered])
 
   if (loading) return (
-    <DashboardLayout>
-      <SwarmLoadingScreen message="Fetching traces…" />
-    </DashboardLayout>
+    <DashboardSkeleton title="Traces" description="Span tree — click any row to inspect" />
   )
 
   const errorCount = filtered.filter((t) => t.error).length

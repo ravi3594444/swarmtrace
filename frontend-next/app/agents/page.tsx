@@ -4,7 +4,7 @@ import { useState, useEffect } from 'react'
 import Link from 'next/link'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
-import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { fetchSwarmAgents } from '@/lib/swarm-api'
 import type { Agent } from '@/lib/trace-types'
@@ -112,9 +112,7 @@ export default function AgentsPage() {
   }, [range])
 
   if (loading) return (
-    <DashboardLayout>
-      <SwarmLoadingScreen message="Loading agents..." />
-    </DashboardLayout>
+    <DashboardSkeleton title="Agents" description="Registered swarm agents and their health" />
   )
 
   const filtered = agents

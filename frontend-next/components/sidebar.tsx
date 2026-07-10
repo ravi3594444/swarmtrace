@@ -33,15 +33,30 @@ function TakeTourButton({ collapsed }: { collapsed: boolean }) {
   )
 }
 
-const navItems = [
-  { href: '/overview', label: 'Overview', icon: LayoutGrid },
-  { href: '/agents',   label: 'Agents',   icon: Users },
-  { href: '/traces',   label: 'Traces',   icon: ActivitySquare },
-  { href: '/threads',  label: 'Threads',  icon: MessagesSquare },
-  { href: '/metrics',  label: 'Metrics',  icon: BarChart3 },
-  { href: '/compare',  label: 'Compare',  icon: GitCompareArrows },
-  { href: '/failures', label: 'Failures', icon: AlertTriangle },
-  { href: '/settings', label: 'Settings', icon: Settings },
+const navGroups = [
+  {
+    label: 'Monitor',
+    items: [
+      { href: '/overview', label: 'Overview', icon: LayoutGrid },
+      { href: '/agents',   label: 'Agents',   icon: Users },
+      { href: '/traces',   label: 'Traces',   icon: ActivitySquare },
+      { href: '/threads',  label: 'Threads',  icon: MessagesSquare },
+    ],
+  },
+  {
+    label: 'Analyze',
+    items: [
+      { href: '/metrics',  label: 'Metrics',  icon: BarChart3 },
+      { href: '/compare',  label: 'Compare',  icon: GitCompareArrows },
+      { href: '/failures', label: 'Failures', icon: AlertTriangle },
+    ],
+  },
+  {
+    label: 'Account',
+    items: [
+      { href: '/settings', label: 'Settings', icon: Settings },
+    ],
+  },
 ]
 
 function NavItem({
@@ -289,9 +304,22 @@ export function Sidebar() {
         </div>
       )}
 
-      <nav aria-label="Dashboard navigation" className={`flex-1 overflow-y-auto overflow-x-hidden py-3 ${open ? 'px-3 space-y-0.5' : 'px-0 space-y-1 flex flex-col items-center'}`}>
-        {navItems.map((item) => (
-          <NavItem key={item.href} {...item} collapsed={!open} onNavigate={() => setMobileOpen(false)} />
+      <nav aria-label="Dashboard navigation" className={`flex-1 overflow-y-auto overflow-x-hidden py-3 ${open ? 'px-3 space-y-3' : 'px-0 space-y-3 flex flex-col items-center'}`}>
+        {navGroups.map((group, gi) => (
+          <div key={group.label} className={open ? 'space-y-0.5' : 'space-y-1 flex flex-col items-center'}>
+            {open && (
+              <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+                {group.label}
+              </div>
+            )}
+            {group.items.map((item) => (
+              <NavItem key={item.href} {...item} collapsed={!open} onNavigate={() => setMobileOpen(false)} />
+            ))}
+            {/* Separator between groups (not after the last group) */}
+            {gi < navGroups.length - 1 && open && (
+              <div className="mx-2.5 mt-1 border-t border-sidebar-border/50" />
+            )}
+          </div>
         ))}
         <TakeTourButton collapsed={!open} />
       </nav>
