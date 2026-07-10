@@ -1,6 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaRequest, supaUserRequest } from '@/lib/supabase'
+import { supaUserRequest, RlsEnforcementError } from '@/lib/supabase'
 
 const INTEGRATIONS_META = [
   { id: 'swarmtrace-observe', name: 'swarmtrace @observe',   description: 'Auto-traces all decorated functions',                             requires: null,                                                          default_connected: true  },
@@ -50,7 +50,7 @@ export async function PATCH(request: Request) {
       return NextResponse.json({ error: 'Missing id or connected' }, { status: 400 })
     }
 
-    await supaRequest('user_integrations', {
+    await supaUserRequest('user_integrations', userId, {
       method:  'POST',
       headers: { Prefer: 'resolution=merge-duplicates' },
       body: JSON.stringify({
@@ -64,6 +64,10 @@ export async function PATCH(request: Request) {
 
     return NextResponse.json({ id, connected, ok: true })
   } catch (err: unknown) {
+    if (err instanceof RlsEnforcementError) {
+      console.error('[api/settings/integrations] PATCH RLS enforcement failed:', err.message)
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     const msg = err instanceof Error ? err.message : 'Failed to save'
     return NextResponse.json({ error: msg }, { status: 500 })
   }

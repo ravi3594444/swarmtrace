@@ -7,6 +7,7 @@ import { ClerkProvider } from "@clerk/nextjs"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { IntegrationsProvider } from "@/contexts/IntegrationsContext"
+import "@/lib/health-check"  // startup env-var validation (logs warnings, never throws)
 import "./globals.css"
 
 
