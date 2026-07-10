@@ -345,6 +345,11 @@ function TourOverlay({
 export function OnboardingTourProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, user } = useUser()
   const [active, setActive] = useState(false)
+  // Pulled out to a primitive on its own line: closing over `user?.id`
+  // directly inside the callback made the React Compiler infer a dependency
+  // on the whole `user` object (coarser than the declared [user?.id]),
+  // which meant it couldn't preserve the manual memoization below.
+  const userId = user?.id
 
   const finish = useCallback(() => {
     setActive(false)
@@ -355,15 +360,15 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
       } catch {
         // sessionStorage may be unavailable; nothing to clean up.
       }
-      if (user?.id) {
+      if (userId) {
         try {
-          window.localStorage.setItem(storageKey(user.id), '1')
+          window.localStorage.setItem(storageKey(userId), '1')
         } catch {
           // localStorage may be unavailable (private mode); tour just re-shows.
         }
       }
     }
-  }, [user?.id])
+  }, [userId])
 
   const startTour = useCallback(() => {
     if (typeof window !== 'undefined') {
@@ -378,7 +383,12 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
   }, [])
 
   // Resume an in-progress tour after a remount, or auto-start once for users
-  // who haven't seen it yet.
+  // who haven't seen it yet. This has to live in an effect (not derived
+  // during render) because sessionStorage/localStorage don't exist during
+  // SSR/hydration — reading them earlier would desync server and client
+  // output. The two setActive(true) calls below are an intentional
+  // post-hydration sync with those browser-only APIs, not an accidental
+  // render cascade, so the set-state-in-effect rule is disabled locally.
   useEffect(() => {
     if (typeof window === 'undefined') return
     let running = false
@@ -388,13 +398,14 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
       running = false
     }
     if (running) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resuming an in-progress tour after remount; see comment above
       setActive(true)
       return
     }
-    if (!isLoaded || !isSignedIn || !user?.id) return
+    if (!isLoaded || !isSignedIn || !userId) return
     let seen = false
     try {
-      seen = window.localStorage.getItem(storageKey(user.id)) === '1'
+      seen = window.localStorage.getItem(storageKey(userId)) === '1'
     } catch {
       seen = false
     }
@@ -406,7 +417,7 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
       }
       setActive(true)
     }
-  }, [isLoaded, isSignedIn, user?.id])
+  }, [isLoaded, isSignedIn, userId])
 
   return (
     <TourContext.Provider value={{ startTour }}>

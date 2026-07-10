@@ -8,7 +8,7 @@ import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import type { Trace } from '@/lib/trace-types'
 import { clusterErrors } from '@/lib/error-clustering'
-import { AlertTriangle, Bug, TrendingDown, ChevronRight, Layers } from 'lucide-react'
+import { AlertTriangle, TrendingDown, ChevronRight, Layers } from 'lucide-react'
 
 function formatTime(iso: string) {
   // Use UTC to match TraceTable.tsx — otherwise the same trace shows
