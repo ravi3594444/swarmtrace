@@ -1,4 +1,7 @@
-export const runtime = 'edge'
+// Runs on the Node.js runtime (Vercel's default) — see app/api/ingest/route.ts
+// for why this project doesn't use 'edge': Vercel deprecated standalone Edge
+// Functions in June 2025, and Node.js/Fluid compute has full API support
+// with none of the Edge runtime's Web-API gaps.
 
 // ── FOV event ingest ──────────────────────────────────────────────────────────
 // Receives live agent activity events from swarmtrace.fov and inserts them into

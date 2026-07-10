@@ -3,12 +3,19 @@
 // NOTE: next: { revalidate } is only honoured in Server Components / Route
 // Handlers, not in 'use client' fetch calls. All fetches here are from
 // client components, so we omit it to avoid silent confusion.
+//
+// Every helper below still returns null/false on failure (unchanged
+// contract for existing callers) but now also surfaces the failure via
+// reportFetchError() so it isn't indistinguishable from "no data".
+import { reportFetchError } from './report-fetch-error'
 
 export async function fetchOverview() {
   try {
     const res = await fetch('/api/overview')
-    return res.ok ? res.json() : null
+    if (!res.ok) { reportFetchError('overview'); return null }
+    return res.json()
   } catch {
+    reportFetchError('overview')
     return null
   }
 }
@@ -17,8 +24,10 @@ export async function fetchAgents(since?: number | null) {
   try {
     const url = since != null ? `/api/agents?since=${since}` : '/api/agents'
     const res = await fetch(url)
-    return res.ok ? res.json() : null
+    if (!res.ok) { reportFetchError('agents'); return null }
+    return res.json()
   } catch {
+    reportFetchError('agents')
     return null
   }
 }
@@ -26,8 +35,10 @@ export async function fetchAgents(since?: number | null) {
 export async function fetchTraces() {
   try {
     const res = await fetch('/api/traces')
-    return res.ok ? res.json() : null
+    if (!res.ok) { reportFetchError('traces'); return null }
+    return res.json()
   } catch {
+    reportFetchError('traces')
     return null
   }
 }
@@ -37,8 +48,10 @@ export async function fetchMetrics() {
     // cache: 'no-store' — always fresh. Staleness is managed by the
     // visibility-aware Realtime subscription in metrics/page.tsx.
     const res = await fetch('/api/metrics', { cache: 'no-store' })
-    return res.ok ? res.json() : null
+    if (!res.ok) { reportFetchError('metrics'); return null }
+    return res.json()
   } catch {
+    reportFetchError('metrics')
     return null
   }
 }
@@ -46,8 +59,10 @@ export async function fetchMetrics() {
 export async function fetchApiKeys() {
   try {
     const res = await fetch('/api/settings/api-keys')
-    return res.ok ? res.json() : null
+    if (!res.ok) { reportFetchError('API keys'); return null }
+    return res.json()
   } catch {
+    reportFetchError('API keys')
     return null
   }
 }
@@ -59,8 +74,10 @@ export async function createApiKey(name: string) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
     })
-    return res.ok ? res.json() : null
+    if (!res.ok) { reportFetchError('API keys'); return null }
+    return res.json()
   } catch {
+    reportFetchError('API keys')
     return null
   }
 }
@@ -68,8 +85,10 @@ export async function createApiKey(name: string) {
 export async function revokeApiKey(id: string) {
   try {
     const res = await fetch(`/api/settings/api-keys/${id}`, { method: 'DELETE' })
+    if (!res.ok) reportFetchError('API keys')
     return res.ok
   } catch {
+    reportFetchError('API keys')
     return false
   }
 }
@@ -77,8 +96,10 @@ export async function revokeApiKey(id: string) {
 export async function fetchBillingInfo() {
   try {
     const res = await fetch('/api/settings/billing')
-    return res.ok ? res.json() : null
+    if (!res.ok) { reportFetchError('billing info'); return null }
+    return res.json()
   } catch {
+    reportFetchError('billing info')
     return null
   }
 }
