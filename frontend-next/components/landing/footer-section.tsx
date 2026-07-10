@@ -15,7 +15,7 @@ export function FooterSection() {
             <ul className="space-y-2 text-sm text-muted-foreground">
               <li><Link href="/#features" className="hover:text-foreground transition-colors">Features</Link></li>
               <li><Link href="/#how-it-works" className="hover:text-foreground transition-colors">How it works</Link></li>
-              <li><Link href="/#pricing" className="hover:text-foreground transition-colors">Pricing</Link></li>
+              <li><Link href="/#get-started" className="hover:text-foreground transition-colors">Get Started</Link></li>
               <li><a href="https://github.com/ravi3594444/swarmtrace#readme" target="_blank" rel="noopener noreferrer" className="hover:text-foreground transition-colors">Documentation</a></li>
             </ul>
           </div>

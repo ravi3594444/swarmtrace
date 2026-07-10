@@ -31,6 +31,7 @@ function BillingTab() {
       cta: 'Current Plan',
       current: true,
       highlight: false,
+      comingSoon: false,
     },
     {
       name: 'Pro',
@@ -38,9 +39,10 @@ function BillingTab() {
       period: 'per month',
       description: 'For teams shipping AI to production.',
       features: ['1,000,000 traces / month', 'Unlimited API keys', '90-day retention', 'Realtime dashboard', 'CSV & PDF export', 'Email support'],
-      cta: 'Upgrade to Pro',
+      cta: 'Coming Soon',
       current: false,
       highlight: true,
+      comingSoon: true,
     },
     {
       name: 'Enterprise',
@@ -51,6 +53,7 @@ function BillingTab() {
       cta: 'Contact Us',
       current: false,
       highlight: false,
+      comingSoon: false,
     },
   ]
 
@@ -88,7 +91,12 @@ function BillingTab() {
                 : 'border-border bg-card'
             }`}
           >
-            {plan.highlight && (
+            {plan.comingSoon && (
+              <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-amber-500 text-white text-xs font-semibold px-3 py-1 rounded-full">
+                Coming Soon
+              </span>
+            )}
+            {plan.highlight && !plan.comingSoon && (
               <span className="absolute -top-3 left-1/2 -translate-x-1/2 bg-primary text-primary-foreground text-xs font-semibold px-3 py-1 rounded-full">
                 Most Popular
               </span>
@@ -112,12 +120,12 @@ function BillingTab() {
               ))}
             </ul>
             <button
-              disabled={plan.current}
+              disabled={plan.current || plan.comingSoon}
               onClick={() => {
                 if (plan.name === 'Enterprise') window.open('mailto:hello@swarmtrace.ai?subject=Enterprise Plan', '_blank')
               }}
               className={`w-full py-2.5 rounded-full text-sm font-semibold transition-all ${
-                plan.current
+                plan.current || plan.comingSoon
                   ? 'bg-muted/60 text-muted-foreground cursor-default border border-border'
                   : plan.highlight
                   ? 'bg-primary text-primary-foreground hover:opacity-90'
@@ -135,7 +143,7 @@ function BillingTab() {
         <h2 className="text-lg font-semibold text-foreground mb-4">Billing FAQ</h2>
         <div className="space-y-4">
           {[
-            { q: 'When will Pro billing be available?', a: 'Pro plan payments are coming soon via Stripe. You will be notified by email when available.' },
+            { q: 'When will Pro billing be available?', a: 'Pro plan payments are coming soon via Stripe. The "Coming Soon" badge on the Pro card above will be replaced with an "Upgrade" button once billing is live. Follow @swarmtrace on GitHub for release announcements.' },
             { q: 'What counts as a trace?', a: 'Each @observe decorated function call that is successfully ingested counts as one trace.' },
             { q: 'What happens if I exceed the free limit?', a: 'New traces will be rejected with a 429 response. Your existing data is never deleted.' },
             { q: 'Can I export my data?', a: 'Yes — use the CSV or PDF export on the Metrics page at any time.' },
