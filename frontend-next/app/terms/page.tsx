@@ -32,8 +32,9 @@ export default function TermsPage() {
             <h2 className="text-lg font-semibold text-foreground mb-2">Plans and limits</h2>
             <p>
               Free (Hobby) accounts are limited to 10,000 traces per month with 7-day retention.
-              Requests beyond your plan limits may be rejected. Plan details are described on the
-              <Link href="/#pricing" className="text-primary hover:underline"> pricing page</Link>.
+              Requests beyond your plan limits may be rejected. Paid plans are coming soon —
+              see the <Link href="/settings?tab=billing" className="text-primary hover:underline"> billing section</Link> in
+              your dashboard for details.
             </p>
           </section>
           <section>
