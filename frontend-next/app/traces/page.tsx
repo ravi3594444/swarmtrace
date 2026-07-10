@@ -490,7 +490,7 @@ export default function TracesPage() {
   const maxLatency = useMemo(() => filtered.reduce((m, t) => Math.max(m, t.latency_sec ?? 0), 0.001), [filtered])
 
   if (loading) return (
-    <DashboardSkeleton title="Traces" description="Span tree — click any row to inspect" />
+    <DashboardSkeleton title="Traces" description="Click any row to inspect" />
   )
 
   const errorCount = filtered.filter((t) => t.error).length
@@ -499,7 +499,7 @@ export default function TracesPage() {
     <DashboardLayout>
       <PageHeader
         title="Traces"
-        description="Span tree — click any row to inspect"
+        description="Click any row to inspect"
         liveStatus={isLive ? 'live' : 'paused'}
         actions={
           <div className="flex items-center gap-2 flex-wrap">

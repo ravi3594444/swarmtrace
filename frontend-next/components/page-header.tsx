@@ -78,7 +78,7 @@ export function PageHeader({
             </span>
           )}
         </div>
-        {description && <p className="text-xs text-muted-foreground mt-0.5">{description}</p>}
+        {description && <p className="text-xs text-muted-foreground mt-0.5 truncate">{description}</p>}
       </div>
       <div className="flex items-center gap-2 shrink-0">
         {actions}
