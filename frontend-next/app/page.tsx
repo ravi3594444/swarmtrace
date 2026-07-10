@@ -3,7 +3,7 @@ import { HeroSection } from '@/components/landing/hero-section'
 import { FeaturesSection } from '@/components/landing/features-section'
 import { HowItWorksSection } from '@/components/landing/how-it-works-section'
 import { DevelopersSection } from '@/components/landing/developers-section'
-import { PricingSection } from '@/components/landing/pricing-section'
+import { FinalCtaSection } from '@/components/landing/final-cta-section'
 import { FooterSection } from '@/components/landing/footer-section'
 
 export default function LandingPage() {
@@ -14,7 +14,7 @@ export default function LandingPage() {
       <FeaturesSection />
       <HowItWorksSection />
       <DevelopersSection />
-      <PricingSection />
+      <FinalCtaSection />
       <FooterSection />
     </main>
   )

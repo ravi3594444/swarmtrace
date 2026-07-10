@@ -10,7 +10,7 @@ const navLinks = [
   { label: "Features",     href: "#features"     },
   { label: "How it works", href: "#how-it-works" },
   { label: "Developers",   href: "#developers"   },
-  { label: "Pricing",      href: "#pricing"       },
+  { label: "Get Started",  href: "#get-started"  },
 ]
 
 function scrollTo(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
