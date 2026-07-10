@@ -40,7 +40,7 @@ export function TokenChart({ traces }: { traces: Trace[] }) {
             {/* Scale ruler — gives every row a fixed reference, so a tiny bar still reads
                 against the same axis as the dominant one instead of looking like zero. */}
             <div className="flex pl-32 pr-16 mb-1.5">
-              <div className="relative flex-1 h-3.5 text-[9px] font-mono text-muted-foreground/70">
+              <div className="relative flex-1 h-3.5 text-[10px] font-mono text-muted-foreground/70">
                 {ticks.map((t, i) => (
                   <span
                     key={i}
