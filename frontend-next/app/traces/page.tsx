@@ -504,7 +504,7 @@ export default function TracesPage() {
         description="Span tree — click any row to inspect"
         liveStatus={isLive ? 'live' : 'paused'}
         actions={
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
             {/* View toggle */}
             <div className="flex items-center rounded-lg border border-border bg-card shadow-sm overflow-hidden">
               {VIEW_BUTTONS.map(({ mode, icon: Icon, label }) => (

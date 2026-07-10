@@ -9,6 +9,8 @@ import { CallTree } from '@/components/swarm/CallTree'
 import { TokenChart } from '@/components/swarm/TokenChart'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { FirstRunEmptyState, isFirstRun, markHasTraces } from '@/components/first-run-empty-state'
+import { useOnboardingTour } from '@/components/onboarding/OnboardingTour'
 import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
 import { filterTracesByRange } from '@/lib/trace-utils'
@@ -206,7 +208,7 @@ function CostProjectionWidget({ traces }: { traces: Trace[] }) {
             No traces yet — run some agent calls to see cost projections.
           </p>
         ) : (
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { label: 'Per Hour', value: fmt(hourly), sub: 'current rate' },
               { label: 'Per Day', value: fmt(daily), sub: '24h projection' },
@@ -296,7 +298,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
           </div>
 
           {/* Span selectors */}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             {([
               { label: 'Baseline span', value: baseId, set: setBaseId },
               { label: 'Candidate span', value: candId, set: setCandId },
@@ -323,7 +325,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
           {base && cand && (
             <div className="space-y-3">
               {/* Metrics comparison */}
-              <div className="grid grid-cols-3 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                 {[
                   {
                     label: 'Similarity',
@@ -353,7 +355,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
               </div>
 
               {/* Side-by-side output diff */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                 {[
                   { label: 'Baseline output', content: base.output, err: base.error },
                   { label: 'Candidate output', content: cand.output, err: cand.error },
@@ -566,11 +568,46 @@ export default function OverviewPage() {
 
   const hasRealtime = activeAgents.length > 0 && !!effectiveAgent
 
+  // First-run detection: if the user has never had traces (per localStorage),
+  // show a rich onboarding empty state instead of the minimal "no traces" text.
+  // Once traces appear, markHasTraces() sets the localStorage flag so this
+  // empty state never shows again (even if they later clear their DB).
+  //
+  // Derivation pattern (no setState-in-effect): `firstRunChecked` is set once
+  // on mount to signal "localStorage is safe to read" (it's unavailable during
+  // SSR). `showFirstRun` is then derived from the current trace count + the
+  // localStorage check — no cascading renders. The markHasTraces() side effect
+  // runs when traces arrive but doesn't call setState.
+  const { startTour } = useOnboardingTour()
+  const [firstRunChecked, setFirstRunChecked] = useState(false)
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- post-hydration localStorage read; runs once.
+    setFirstRunChecked(true)
+  }, [])
+  useEffect(() => {
+    if (traces.length > 0) markHasTraces()
+  }, [traces.length])
+  const showFirstRun = firstRunChecked && !loading && traces.length === 0 && isFirstRun()
+
   if (loading) return (
     <DashboardLayout>
       <SwarmLoadingScreen message="Connecting to swarm…" />
     </DashboardLayout>
   )
+
+  // First-run: show onboarding empty state with the 3-step setup guide.
+  // Still wrapped in DashboardLayout so the sidebar + command palette work.
+  if (showFirstRun) {
+    return (
+      <DashboardLayout>
+        <PageHeader
+          title="Overview"
+          description="Live swarm health and execution summary"
+        />
+        <FirstRunEmptyState onWatchTour={startTour} />
+      </DashboardLayout>
+    )
+  }
 
   const errorCount = filteredTraces.filter((t) => t.error).length
 
