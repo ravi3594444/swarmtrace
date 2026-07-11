@@ -4,6 +4,61 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.4] — 2026-07-12
+
+### Fixed
+- **`show_failures()` no longer crashes with `ValueError: too many values to
+  unpack`** (`swarmtrace/replay.py`): same bug class as the CLI crash fixed in
+  0.6.2, but `replay.py:32` was missed in that release. The 14-field tuple
+  unpack couldn't handle the 16-column trace row (after `session_id` + `synced`
+  migrations). Fix: append `*_` to swallow trailing columns. Found by
+  independent audit (Arena.ai Agent Mode).
+
+- **JSON/CSV export no longer drops `session_id` and `synced` fields**
+  (`swarmtrace/export.py`): `_traces_to_dicts()` had a 14-key list that
+  silently dropped the two migration columns from every export. Thread
+  grouping (`session_id`) and sync status (`synced`) were missing from all
+  JSON and CSV exports since the columns were added. Fix: add both keys to
+  the list. Found by independent audit.
+
+- **`swarmtrace.__version__` now matches `pyproject.toml`** (`swarmtrace/__init__.py`):
+  `__version__` was hardcoded as `'0.5.0'` and never bumped through 4 releases
+  (0.6.0, 0.6.1, 0.6.2, 0.6.3). Anyone calling `swarmtrace.__version__` got a
+  stale answer. Fix: bump to `'0.6.4'`. Both `__init__.py` AND `pyproject.toml`
+  bumped together in this release to stay in sync. Found by independent audit.
+
+- **OpenAI tests no longer hard-fail when `openai` package is missing**
+  (`tests/test_auto_instrument.py`): the 4 OpenAI test functions imported
+  `openai` at module top without a `skipif` guard. CI environments without
+  `openai` installed showed 4 hard failures (not skips). The Anthropic tests
+  already had the guard; OpenAI tests didn't. Fix: added `_has_openai()`
+  helper and `@pytest.mark.skipif(not _has_openai(), ...)` to all 4 OpenAI
+  test functions, mirroring the existing Anthropic pattern. Found by
+  independent audit.
+
+- **`alerts.py` no longer uses raw `row[N]` positional indexing**
+  (`swarmtrace/alerts.py`): the three alert rules (`budget_breach`,
+  `error_spike`, `latency_regression`) accessed trace-row fields by raw
+  positional index (`row[13]` for agent_name, `row[10]` for cost, etc.).
+  This is the same fragility class as the CLI/replay/export tuple-unpack
+  bugs — a future schema migration would silently shift every index and
+  break alert rules in subtle ways (e.g. `budget_breach` would read the
+  wrong field as cost). Not currently broken (indices match the 14-column
+  layout), but fragile. Fix: defined named column-index constants
+  (`_T_ID`, `_T_COST`, `_T_AGENT_NAME`, etc.) at module top and replaced
+  all raw indexing with the constants. The permanent fix is to refactor
+  `storage.py` to return dicts (planned for next release); this is a
+  stopgap that makes the fragility visible and gives a single place to
+  update if the schema changes. Found by independent audit.
+
+### Notes
+- This release addresses 5 of the 17 bugs found by an independent audit
+  (Arena.ai Agent Mode). The remaining 12 bugs are scheduled for future
+  releases — see the audit's recommended action plan. The most important
+  remaining fix is refactoring `storage.py` to return `List[dict]` instead
+  of `List[tuple]`, which eliminates the entire tuple-unpack bug class
+  permanently.
+
 ## [0.6.3] — 2026-07-12
 
 ### Fixed

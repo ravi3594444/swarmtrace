@@ -32,6 +32,14 @@ def records(monkeypatch):
 # OpenAI
 # ---------------------------------------------------------------------------
 
+def _has_openai() -> bool:
+    try:
+        import openai  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
 def _fake_chat_completion(model="gpt-4o-mini", prompt_tokens=10, completion_tokens=5):
     from openai.types.chat import ChatCompletion
     from openai.types.chat.chat_completion import Choice
@@ -54,6 +62,10 @@ def _fake_chat_completion(model="gpt-4o-mini", prompt_tokens=10, completion_toke
     )
 
 
+@pytest.mark.skipif(
+    not _has_openai(),
+    reason="openai package not installed",
+)
 def test_patch_openai_records_llm_trace_attributed_to_enclosing_agent(records, monkeypatch):
     from openai import OpenAI
     from openai.resources.chat.completions import Completions
@@ -84,6 +96,10 @@ def test_patch_openai_records_llm_trace_attributed_to_enclosing_agent(records, m
     assert llm_row[10] > 0   # cost computed from a real model name
 
 
+@pytest.mark.skipif(
+    not _has_openai(),
+    reason="openai package not installed",
+)
 def test_patch_openai_is_idempotent(records, monkeypatch):
     from openai import OpenAI
     from openai.resources.chat.completions import Completions
@@ -106,6 +122,10 @@ def test_patch_openai_is_idempotent(records, monkeypatch):
     assert len(records) == 1   # exactly one trace recorded, not double
 
 
+@pytest.mark.skipif(
+    not _has_openai(),
+    reason="openai package not installed",
+)
 def test_patch_openai_records_error_with_zero_tokens(records, monkeypatch):
     from openai import OpenAI
     from openai.resources.chat.completions import Completions
@@ -129,6 +149,10 @@ def test_patch_openai_records_error_with_zero_tokens(records, monkeypatch):
     assert row[-4] == "llm"
 
 
+@pytest.mark.skipif(
+    not _has_openai(),
+    reason="openai package not installed",
+)
 def test_patch_openai_redacts_api_key_in_error_message(records, monkeypatch):
     """LLM auth errors can echo the API key back in the exception message.
     The auto-instrument path must redact it before saving/enqueuing —
