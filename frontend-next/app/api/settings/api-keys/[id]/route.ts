@@ -31,6 +31,12 @@ export async function DELETE(
       body: JSON.stringify({ revoked: true }),
     })
 
+    // No cache invalidation needed — /api/ingest, /api/events, and /api/mcp
+    // all hit Supabase fresh on every request now (no in-process key cache).
+    // Revocation takes effect on the very next request to any of those routes,
+    // 0 seconds, across all serverless function instances. See lib/api-auth.ts
+    // for the history of why the per-isolate cache approach was removed.
+
     return new NextResponse(null, { status: 204 })
   } catch (error) {
     if (error instanceof RlsEnforcementError) {

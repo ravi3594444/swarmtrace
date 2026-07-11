@@ -15,6 +15,7 @@ import type { Trace } from '@/lib/trace-types'
 import { filterTracesByRange } from '@/lib/trace-utils'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { fetchOverview } from '@/lib/api'
+import { TruncationBanner } from '@/components/truncation-banner'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import {
   Activity, ChevronDown, ChevronUp, Info, Coins, TrendingDown,
@@ -520,6 +521,7 @@ export default function OverviewPage() {
   const [activity, setActivity] = useState<{ time: string; requests: number }[]>([])
   const [events, setEvents] = useState<OverviewEvent[]>([])
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
+  const [truncated, setTruncated] = useState(false)
 
   // Single source of truth for the time-windowed view: filter the polled
   // traces once by the selected range, then hand the filtered array to every
@@ -537,6 +539,7 @@ export default function OverviewPage() {
       if (!d) return
       if (d.activity?.length) setActivity(d.activity)
       if (d.events?.length) setEvents(d.events)
+      setTruncated(Boolean(d.truncated))
       setLastUpdated(new Date())
     })
   }
@@ -629,6 +632,8 @@ export default function OverviewPage() {
           </div>
         }
       />
+
+      {truncated && <TruncationBanner range="the last 24 hours" />}
 
       <div className="p-6 space-y-6">
         <StatBar traces={filteredTraces} />
