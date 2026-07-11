@@ -190,3 +190,82 @@ def test_view_tree_does_not_wrap_at_80_cols(cli, storage, capsys, monkeypatch):
                 f"Tree line {i} looks like a wrapped continuation "
                 f"(no function name): {line!r}"
             )
+
+
+def test_view_tree_nests_grandchildren_correctly(cli, storage, capsys, monkeypatch):
+    """Regression: 3-level traces must nest grandchildren under their parent.
+
+    Pre-fix (commit 2655ec9), the recursion was `add_children(tree_node, cid)`
+    instead of `add_children(branch, cid)`, which added grandchildren as
+    siblings of their parent instead of children — flattening any trace
+    with 3+ levels (agent → sub_agent → tool_call). This test seeds a
+    3-level trace and verifies the grandchild is indented deeper than
+    its parent.
+    """
+    monkeypatch.setenv("COLUMNS", "80")
+    storage.save_trace(
+        "root-1", None, "root_agent", "()", "out", 0.5, None,
+        "2026-07-12T10:00:00+00:00",
+        kind="agent", agent_id="a1", agent_name="Root",
+    )
+    storage.save_trace(
+        "sub-1", "root-1", "sub_agent", "()", "out", 0.3, None,
+        "2026-07-12T10:00:00+00:00",
+        kind="agent", agent_id="a2", agent_name="Sub",
+    )
+    storage.save_trace(
+        "tool-1", "sub-1", "tool_call", "()", "out", 0.1, None,
+        "2026-07-12T10:00:00+00:00",
+        kind="tool", agent_id="a2", agent_name="Sub",
+    )
+    cli.view(limit=10)
+    out = capsys.readouterr().out
+
+    tree_section = out.split("=== Agent Tree ===", 1)[-1]
+    lines = tree_section.split("\n")
+    sub_line = next((l for l in lines if "sub_agent" in l), None)
+    tool_line = next((l for l in lines if "tool_call" in l), None)
+    assert sub_line is not None, "sub_agent line not found in tree output"
+    assert tool_line is not None, "tool_call line not found in tree output"
+
+    # The grandchild (tool_call) must be indented further than its parent
+    # (sub_agent). We measure indent as the position of the first non-space
+    # character. Rich tree uses ├── / └── prefixes which count as content.
+    sub_indent = len(sub_line) - len(sub_line.lstrip())
+    tool_indent = len(tool_line) - len(tool_line.lstrip())
+    assert tool_indent > sub_indent, (
+        f"Grandchild flattening bug: tool_call (indent={tool_indent}) "
+        f"is NOT nested deeper than sub_agent (indent={sub_indent}). "
+        f"Lines:\n  sub: {sub_line!r}\n  tool: {tool_line!r}"
+    )
+
+
+def test_view_tree_shows_status_indicators(cli, storage, capsys, monkeypatch):
+    """Regression: the tree view must show status (✓/✗) for every span.
+
+    Commit 2655ec9 dropped status from the tree view entirely to prevent
+    80-col wrapping, but that was a usability regression — users couldn't
+    see which nested call failed without cross-referencing the table. The
+    correct fix preserves status by placing it right after the function
+    name (protected from truncation) and using no_wrap+ellipsis on the
+    Text object. This test verifies both ✓ (OK) and ✗ (ERROR) appear.
+    """
+    monkeypatch.setenv("COLUMNS", "80")
+    storage.save_trace(
+        "ok-1", None, "good_agent", "()", "out", 0.5, None,
+        "2026-07-12T10:00:00+00:00",
+        kind="agent", agent_id="a1", agent_name="Good",
+    )
+    storage.save_trace(
+        "err-1", "ok-1", "bad_tool", "()", None, 0.1,
+        "ConnectionError: timed out",
+        "2026-07-12T10:00:00+00:00",
+        kind="tool", agent_id="a1", agent_name="Good",
+    )
+    cli.view(limit=10)
+    out = capsys.readouterr().out
+
+    tree_section = out.split("=== Agent Tree ===", 1)[-1]
+    # Both ✓ (OK) and ✗ (ERROR) must appear in the tree output.
+    assert "✓" in tree_section, "No ✓ (OK status) in tree output"
+    assert "✗" in tree_section, "No ✗ (ERROR status) in tree output"

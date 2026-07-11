@@ -4,6 +4,49 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.3] — 2026-07-12
+
+### Fixed
+- **Tree view no longer flattens grandchildren into siblings** (`swarmtrace/cli.py`):
+  commit 2655ec9 (shipped in 0.6.2) introduced a regression in the
+  `add_children` recursion — it recursed into `tree_node` (the parent)
+  instead of `branch` (the newly created child node), so any trace with
+  3+ levels (e.g. `agent → sub_agent → tool_call`) had the grandchild
+  rendered as a sibling of its parent instead of nested under it:
+  ```
+  root_agent()
+  ├── sub_agent()          ← correct
+  └── tool_call() (tool)   ← WRONG: should be nested under sub_agent
+  ```
+  Fix: `add_children(branch, cid)` — recurse into the new branch, not
+  the parent. Found by an independent code review of the 0.6.2 diff.
+
+- **Tree view restores status indicators (✓/✗) lost in 0.6.2**
+  (`swarmtrace/cli.py`): commit 2655ec9 dropped the `OK`/`ERROR` suffix
+  from tree branches entirely to prevent 80-col wrapping, but that was
+  a usability regression — users couldn't see which nested call failed
+  without cross-referencing the flat table. Fix: restore status using
+  compact `✓`/`✗` indicators placed RIGHT AFTER the function name
+  (protected from ellipsis truncation), and wrap each label in
+  `Text(no_wrap=True, overflow="ellipsis")` so rich truncates with `…`
+  instead of word-wrapping. Field order changed to
+  `func → status → kind-tag → latency → cost → id` so the most
+  scannable info is first and the long trace ID is last (where
+  truncation is least harmful — the full ID is still in the table
+  view above and via `swarmtrace-replay <id>`).
+
+- **Trace ID brackets escaped in rich markup** (`swarmtrace/cli.py`): the
+  `[trace_id]` brackets were being interpreted as rich style tags by
+  `Text.from_markup()`, silently dropping the ID from the rendered output.
+  Fix: escape as `\[trace_id]` so rich treats the brackets as literal.
+
+### Added
+- Two new regression tests in `tests/test_cli.py`:
+  - `test_view_tree_nests_grandchildren_correctly`: seeds a 3-level trace
+    and asserts the grandchild is indented deeper than its parent.
+  - `test_view_tree_shows_status_indicators`: asserts both `✓` (OK) and
+    `✗` (ERROR) appear in the tree output. 198 tests pass (was 196).
+
 ## [0.6.2] — 2026-07-12
 
 ### Fixed
