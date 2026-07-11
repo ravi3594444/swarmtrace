@@ -8,78 +8,22 @@
 // the agent_events Supabase table.  Supabase Realtime then pushes to the
 // browser via WebSocket — Vercel is completely out of the real-time path.
 //
-// Auth: same X-API-Key header as /api/ingest. Key cache is per-isolate.
+// Auth: same X-API-Key header as /api/ingest. Key cache is per-isolate,
+// shared with /api/ingest via lib/api-auth.ts so the DELETE route can
+// invalidate it on revoke (see invalidateAllKeyCaches).
 // Rate limit: 500 events / 60s per API key.
 //   - Upstash Redis (distributed): enabled when UPSTASH_REDIS_REST_URL is set.
 //   - Per-isolate fallback: used otherwise. Note that Vercel can run many
 //     isolates simultaneously — the effective limit is 500 × n_isolates when
 //     Upstash is not configured.
 
-import { Redis }      from '@upstash/redis'
-import { Ratelimit }  from '@upstash/ratelimit'
+import { sha256Hex, eventsKeyCache, createRateLimiter } from '@/lib/api-auth'
 
 const MAX_BODY_BYTES  = 32 * 1024   // 32 KB per event (screenshots compress well)
 const SUPA_TIMEOUT_MS = 3000
-const CACHE_TTL_MS    = 5 * 60 * 1000
 const RATE_LIMIT      = 500
-const RATE_WINDOW_MS  = 60_000
 
-interface CacheEntry { user_id: string; expires: number }
-const KEY_CACHE = new Map<string, CacheEntry>()
-
-function getCached(hash: string): string | null {
-  const e = KEY_CACHE.get(hash)
-  if (!e) return null
-  if (Date.now() > e.expires) { KEY_CACHE.delete(hash); return null }
-  return e.user_id
-}
-function setCache(hash: string, user_id: string) {
-  KEY_CACHE.set(hash, { user_id, expires: Date.now() + CACHE_TTL_MS })
-}
-
-// ── Distributed rate limiter (Upstash Redis) ──────────────────────────────────
-let _upstashLimiter: Ratelimit | null = null
-
-function getUpstashLimiter(): Ratelimit | null {
-  if (_upstashLimiter) return _upstashLimiter
-  const url   = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
-  if (!url || !token) return null
-  _upstashLimiter = new Ratelimit({
-    redis:     new Redis({ url, token }),
-    limiter:   Ratelimit.slidingWindow(RATE_LIMIT, '60 s'),
-    analytics: false,
-    prefix:    'st_fov_rl',
-  })
-  return _upstashLimiter
-}
-
-// ── Per-isolate fallback ──────────────────────────────────────────────────────
-interface RateEntry { count: number; windowStart: number }
-const RATE_MAP = new Map<string, RateEntry>()
-
-async function checkRate(keyHash: string): Promise<boolean> {
-  const limiter = getUpstashLimiter()
-  if (limiter) {
-    const { success } = await limiter.limit(keyHash)
-    return success
-  }
-  // Fallback: per-isolate counter (effective limit = RATE_LIMIT × n_isolates)
-  const now = Date.now()
-  const e   = RATE_MAP.get(keyHash)
-  if (!e || now - e.windowStart > RATE_WINDOW_MS) {
-    RATE_MAP.set(keyHash, { count: 1, windowStart: now })
-    return true
-  }
-  if (e.count >= RATE_LIMIT) return false
-  e.count++
-  return true
-}
-
-async function sha256Hex(s: string): Promise<string> {
-  const d = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(s))
-  return Array.from(new Uint8Array(d)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
+const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_fov_rl' })
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY!
@@ -160,11 +104,11 @@ export async function POST(req: Request) {
   try {
     const keyHash = await sha256Hex(apiKey)
 
-    if (!await checkRate(keyHash)) {
+    if (!await rateLimiter.check(keyHash)) {
       return new Response(null, { status: 429, headers: { 'Retry-After': '60' } })
     }
 
-    let user_id = getCached(keyHash)
+    let user_id = eventsKeyCache.get(keyHash)
     if (!user_id) {
       const res = await supa(
         `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
@@ -173,7 +117,7 @@ export async function POST(req: Request) {
       const rows: Array<{ user_id: string }> = await res.json()
       if (!rows?.length) return json(401, { error: 'Invalid or revoked API key' })
       user_id = rows[0].user_id
-      setCache(keyHash, user_id)
+      eventsKeyCache.set(keyHash, user_id)
     }
 
     let payload: unknown
