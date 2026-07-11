@@ -80,26 +80,31 @@ def view(limit=None):
         console.print(table)
 
         console.print("\n[bold cyan]=== Agent Tree ===[/bold cyan]")
+        # The tree view shows STRUCTURE (parent → children), the table view
+        # above shows STATUS (OK/ERROR). Don't duplicate status in the tree —
+        # the extra "OK" / "ERROR" suffix was pushing branch labels past 80
+        # cols and causing rich to wrap them onto a second line, breaking the
+        # indentation. Errors are still visible in the table; users who want
+        # full detail per trace use `swarmtrace-replay <id>`.
         roots = [t for t in traces if t[1] is None]
         for root in roots:
             id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = root
             tree = Tree(
-                f"[green]{func}()[/green] [{id_}] [yellow]{latency}s[/yellow] [magenta]${cost}[/magenta]"
+                f"[green]{func}()[/green] [{id_}] [yellow]{latency:.3f}s[/yellow] [magenta]${cost or 0}[/magenta]"
             )
 
             def add_children(tree_node, pid):
                 for child in [t for t in traces if t[1] == pid]:
                     cid, _, cfunc, _, _, clatency, cerror, _, _, _, ccost, ckind, *_ = child
-                    status = "[red]ERROR[/red]" if cerror else "[green]OK[/green]"
                     ctag = "" if ckind == "agent" else f" [dim]({ckind})[/dim]"
-                    branch = tree_node.add(
-                        f"[blue]{cfunc}()[/blue]{ctag} [{cid}] [yellow]{clatency}s[/yellow]"
-                        f" [magenta]${ccost}[/magenta] {status}"
+                    tree_node.add(
+                        f"[blue]{cfunc}()[/blue]{ctag} [{cid}] [yellow]{clatency:.3f}s[/yellow]"
+                        f" [magenta]${ccost or 0}[/magenta]"
                     )
-                    add_children(branch, cid)
+                    add_children(tree_node, cid)
 
             add_children(tree, id_)
-            console.print(tree)
+            console.print(tree, soft_wrap=True)
 
         console.print(f"\n[bold]Total traces:[/bold] {len(traces)}")
         console.print(f"[bold]Total tokens:[/bold] {total_tokens}")
