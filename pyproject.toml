@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swarmtrace"
-version = "0.6.0"
+version = "0.6.1"
 description = "pytest for AI agents — trace, debug and catch regressions in LLM swarms"
 readme = "README.md"
 authors = [{ name = "Ravi" }]
@@ -15,6 +15,13 @@ classifiers = [
 ]
 requires-python = ">=3.10"
 dependencies = ["click", "rich"]
+
+[project.urls]
+Homepage      = "https://swarmtrace.vercel.app"
+Repository    = "https://github.com/ravi3594444/swarmtrace"
+Changelog     = "https://github.com/ravi3594444/swarmtrace/blob/main/CHANGELOG.md"
+Issues        = "https://github.com/ravi3594444/swarmtrace/issues"
+Documentation = "https://github.com/ravi3594444/swarmtrace#readme"
 
 [project.optional-dependencies]
 regression = ["litai"]
