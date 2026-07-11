@@ -602,3 +602,98 @@ def test_api_agents_filter_contract(records):
 
     # Total: 4 agent cards (my_bot, orchestrator, researcher, summarizer)
     assert len(cards) == 4, f"expected 4 cards, got {len(cards)}: {cards}"
+
+
+# ── Audit finding #3: args_repr must be capped to match output ──────────────
+#
+# Before the fix, _flush did:
+#     args_repr = str(args[:2])           # no cap
+#     output    = _safe_str(result)       # capped at 4000
+# This asymmetry meant a function called with one big argument (large string,
+# dataframe repr, etc.) produced a trace whose args field was unbounded while
+# output was exactly 4000 chars. Downstream: the oversized row could push its
+# batch over the server's MAX_BODY_BYTES = 64KB → 413 → resync() retries the
+# row forever (it never fits), never marks it synced=1, and it silently leaks
+# in the local SQLite DB forever while burning retry time on every resync run.
+#
+# The fix routes args_repr through _safe_str too, so both fields cap at 4000.
+# These tests guard the cap directly.
+
+def test_args_repr_capped_at_4000_chars(records):
+    """A single huge argument must not produce an unbounded args field."""
+    @tracer.observe
+    def f(big_arg):
+        return "ok"
+
+    big = "X" * 200_000
+    f(big)
+
+    assert len(records) == 1
+    args_repr = records[0][3]   # save_trace(trace_id, parent_id, func_name, args_repr, ...)
+    # Cap is 4000, matching _safe_str's default. We don't assert exact equality
+    # because redact() may add/remove a few chars after the cap is applied —
+    # but it must be in the same order of magnitude as the output cap, NOT
+    # the unbounded 200,005 chars the bug produced.
+    assert len(args_repr) <= 4100, \
+        f"args_repr not capped: {len(args_repr)} chars (expected <= ~4100)"
+    assert len(args_repr) >= 3900, \
+        f"args_repr suspiciously short: {len(args_repr)} chars (expected ~4000)"
+
+
+def test_args_and_output_caps_are_symmetric(records):
+    """The whole point of finding #3: args and output must cap at the same
+    length. Before the fix, args was unbounded and output was 4000 — that
+    asymmetry is the bug."""
+    @tracer.observe
+    def f(big_arg):
+        return big_arg   # returns the same huge string
+
+    big = "Y" * 200_000
+    f(big)
+
+    assert len(records) == 1
+    args_repr = records[0][3]
+    output    = records[0][4]
+    # Both should be capped to ~4000 — within a small tolerance for redact()
+    # post-processing. The bug would show args at ~200,005 and output at 4,000.
+    assert abs(len(args_repr) - len(output)) <= 200, \
+        f"asymmetry! args={len(args_repr)}, output={len(output)} " \
+        f"(diff={len(args_repr) - len(output)})"
+
+
+def test_kwargs_keys_appended_after_args_cap(records):
+    """The kwargs list is appended AFTER the cap is applied — make sure that
+    still works and doesn't blow past the cap by more than a reasonable
+    amount (the kwargs keys themselves are short, just names)."""
+    @tracer.observe
+    def f(big_arg, **kwargs):
+        return "ok"
+
+    big = "Z" * 200_000
+    f(big, alpha=1, beta=2, gamma=3)
+
+    assert len(records) == 1
+    args_repr = records[0][3]
+    # Cap (4000) + " kwargs=['alpha', 'beta', 'gamma']" suffix is well under 5KB.
+    # Before the fix this would have been 200,005 + suffix.
+    assert len(args_repr) < 5000, \
+        f"args_repr with kwargs not capped: {len(args_repr)} chars"
+    # The kwargs names should still be visible (they're metadata, not PII).
+    assert "alpha" in args_repr
+    assert "beta" in args_repr
+    assert "gamma" in args_repr
+
+
+def test_small_args_unaffected_by_cap(records):
+    """Normal-sized args should pass through unchanged — the cap is a ceiling,
+    not a fixed length. Make sure we didn't accidentally pad or alter them."""
+    @tracer.observe
+    def add(a, b):
+        return a + b
+
+    add(2, 3)
+
+    assert len(records) == 1
+    args_repr = records[0][3]
+    assert "(2, 3)" in args_repr
+    assert len(args_repr) < 100  # small args → small repr

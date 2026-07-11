@@ -560,7 +560,17 @@ def _flush(
     agent_name: str,
     session_id: Optional[str] = None,
 ) -> None:
-    args_repr = str(args[:2])
+    # Cap args_repr at the same 4000-char limit _safe_str applies to output.
+    # Without this, a single large argument (big string, dataframe repr, etc.)
+    # produces an unbounded args field that:
+    #   1. Bloats the local SQLite DB (the row never syncs — the server's
+    #      MAX_BODY_BYTES = 64KB rejects the whole batch of up to 20 traces
+    #      it gets bundled into, and resync() retries the oversized row
+    #      forever, never marking it synced=1 — silent permanent leak).
+    #   2. Asymmetry with output: output is capped via _safe_str, args wasn't,
+    #      so the dashboard showed truncated returns but full argument dumps.
+    # Audit finding #3.
+    args_repr = _safe_str(args[:2])
     if kwargs:
         args_repr = f"{args_repr} kwargs={list(kwargs.keys())}"
     # PII redaction — single call site, applied once to args/output/error
