@@ -5,7 +5,9 @@ import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { similarity, lineDiff } from '@/lib/text-compare'
+import { filterTracesByRange } from '@/lib/trace-utils'
 import type { Trace } from '@/lib/trace-types'
 import { GitCompareArrows } from 'lucide-react'
 
@@ -60,17 +62,28 @@ function OutputPanel({ title, trace }: { title: string; trace: Trace | undefined
 
 export default function ComparePage() {
   const { traces, loading } = useSwarmTraces(10000)
+  const { range, setRange } = useTimeRange()
   // null = "no explicit user selection yet" — falls back to the two most
   // recent traces. Derived directly from `traces` instead of seeded via a
   // useEffect + setState, which was re-running (and re-rendering) on every
   // poll tick once traces had already loaded.
   const [selectedIdA, setIdA] = useState<string | null>(null)
   const [selectedIdB, setIdB] = useState<string | null>(null)
-  const idA = selectedIdA ?? traces[0]?.id ?? ''
-  const idB = selectedIdB ?? traces[1]?.id ?? ''
 
-  const traceA = useMemo(() => traces.find((t) => t.id === idA), [traces, idA])
-  const traceB = useMemo(() => traces.find((t) => t.id === idB), [traces, idB])
+  // Filter to the selected time range so the TracePicker dropdowns only
+  // show recent runs — picking "Today" on the dashboard carries over here
+  // so you don't scroll through 6 months of history to find today's two
+  // runs to compare.
+  const filteredTraces = useMemo(
+    () => filterTracesByRange(traces, range),
+    [traces, range],
+  )
+
+  const idA = selectedIdA ?? filteredTraces[0]?.id ?? ''
+  const idB = selectedIdB ?? filteredTraces[1]?.id ?? ''
+
+  const traceA = useMemo(() => filteredTraces.find((t) => t.id === idA), [filteredTraces, idA])
+  const traceB = useMemo(() => filteredTraces.find((t) => t.id === idB), [filteredTraces, idB])
 
   const score = useMemo(
     () => (traceA && traceB ? similarity(traceA.output, traceB.output) : null),
@@ -92,10 +105,16 @@ export default function ComparePage() {
 
   return (
     <DashboardLayout>
-      <PageHeader title="Compare" description="Diff two runs and score output similarity" />
+      <PageHeader
+        title="Compare"
+        description="Diff two runs and score output similarity"
+        actions={
+          <TimeRangeDropdown value={range} onChange={setRange} />
+        }
+      />
 
       <div className="p-6 space-y-6">
-        {traces.length < 2 ? (
+        {filteredTraces.length < 2 ? (
           <div className="rounded-xl border border-border bg-card py-20 text-center shadow-sm">
             <GitCompareArrows className="w-8 h-8 text-muted-foreground mx-auto mb-3" />
             <div className="text-sm font-semibold text-foreground">Need at least two traces to compare</div>
@@ -105,9 +124,9 @@ export default function ComparePage() {
           <>
             <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-[background-color,border-color,color] duration-200">
               <div className="flex flex-col sm:flex-row items-stretch sm:items-end gap-4">
-                <TracePicker label="Baseline (A)" traces={traces} value={idA} onChange={setIdA} />
+                <TracePicker label="Baseline (A)" traces={filteredTraces} value={idA} onChange={setIdA} />
                 <GitCompareArrows className="hidden sm:block w-5 h-5 text-muted-foreground mb-2 shrink-0" />
-                <TracePicker label="Candidate (B)" traces={traces} value={idB} onChange={setIdB} />
+                <TracePicker label="Candidate (B)" traces={filteredTraces} value={idB} onChange={setIdB} />
               </div>
 
               {score !== null && (
