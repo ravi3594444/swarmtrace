@@ -80,28 +80,48 @@ def view(limit=None):
         console.print(table)
 
         console.print("\n[bold cyan]=== Agent Tree ===[/bold cyan]")
-        # The tree view shows STRUCTURE (parent → children), the table view
-        # above shows STATUS (OK/ERROR). Don't duplicate status in the tree —
-        # the extra "OK" / "ERROR" suffix was pushing branch labels past 80
-        # cols and causing rich to wrap them onto a second line, breaking the
-        # indentation. Errors are still visible in the table; users who want
-        # full detail per trace use `swarmtrace-replay <id>`.
+        # Tree-view labels are wrapped in Text(no_wrap=True, overflow="ellipsis")
+        # so rich truncates with "…" instead of word-wrapping onto a second
+        # line (which broke indentation — see commit 2655ec9 for the original
+        # wrap bug). Status is placed RIGHT AFTER the function name so it's
+        # preserved even when the trailing trace ID gets truncated.
+        #
+        # Field order: func → status → kind-tag → latency → cost → id
+        # (id last because it's the longest and least scannable; full ID
+        # is still visible in the table view above and via `swarmtrace-replay`).
+        from rich.text import Text
+
+        def _tree_label(func: str, error, kind: str, latency, cost, tid: str) -> Text:
+            status = "[red]✗[/red]" if error else "[green]✓[/green]"
+            tag = "" if kind == "agent" else f" [dim]({kind})[/dim]"
+            # Escape [ and ] around the trace ID with \[ \] so rich's markup
+            # parser treats them as literal brackets, not style tags. Without
+            # escaping, [root-1] is interpreted as a (nonexistent) style tag
+            # and silently dropped from the output.
+            label = (
+                f"[blue]{func}()[/blue] {status}{tag} "
+                f"[yellow]{latency:.3f}s[/yellow] "
+                f"[magenta]${cost or 0}[/magenta] \\[{tid}]"
+            )
+            t = Text.from_markup(label)
+            t.no_wrap = True
+            t.overflow = "ellipsis"
+            return t
+
         roots = [t for t in traces if t[1] is None]
         for root in roots:
             id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = root
-            tree = Tree(
-                f"[green]{func}()[/green] [{id_}] [yellow]{latency:.3f}s[/yellow] [magenta]${cost or 0}[/magenta]"
-            )
+            tree = Tree(_tree_label(func, error, kind, latency, cost, id_))
 
             def add_children(tree_node, pid):
                 for child in [t for t in traces if t[1] == pid]:
                     cid, _, cfunc, _, _, clatency, cerror, _, _, _, ccost, ckind, *_ = child
-                    ctag = "" if ckind == "agent" else f" [dim]({ckind})[/dim]"
-                    tree_node.add(
-                        f"[blue]{cfunc}()[/blue]{ctag} [{cid}] [yellow]{clatency:.3f}s[/yellow]"
-                        f" [magenta]${ccost or 0}[/magenta]"
-                    )
-                    add_children(tree_node, cid)
+                    branch = tree_node.add(_tree_label(cfunc, cerror, ckind, clatency, ccost, cid))
+                    # CRITICAL: recurse into `branch` (the new child node),
+                    # NOT `tree_node` (the parent). Recursing into tree_node
+                    # flattens grandchildren into siblings — see commit
+                    # 2655ec9 for the regression that did exactly this.
+                    add_children(branch, cid)
 
             add_children(tree, id_)
             console.print(tree, soft_wrap=True)
