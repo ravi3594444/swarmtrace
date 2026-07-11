@@ -26,7 +26,10 @@ def _parse_limit(default: int = DEFAULT_VIEW_LIMIT) -> int:
 def _print_tree(traces, parent_id=None, indent=0):
     children = [t for t in traces if t[1] == parent_id]
     for t in children:
-        id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name = t
+        # `*_` swallows session_id, synced, and any future migration columns
+        # so this doesn't break when storage.py adds fields. The CLI only reads
+        # the first 14 columns by name; see storage.py:_ADDED_COLUMNS.
+        id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = t
         status = "ERROR" if error else "OK"
         tag = "" if kind == "agent" else f" [{kind}]"
         prefix = "    " * indent + ("└── " if indent > 0 else "")
@@ -69,7 +72,7 @@ def view(limit=None):
         table.add_column("Status",   width=8)
 
         for t in traces:
-            id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name = t
+            id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = t
             status     = "[red]ERROR[/red]" if error else "[green]OK[/green]"
             tokens_str = f"{in_tok or 0}in/{out_tok or 0}out"
             table.add_row(id_, func, kind, f"{latency}s", tokens_str, f"${cost or 0}", status)
@@ -79,14 +82,14 @@ def view(limit=None):
         console.print("\n[bold cyan]=== Agent Tree ===[/bold cyan]")
         roots = [t for t in traces if t[1] is None]
         for root in roots:
-            id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name = root
+            id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = root
             tree = Tree(
                 f"[green]{func}()[/green] [{id_}] [yellow]{latency}s[/yellow] [magenta]${cost}[/magenta]"
             )
 
             def add_children(tree_node, pid):
                 for child in [t for t in traces if t[1] == pid]:
-                    cid, _, cfunc, _, _, clatency, cerror, _, _, _, ccost, ckind, _, _ = child
+                    cid, _, cfunc, _, _, clatency, cerror, _, _, _, ccost, ckind, *_ = child
                     status = "[red]ERROR[/red]" if cerror else "[green]OK[/green]"
                     ctag = "" if ckind == "agent" else f" [dim]({ckind})[/dim]"
                     branch = tree_node.add(
@@ -105,7 +108,7 @@ def view(limit=None):
     except ImportError:
         print("\n=== swarmtrace Trace View ===")
         for t in traces:
-            id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name = t
+            id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = t
             status = "ERROR" if error else "OK"
             tag = "" if kind == "agent" else f" ({kind})"
             print(f"{id_:<10} {(func + tag):<20} {str(latency)+'s':<10} ${cost or 0} {status}")
@@ -122,7 +125,7 @@ def replay(trace_id):
         print(f"Trace {trace_id} not found.")
         return
 
-    id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name = trace
+    id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = trace
 
     try:
         from rich.console import Console
