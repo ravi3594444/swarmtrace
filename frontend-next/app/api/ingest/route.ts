@@ -7,83 +7,16 @@
 // which has full Web API + npm support, so there's no upside to staying on
 // 'edge' here.
 
+// sha256 + rate limiter live in lib/api-auth.ts so they can be shared
+// with /api/events and /api/mcp without copy-paste drift.
+import { sha256Hex, createRateLimiter } from '@/lib/api-auth'
+
 const MAX_BODY_BYTES  = 64 * 1024
 const MAX_BATCH_SIZE = 50
 const SUPA_TIMEOUT_MS = 5000
 
-// ── Key auth cache ────────────────────────────────────────────────────────────
-// NOTE: Vercel Edge is serverless — this Map lives per-isolate, not globally.
-// It still helps: repeated requests within the same warm isolate skip a DB
-// lookup. For a true shared cache, use Vercel KV or Upstash Redis.
-interface CacheEntry { user_id: string; expires: number }
-const KEY_CACHE    = new Map<string, CacheEntry>()
-const CACHE_TTL_MS = 5 * 60 * 1000
-
-function getCached(hash: string): string | null {
-  const entry = KEY_CACHE.get(hash)
-  if (!entry) return null
-  if (Date.now() > entry.expires) { KEY_CACHE.delete(hash); return null }
-  return entry.user_id
-}
-function setCache(hash: string, user_id: string) {
-  KEY_CACHE.set(hash, { user_id, expires: Date.now() + CACHE_TTL_MS })
-}
-
-// ── Distributed rate limiter (Upstash Redis) ──────────────────────────────────
-// Falls back to per-isolate map if UPSTASH_REDIS_REST_URL is not set.
-// To enable: add UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN to Vercel env.
-import { Redis } from '@upstash/redis'
-import { Ratelimit } from '@upstash/ratelimit'
-
-let upstashLimiter: Ratelimit | null = null
-
-function getUpstashLimiter(): Ratelimit | null {
-  if (upstashLimiter) return upstashLimiter
-  const url   = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
-  if (!url || !token) return null
-  upstashLimiter = new Ratelimit({
-    redis: new Redis({ url, token }),
-    limiter: Ratelimit.slidingWindow(120, '60 s'),
-    analytics: false,
-    prefix: 'st_rl',
-  })
-  return upstashLimiter
-}
-
-// ── Per-isolate fallback (used when Upstash env vars are absent) ──────────────
-// 120 requests per 60-second window per API key.
-const RATE_LIMIT     = 120
-const RATE_WINDOW_MS = 60_000
-
-interface RateEntry { count: number; windowStart: number }
-const RATE_MAP = new Map<string, RateEntry>()
-
-function checkRateLimitLocal(keyHash: string): boolean {
-  const now   = Date.now()
-  const entry = RATE_MAP.get(keyHash)
-  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
-    RATE_MAP.set(keyHash, { count: 1, windowStart: now })
-    return true
-  }
-  if (entry.count >= RATE_LIMIT) return false
-  entry.count++
-  return true
-}
-
-async function checkRateLimit(keyHash: string): Promise<boolean> {
-  const limiter = getUpstashLimiter()
-  if (limiter) {
-    const { success } = await limiter.limit(keyHash)
-    return success
-  }
-  return checkRateLimitLocal(keyHash)
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
-  return Array.from(new Uint8Array(digest)).map(b => b.toString(16).padStart(2, '0')).join('')
-}
+const RATE_LIMIT = 120
+const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_rl' })
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY!
@@ -151,7 +84,7 @@ export async function POST(req: Request) {
     const keyHash = await sha256Hex(apiKey)
 
     // ── Rate limit check (before DB lookup — cheap, fast) ─────────────────
-    if (!await checkRateLimit(keyHash)) {
+    if (!await rateLimiter.check(keyHash)) {
       return new Response(null, {
         status: 429,
         headers: {
@@ -162,18 +95,24 @@ export async function POST(req: Request) {
       })
     }
 
-    let user_id = getCached(keyHash)
-    if (!user_id) {
-      const res = await supa(
-        `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
-        { headers: { Prefer: 'return=representation' } }
-      )
-      const rows: Array<{ user_id: string }> = await res.json()
-      if (!rows || rows.length === 0)
-        return jsonResponse(401, { error: 'Invalid or revoked API key' })
-      user_id = rows[0].user_id
-      setCache(keyHash, user_id)
-    }
+    // Fresh Supabase lookup on every request — no in-process cache.
+    // The previous version cached key_hash → user_id in a per-isolate Map
+    // for 5 min, but on Vercel each /api route is its own serverless
+    // function with its own memory, so the cache (a) couldn't be
+    // invalidated by the DELETE route in another function, and (b) gave
+    // per-instance stale reads across warm instances. Removing the cache
+    // makes revocation take effect in 0s on every route, matching /api/mcp.
+    // The key_hash column has a unique index, so this is a sub-ms point-read.
+    // See lib/api-auth.ts for the load trade-off note (ingest ~30 calls/min
+    // per active key vs mcp's occasional calls).
+    const keyRes = await supa(
+      `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
+      { headers: { Prefer: 'return=representation' } }
+    )
+    const keyRows: Array<{ user_id: string }> = await keyRes.json()
+    if (!keyRows || keyRows.length === 0)
+      return jsonResponse(401, { error: 'Invalid or revoked API key' })
+    const user_id = keyRows[0].user_id
 
     // The SDK's batch path gzips the body and sets Content-Encoding: gzip.
     // Request bodies are NOT auto-decompressed by the runtime, so inflate

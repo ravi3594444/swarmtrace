@@ -602,3 +602,231 @@ def test_api_agents_filter_contract(records):
 
     # Total: 4 agent cards (my_bot, orchestrator, researcher, summarizer)
     assert len(cards) == 4, f"expected 4 cards, got {len(cards)}: {cards}"
+
+
+# ── Audit finding #3: args_repr must be capped to match output ──────────────
+#
+# Before the fix, _flush did:
+#     args_repr = str(args[:2])           # no cap
+#     output    = _safe_str(result)       # capped at 4000
+# This asymmetry meant a function called with one big argument (large string,
+# dataframe repr, etc.) produced a trace whose args field was unbounded while
+# output was exactly 4000 chars. Downstream: the oversized row could push its
+# batch over the server's MAX_BODY_BYTES = 64KB → 413 → resync() retries the
+# row forever (it never fits), never marks it synced=1, and it silently leaks
+# in the local SQLite DB forever while burning retry time on every resync run.
+#
+# The fix routes args_repr through _safe_str too, so both fields cap at 4000.
+# These tests guard the cap directly.
+
+def test_args_repr_capped_at_4000_chars(records):
+    """A single huge argument must not produce an unbounded args field."""
+    @tracer.observe
+    def f(big_arg):
+        return "ok"
+
+    big = "X" * 200_000
+    f(big)
+
+    assert len(records) == 1
+    args_repr = records[0][3]   # save_trace(trace_id, parent_id, func_name, args_repr, ...)
+    # Cap is 4000, matching _safe_str's default. We don't assert exact equality
+    # because redact() may add/remove a few chars after the cap is applied —
+    # but it must be in the same order of magnitude as the output cap, NOT
+    # the unbounded 200,005 chars the bug produced.
+    assert len(args_repr) <= 4100, \
+        f"args_repr not capped: {len(args_repr)} chars (expected <= ~4100)"
+    assert len(args_repr) >= 3900, \
+        f"args_repr suspiciously short: {len(args_repr)} chars (expected ~4000)"
+
+
+def test_args_and_output_caps_are_symmetric(records):
+    """The whole point of finding #3: args and output must cap at the same
+    length. Before the fix, args was unbounded and output was 4000 — that
+    asymmetry is the bug."""
+    @tracer.observe
+    def f(big_arg):
+        return big_arg   # returns the same huge string
+
+    big = "Y" * 200_000
+    f(big)
+
+    assert len(records) == 1
+    args_repr = records[0][3]
+    output    = records[0][4]
+    # Both should be capped to ~4000 — within a small tolerance for redact()
+    # post-processing. The bug would show args at ~200,005 and output at 4,000.
+    assert abs(len(args_repr) - len(output)) <= 200, \
+        f"asymmetry! args={len(args_repr)}, output={len(output)} " \
+        f"(diff={len(args_repr) - len(output)})"
+
+
+def test_kwargs_keys_appended_after_args_cap(records):
+    """The kwargs list is appended AFTER the cap is applied — make sure that
+    still works and doesn't blow past the cap by more than a reasonable
+    amount (the kwargs keys themselves are short, just names)."""
+    @tracer.observe
+    def f(big_arg, **kwargs):
+        return "ok"
+
+    big = "Z" * 200_000
+    f(big, alpha=1, beta=2, gamma=3)
+
+    assert len(records) == 1
+    args_repr = records[0][3]
+    # Cap (4000) + " kwargs=['alpha', 'beta', 'gamma']" suffix is well under 5KB.
+    # Before the fix this would have been 200,005 + suffix.
+    assert len(args_repr) < 5000, \
+        f"args_repr with kwargs not capped: {len(args_repr)} chars"
+    # The kwargs names should still be visible (they're metadata, not PII).
+    assert "alpha" in args_repr
+    assert "beta" in args_repr
+    assert "gamma" in args_repr
+
+
+def test_small_args_unaffected_by_cap(records):
+    """Normal-sized args should pass through unchanged — the cap is a ceiling,
+    not a fixed length. Make sure we didn't accidentally pad or alter them."""
+    @tracer.observe
+    def add(a, b):
+        return a + b
+
+    add(2, 3)
+
+    assert len(records) == 1
+    args_repr = records[0][3]
+    assert "(2, 3)" in args_repr
+    assert len(args_repr) < 100  # small args → small repr
+
+
+# ── Audit finding #5: scheme enforcement on SWARMTRACE_ENDPOINT ────────────
+#
+# Before the fix, _normalize_base_url accepted any string, so
+# SWARMTRACE_ENDPOINT=http://example.com would silently send the API key
+# over plaintext HTTP with zero warning.
+#
+# The fix adds _validate_endpoint_scheme(url) → (ok, reason) and has
+# _remote_config refuse to return a non-empty URL when the scheme is
+# insecure. The worker then skips sending (matching the "no endpoint
+# configured" path) instead of leaking the key.
+
+from swarmtrace.tracer import _validate_endpoint_scheme, _remote_config
+
+
+def test_validate_endpoint_empty_is_ok():
+    """Empty URL means 'no endpoint configured' — not a security issue."""
+    ok, reason = _validate_endpoint_scheme("")
+    assert ok is True
+    assert reason == ""
+
+
+def test_validate_endpoint_https_any_host_allowed():
+    """https:// is always safe regardless of host."""
+    ok, _ = _validate_endpoint_scheme("https://example.com")
+    assert ok is True
+    ok, _ = _validate_endpoint_scheme("https://swarmtrace.vercel.app/api/")
+    assert ok is True
+    ok, _ = _validate_endpoint_scheme("https://1.2.3.4:8443")
+    assert ok is True
+
+
+def test_validate_endpoint_http_localhost_allowed():
+    """http:// to localhost variants is allowed for local dev / testing."""
+    for url in [
+        "http://localhost",
+        "http://localhost:3000",
+        "http://127.0.0.1",
+        "http://127.0.0.1:8000",
+        "http://[::1]:8000",   # IPv6 localhost
+    ]:
+        ok, reason = _validate_endpoint_scheme(url)
+        assert ok is True, f"expected {url} to be ok, got: {reason}"
+
+
+def test_validate_endpoint_http_external_rejected():
+    """http:// to non-localhost hosts must be rejected — that's the bug."""
+    ok, reason = _validate_endpoint_scheme("http://example.com")
+    assert ok is False
+    assert "plaintext" in reason.lower() or "http" in reason.lower()
+
+
+def test_validate_endpoint_http_rfc1918_rejected():
+    """RFC1918 IPs (192.168.x.x, 10.x.x.x) are NOT localhost — reject.
+
+    These are often used for internal services that may not be as trusted
+    as a dev loopback. Users who need them can set up HTTPS locally."""
+    for url in [
+        "http://192.168.1.5",
+        "http://192.168.1.5:8000",
+        "http://10.0.0.1",
+        "http://172.16.0.1",
+    ]:
+        ok, reason = _validate_endpoint_scheme(url)
+        assert ok is False, f"expected {url} to be rejected, got ok=True"
+        assert "plaintext" in reason.lower() or "non-localhost" in reason.lower()
+
+
+def test_validate_endpoint_other_schemes_rejected():
+    """ftp://, file://, etc. are nonsense for an API endpoint — reject."""
+    for url in [
+        "ftp://example.com",
+        "file:///etc/passwd",
+        "ws://example.com",
+    ]:
+        ok, reason = _validate_endpoint_scheme(url)
+        assert ok is False, f"expected {url} to be rejected"
+        assert "scheme" in reason.lower()
+
+
+def test_validate_endpoint_no_scheme_rejected():
+    """A bare hostname with no scheme is ambiguous — reject (defensive)."""
+    ok, reason = _validate_endpoint_scheme("example.com")
+    assert ok is False
+    assert "scheme" in reason.lower()
+
+
+def test_validate_endpoint_reason_is_human_readable():
+    """The reason string should explain WHAT to do, not just that it failed."""
+    ok, reason = _validate_endpoint_scheme("http://example.com")
+    assert ok is False
+    # Should mention https or localhost as the fix.
+    assert "https" in reason.lower() or "localhost" in reason.lower()
+
+
+def test_remote_config_returns_empty_url_for_insecure_endpoint(monkeypatch):
+    """When the scheme is insecure, _remote_config returns empty URL so the
+    worker skips sending — that's the actual security property: the API
+    key never goes over the wire."""
+    monkeypatch.setenv("SWARMTRACE_API_KEY", "sk_test_abc")
+    monkeypatch.setenv("SWARMTRACE_ENDPOINT", "http://example.com")
+    # Clear any module-level override
+    monkeypatch.setattr(tracer, "_api_key", None)
+    monkeypatch.setattr(tracer, "_endpoint", None)
+
+    key, url = _remote_config()
+    assert key == "sk_test_abc"  # key is still returned (for logging)
+    assert url == "", f"expected empty URL, got {url!r}"
+
+
+def test_remote_config_returns_url_for_secure_endpoint(monkeypatch):
+    """Happy path: https URL is normalized and returned."""
+    monkeypatch.setenv("SWARMTRACE_API_KEY", "sk_test_abc")
+    monkeypatch.setenv("SWARMTRACE_ENDPOINT", "https://swarmtrace.vercel.app/api/")
+    monkeypatch.setattr(tracer, "_api_key", None)
+    monkeypatch.setattr(tracer, "_endpoint", None)
+
+    key, url = _remote_config()
+    assert key == "sk_test_abc"
+    assert url == "https://swarmtrace.vercel.app"  # trailing / and /api stripped
+
+
+def test_remote_config_returns_url_for_localhost_dev(monkeypatch):
+    """Localhost dev case still works — the explicit escape hatch."""
+    monkeypatch.setenv("SWARMTRACE_API_KEY", "sk_test_abc")
+    monkeypatch.setenv("SWARMTRACE_ENDPOINT", "http://localhost:3000/api")
+    monkeypatch.setattr(tracer, "_api_key", None)
+    monkeypatch.setattr(tracer, "_endpoint", None)
+
+    key, url = _remote_config()
+    assert key == "sk_test_abc"
+    assert url == "http://localhost:3000"

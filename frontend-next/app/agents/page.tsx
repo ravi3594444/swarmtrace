@@ -9,6 +9,7 @@ import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDro
 import { fetchSwarmAgents } from '@/lib/swarm-api'
 import type { Agent } from '@/lib/trace-types'
 import { formatRelativeTime } from '@/lib/api'
+import { TruncationBanner } from '@/components/truncation-banner'
 import { Activity, Clock, CheckCircle2, XCircle, Pause, RefreshCw, Search } from 'lucide-react'
 
 function StatusBadge({ status }: { status: Agent['status'] }) {
@@ -89,6 +90,7 @@ function AgentCard({ agent, delayMs = 0 }: { agent: Agent; delayMs?: number }) {
 export default function AgentsPage() {
   const [loading, setLoading] = useState(true)
   const [agents, setAgents] = useState<Agent[]>([])
+  const [truncated, setTruncated] = useState(false)
   const [filter, setFilter] = useState<'ALL' | 'RUNNING' | 'IDLE' | 'ERROR'>('ALL')
   const [search, setSearch] = useState('')
   const { range, setRange } = useTimeRange()
@@ -102,7 +104,8 @@ export default function AgentsPage() {
     const load = () => {
       fetchSwarmAgents(range).then((data) => {
         if (!mounted) return
-        setAgents(data)
+        setAgents(data.agents)
+        setTruncated(data.truncated)
         setLoading(false)
       })
     }
@@ -142,6 +145,8 @@ export default function AgentsPage() {
           </div>
         }
       />
+
+      {truncated && <TruncationBanner range="the selected range" />}
 
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-4 gap-4">

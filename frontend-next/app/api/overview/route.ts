@@ -2,6 +2,11 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest } from '../../../lib/supabase'
 import type { Trace } from '../../../lib/trace-types'
+import {
+  buildTracesQuery,
+  isTruncated,
+  DEFAULT_TRACE_LIMIT,
+} from '../../../lib/trace-query'
 
 export async function GET() {
   const { userId } = await auth()
@@ -11,8 +16,17 @@ export async function GET() {
     // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
     // JWT in the Authorization header). The user_id filter in the URL is
     // now defence-in-depth, not the only guard.
+    //
+    // The overview only ever buckets the last 24 hours of activity, so we
+    // push `since = 24h ago` into the DB query. Previously the route
+    // fetched the 500 most-recent traces overall, then post-filtered to
+    // 24h — which meant a user with >500 traces in the last 24h would
+    // silently see only the 500 most-recent of them, and a user with
+    // >500 traces in the last week would see last-week's data
+    // mislabeled as "last 24h". Filtering at the DB level fixes both.
+    const since = Date.now() - 24 * 60 * 60 * 1000
     const rows = (await supaUserRequest(
-      `traces?user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=500`,
+      buildTracesQuery(userId, { since }),
       userId
     )) as Trace[]
 
@@ -110,6 +124,10 @@ export async function GET() {
     return NextResponse.json({
       system_health, active_agents, total_throughput, avg_latency_ms,
       activity, top_agents, events,
+      // True when the DB returned exactly 500 rows — signals that the
+      // 24h window likely has more traces than the dashboard is showing.
+      // Audit finding #4: previously this was silent.
+      truncated: isTruncated(rows, DEFAULT_TRACE_LIMIT),
     })
   } catch (error) {
     console.error('[api/overview] request failed:', error)

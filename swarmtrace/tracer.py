@@ -49,6 +49,7 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator, List, Optional, Tuple
+from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
 from swarmtrace.storage import save_trace, mark_synced
@@ -104,8 +105,70 @@ def init(
 
 def _remote_config() -> tuple[str, str]:
     key = _api_key if _api_key is not None else os.environ.get("SWARMTRACE_API_KEY", "")
-    url = _endpoint if _endpoint is not None else os.environ.get("SWARMTRACE_ENDPOINT", "")
-    return key, _normalize_base_url(url)
+    raw_url = _endpoint if _endpoint is not None else os.environ.get("SWARMTRACE_ENDPOINT", "")
+
+    # Scheme enforcement (audit finding #5): refuse to send the API key
+    # over plaintext HTTP to non-localhost hosts. Returns "" for the URL
+    # when invalid, which causes the worker to skip sending — matching
+    # the "no endpoint configured" path. The warning is logged every call
+    # (the worker only calls this every ~2s on batch flush, so it's not
+    # log-spam); the user fixes their config to silence it.
+    ok, reason = _validate_endpoint_scheme(raw_url)
+    if not ok:
+        _log.warning("SWARMTRACE_ENDPOINT insecure — refusing to send traces: %s", reason)
+        return key, ""
+    return key, _normalize_base_url(raw_url)
+
+
+def _validate_endpoint_scheme(url: str) -> tuple[bool, str]:
+    """Check whether *url* is safe to send the API key to.
+
+    Returns ``(ok, reason)``. ``ok=True`` means safe (or empty — no
+    endpoint configured). ``ok=False`` means the URL would leak the API
+    key; ``reason`` is a human-readable explanation for the log warning.
+
+    Rules:
+      - Empty URL → ok (means no endpoint configured; worker will skip).
+      - ``https://`` → ok (any host).
+      - ``http://`` → ok ONLY for ``localhost``, ``127.0.0.1``, ``::1``
+        (local dev / testing).
+      - ``http://`` to anything else → rejected.
+      - Any other scheme (``ftp://``, ``file://``, etc.) → rejected.
+      - No scheme at all → rejected (ambiguous — could be either).
+
+    Audit finding #5: previously ``_normalize_base_url`` accepted any
+    string, so ``SWARMTRACE_ENDPOINT=http://example.com`` would silently
+    send the API key over plaintext HTTP with zero warning.
+    """
+    if not url:
+        return True, ""
+
+    parsed = urlparse(url)
+    scheme = (parsed.scheme or "").lower()
+    hostname = (parsed.hostname or "").lower()
+
+    if scheme == "https":
+        return True, ""
+
+    if scheme == "http":
+        # Allow localhost variants for local dev / testing.
+        # Note: this is intentionally narrow — only the canonical localhost
+        # names. RFC1918 IPs (192.168.x.x, 10.x.x.x, etc.) are NOT allowed
+        # because they're often used for internal services that may not be
+        # as trusted as a dev loopback. Users who need that can set up HTTPS
+        # locally (mkcert, caddy, etc.).
+        if hostname in ("localhost", "127.0.0.1", "::1"):
+            return True, ""
+        return False, (
+            f"http:// to non-localhost host '{hostname}' would send the "
+            f"API key over plaintext HTTP. Use https://, or set "
+            f"SWARMTRACE_ENDPOINT=http://localhost:... for local dev."
+        )
+
+    return False, (
+        f"unsupported scheme '{scheme or '(none)'}://' — only https:// "
+        f"(any host) and http:// (localhost only) are allowed."
+    )
 
 
 def _normalize_base_url(url: str) -> str:
@@ -120,6 +183,10 @@ def _normalize_base_url(url: str) -> str:
 
     All four should work. We strip trailing slashes and a trailing /api,
     then callers append the full path (/api/ingest, /api/events, etc.).
+
+    Note: scheme validation happens in _validate_endpoint_scheme (called
+    from _remote_config), NOT here. This function is purely about path
+    normalization — it doesn't second-guess whether the URL is safe.
     """
     s = url.rstrip("/")
     if s.endswith("/api"):
@@ -560,7 +627,17 @@ def _flush(
     agent_name: str,
     session_id: Optional[str] = None,
 ) -> None:
-    args_repr = str(args[:2])
+    # Cap args_repr at the same 4000-char limit _safe_str applies to output.
+    # Without this, a single large argument (big string, dataframe repr, etc.)
+    # produces an unbounded args field that:
+    #   1. Bloats the local SQLite DB (the row never syncs — the server's
+    #      MAX_BODY_BYTES = 64KB rejects the whole batch of up to 20 traces
+    #      it gets bundled into, and resync() retries the oversized row
+    #      forever, never marking it synced=1 — silent permanent leak).
+    #   2. Asymmetry with output: output is capped via _safe_str, args wasn't,
+    #      so the dashboard showed truncated returns but full argument dumps.
+    # Audit finding #3.
+    args_repr = _safe_str(args[:2])
     if kwargs:
         args_repr = f"{args_repr} kwargs={list(kwargs.keys())}"
     # PII redaction — single call site, applied once to args/output/error

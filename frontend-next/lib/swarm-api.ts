@@ -40,12 +40,46 @@ function toTrace(s: ApiSpan): Trace {
   }
 }
 
-export async function fetchSwarmTraces(): Promise<Trace[]> {
-  const data = await fetchTracesRaw()
-  return (data?.traces ?? []).map(toTrace)
+/**
+ * Traces + whether the backend capped the result at the 500-row limit.
+ *
+ * `truncated` is true when /api/traces returned exactly 500 rows — signals
+ * that more rows likely exist beyond what's displayed. The dashboard
+ * surfaces this via <TruncationBanner /> so users know to narrow their
+ * date filter instead of assuming the older data doesn't exist.
+ *
+ * Audit finding #4 follow-up: previously this function did
+ * `data?.traces ?? []` and dropped `truncated` on the floor. The backend
+ * was computing it (commit 2475287) but no client ever saw it.
+ */
+export interface TracesResult {
+  traces: Trace[]
+  truncated: boolean
 }
 
-export async function fetchSwarmAgents(range: TimeRangeKey = 'today'): Promise<Agent[]> {
+export async function fetchSwarmTraces(): Promise<TracesResult> {
+  const data = await fetchTracesRaw()
+  return {
+    traces: (data?.traces ?? []).map(toTrace),
+    truncated: Boolean(data?.truncated),
+  }
+}
+
+/**
+ * Agents + whether the backend capped the underlying traces query at 500 rows.
+ *
+ * Same `truncated` semantics as fetchSwarmTraces — true means the Agents
+ * page is built from a capped trace set, so some agents that only have
+ * traces older than the 500th-most-recent may not appear. Narrowing the
+ * date range (which the Agents page already supports via the time-range
+ * dropdown) is the user-facing fix.
+ */
+export interface AgentsResult {
+  agents: Agent[]
+  truncated: boolean
+}
+
+export async function fetchSwarmAgents(range: TimeRangeKey = 'today'): Promise<AgentsResult> {
   // Compute the inclusive lower-bound timestamp in the user's LOCAL timezone
   // (rangeStartMs uses the browser's Date). The server just does a numeric
   // comparison — no TZ logic on the server, which keeps it correct regardless
@@ -53,5 +87,8 @@ export async function fetchSwarmAgents(range: TimeRangeKey = 'today'): Promise<A
   // 'all' → rangeStartMs returns null → no ?since param → no filter.
   const since = rangeStartMs(range)
   const data = await fetchAgentsRaw(since)
-  return data?.agents ?? []
+  return {
+    agents: data?.agents ?? [],
+    truncated: Boolean(data?.truncated),
+  }
 }

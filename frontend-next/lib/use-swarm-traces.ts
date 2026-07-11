@@ -4,8 +4,18 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import type { Trace } from './trace-types'
 import { fetchSwarmTraces } from './swarm-api'
 
+/**
+ * Hook backing the Traces page.
+ *
+ * Returns `truncated` (audit finding #4 follow-up) so the page can render
+ * <TruncationBanner /> when the backend capped the result at 500 rows.
+ * Previously the hook returned only `{ traces, loading, isLive, toggleLive }`
+ * and the `truncated` flag from /api/traces was dropped at the lib/swarm-api.ts
+ * layer — the backend was computing it but no client ever saw it.
+ */
 export function useSwarmTraces(pollMs = 8000) {
   const [traces, setTraces] = useState<Trace[]>([])
+  const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isLive, setIsLive] = useState(true)
   const interval = useRef<ReturnType<typeof setInterval> | null>(null)
@@ -23,7 +33,8 @@ export function useSwarmTraces(pollMs = 8000) {
     // Ignore this response if a newer request has started, or if the
     // component has unmounted.
     if (id !== reqId.current || !mounted.current) return
-    setTraces(r)
+    setTraces(r.traces)
+    setTruncated(r.truncated)
     setLoading(false)
   }, [])
 
@@ -45,5 +56,5 @@ export function useSwarmTraces(pollMs = 8000) {
     return () => { if (interval.current) clearInterval(interval.current) }
   }, [isLive, load, pollMs])
 
-  return { traces, loading, isLive, toggleLive: () => setIsLive((v) => !v) }
+  return { traces, truncated, loading, isLive, toggleLive: () => setIsLive((v) => !v) }
 }
