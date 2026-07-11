@@ -21,12 +21,33 @@ adheres to [Semantic Versioning](https://semver.org/).
   trailing columns are swallowed. Future migration columns won't rebreak
   this.
 
+- **Tree view no longer wraps branch labels onto a second line at 80 cols**
+  (`swarmtrace/cli.py`): the tree view rendered every branch with a trailing
+  `OK` / `ERROR` suffix, duplicating the Status column already shown in the
+  table view above. The extra suffix pushed branch labels like
+  `mistral_answer() (llm) [32-char-uuid] 0.608s $0.000236 OK` past 80 cols,
+  and `rich.Tree` wrapped the trailing `OK` onto a second line, breaking the
+  indentation:
+  ```
+  ├── mistral_answer() (llm) [41c2494b...] 0.608s $0.000236
+  │   OK                                                          ← BROKEN
+  ```
+  Fix: drop the status suffix from the tree view (errors are still visible
+  in the table view; users who want full detail use `swarmtrace-replay
+  <id>`). Also pass `soft_wrap=True` to `console.print(tree)` so any future
+  length growth truncates cleanly instead of wrapping. **Full 32-char trace
+  IDs are preserved** — `swarmtrace-replay <id>` does an exact `get_by_id()`
+  lookup and needs the full UUID. An earlier attempt truncated IDs to 8
+  chars for aesthetics; reverted after realizing this breaks the replay
+  workflow.
+
 ### Added
 - **`tests/test_cli.py`** — first ever coverage for `view()` and `replay()`.
-  The bug shipped because neither function had a test. Five cases:
+  The bug shipped because neither function had a test. Seven cases:
   full-schema unpack, empty DB, error rows, replay full-schema, replay
-  missing trace. All exercise the real storage layer against a temp DB
-  (no mocks). 194 tests now pass (was 189).
+  missing trace, full 32-char trace ID preservation, tree-view no-wrap at
+  80 cols. All exercise the real storage layer against a temp DB (no mocks).
+  196 tests now pass (was 189).
 
 ## [0.6.1] — 2026-07-11
 
