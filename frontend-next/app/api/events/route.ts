@@ -8,16 +8,17 @@
 // the agent_events Supabase table.  Supabase Realtime then pushes to the
 // browser via WebSocket — Vercel is completely out of the real-time path.
 //
-// Auth: same X-API-Key header as /api/ingest. Key cache is per-isolate,
-// shared with /api/ingest via lib/api-auth.ts so the DELETE route can
-// invalidate it on revoke (see invalidateAllKeyCaches).
+// Auth: same X-API-Key header as /api/ingest. Fresh Supabase lookup on
+// every request — no in-process cache (see lib/api-auth.ts for why:
+// Vercel's per-route serverless functions can't share memory, so a
+// per-isolate cache gave stale revoked keys for up to 5 min in production).
 // Rate limit: 500 events / 60s per API key.
 //   - Upstash Redis (distributed): enabled when UPSTASH_REDIS_REST_URL is set.
 //   - Per-isolate fallback: used otherwise. Note that Vercel can run many
 //     isolates simultaneously — the effective limit is 500 × n_isolates when
 //     Upstash is not configured.
 
-import { sha256Hex, eventsKeyCache, createRateLimiter } from '@/lib/api-auth'
+import { sha256Hex, createRateLimiter } from '@/lib/api-auth'
 
 const MAX_BODY_BYTES  = 32 * 1024   // 32 KB per event (screenshots compress well)
 const SUPA_TIMEOUT_MS = 3000
@@ -108,17 +109,15 @@ export async function POST(req: Request) {
       return new Response(null, { status: 429, headers: { 'Retry-After': '60' } })
     }
 
-    let user_id = eventsKeyCache.get(keyHash)
-    if (!user_id) {
-      const res = await supa(
-        `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
-        { headers: { Prefer: 'return=representation' } }
-      )
-      const rows: Array<{ user_id: string }> = await res.json()
-      if (!rows?.length) return json(401, { error: 'Invalid or revoked API key' })
-      user_id = rows[0].user_id
-      eventsKeyCache.set(keyHash, user_id)
-    }
+    // Fresh Supabase lookup on every request — no in-process cache.
+    // See ingest/route.ts for the full reasoning.
+    const res = await supa(
+      `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
+      { headers: { Prefer: 'return=representation' } }
+    )
+    const rows: Array<{ user_id: string }> = await res.json()
+    if (!rows?.length) return json(401, { error: 'Invalid or revoked API key' })
+    const user_id = rows[0].user_id
 
     let payload: unknown
     try { payload = JSON.parse(new TextDecoder().decode(bodyBytes)) }

@@ -7,10 +7,9 @@
 // which has full Web API + npm support, so there's no upside to staying on
 // 'edge' here.
 
-// sha256, key cache, and rate limiter live in lib/api-auth.ts so they can be
-// shared with /api/events and /api/mcp (and so /api/settings/api-keys/[id]
-// can invalidate the caches on revoke — see invalidateAllKeyCaches).
-import { sha256Hex, ingestKeyCache, createRateLimiter } from '@/lib/api-auth'
+// sha256 + rate limiter live in lib/api-auth.ts so they can be shared
+// with /api/events and /api/mcp without copy-paste drift.
+import { sha256Hex, createRateLimiter } from '@/lib/api-auth'
 
 const MAX_BODY_BYTES  = 64 * 1024
 const MAX_BATCH_SIZE = 50
@@ -96,18 +95,24 @@ export async function POST(req: Request) {
       })
     }
 
-    let user_id = ingestKeyCache.get(keyHash)
-    if (!user_id) {
-      const res = await supa(
-        `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
-        { headers: { Prefer: 'return=representation' } }
-      )
-      const rows: Array<{ user_id: string }> = await res.json()
-      if (!rows || rows.length === 0)
-        return jsonResponse(401, { error: 'Invalid or revoked API key' })
-      user_id = rows[0].user_id
-      ingestKeyCache.set(keyHash, user_id)
-    }
+    // Fresh Supabase lookup on every request — no in-process cache.
+    // The previous version cached key_hash → user_id in a per-isolate Map
+    // for 5 min, but on Vercel each /api route is its own serverless
+    // function with its own memory, so the cache (a) couldn't be
+    // invalidated by the DELETE route in another function, and (b) gave
+    // per-instance stale reads across warm instances. Removing the cache
+    // makes revocation take effect in 0s on every route, matching /api/mcp.
+    // The key_hash column has a unique index, so this is a sub-ms point-read.
+    // See lib/api-auth.ts for the load trade-off note (ingest ~30 calls/min
+    // per active key vs mcp's occasional calls).
+    const keyRes = await supa(
+      `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
+      { headers: { Prefer: 'return=representation' } }
+    )
+    const keyRows: Array<{ user_id: string }> = await keyRes.json()
+    if (!keyRows || keyRows.length === 0)
+      return jsonResponse(401, { error: 'Invalid or revoked API key' })
+    const user_id = keyRows[0].user_id
 
     // The SDK's batch path gzips the body and sets Content-Encoding: gzip.
     // Request bodies are NOT auto-decompressed by the runtime, so inflate
