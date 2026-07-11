@@ -8,15 +8,11 @@ import { groupThreads, type Thread } from '@/lib/thread-grouping'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import type { Trace } from '@/lib/trace-types'
+import { formatFullTime as formatTime } from '@/lib/format-time'
 import { ChevronRight, MessagesSquare, Clock3, Coins, Hash, AlertTriangle } from 'lucide-react'
 
 function shortSessionId(sessionId: string) {
   return sessionId.length > 12 ? `${sessionId.slice(0, 12)}…` : sessionId
-}
-
-function formatTime(iso: string) {
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? iso : d.toLocaleString()
 }
 
 function outputSnippet(output: string) {

@@ -8,18 +8,13 @@ import { fetchMetrics } from '@/lib/api'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts'
 import { Download, TrendingDown, CheckCircle2 } from 'lucide-react'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
+import { chartTooltip } from '@/lib/chart-tooltip'
 
 type ChartPoint = { date: string; cost: number; input: number; output: number; traces: number }
 type MetricsTotals = { cost: number; tokens_in: number; tokens_out: number; traces: number }
 type MetricsData = {
   today: MetricsTotals; last_7_days: MetricsTotals; this_month: MetricsTotals; all_time: MetricsTotals
   chart: ChartPoint[]
-}
-
-const chartTooltip = {
-  contentStyle: { background: 'var(--card)', border: '1px solid var(--border)', borderRadius: 10, fontSize: 12, boxShadow: '0 4px 20px rgba(0,0,0,0.08)' },
-  labelStyle: { color: 'var(--foreground)', fontWeight: 600 },
-  itemStyle: { color: 'var(--foreground)' },
 }
 
 function MetricCard({ label, value, unit, trend }: { label: string; value: string; unit?: string; trend: string }) {

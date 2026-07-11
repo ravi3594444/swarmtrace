@@ -8,15 +8,8 @@ import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
 import type { Trace } from '@/lib/trace-types'
 import { clusterErrors } from '@/lib/error-clustering'
+import { formatTraceTime as formatTime } from '@/lib/format-time'
 import { AlertTriangle, TrendingDown, ChevronRight, Layers } from 'lucide-react'
-
-function formatTime(iso: string) {
-  // Use UTC to match TraceTable.tsx — otherwise the same trace shows
-  // different times on /traces (UTC) vs /failures (local), which looks
-  // like a bug to the user.
-  const d = new Date(iso)
-  return `${String(d.getUTCHours()).padStart(2, '0')}:${String(d.getUTCMinutes()).padStart(2, '0')}:${String(d.getUTCSeconds()).padStart(2, '0')}`
-}
 
 export default function FailuresPage() {
   const { traces, loading } = useSwarmTraces(10000)
