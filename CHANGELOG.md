@@ -4,6 +4,30 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] — 2026-07-12
+
+### Fixed
+- **`swarmtrace` CLI no longer crashes with `ValueError: too many values to
+  unpack (expected 14)`** (`swarmtrace/cli.py`): `view()` and `replay()`
+  unpacked exactly 14 fields from each trace row, but the `traces` table
+  actually has 16 columns after the `session_id` and `synced` migrations
+  (`storage.py:_ADDED_COLUMNS`). `SELECT *` returned 16 values, the tuple
+  unpack raised, and the `swarmtrace` CLI crashed on every invocation after
+  any trace was recorded — meaning every new user who ran `pip install
+  swarmtrace`, decorated a function, and then ran `swarmtrace` to view their
+  traces hit an immediate crash. Reproduced live by running the dogfood RAG
+  agent against `mistral-large-latest` and then running `swarmtrace` to view
+  the trace. Fix: append `*_` to every unpack in `cli.py` (6 sites) so
+  trailing columns are swallowed. Future migration columns won't rebreak
+  this.
+
+### Added
+- **`tests/test_cli.py`** — first ever coverage for `view()` and `replay()`.
+  The bug shipped because neither function had a test. Five cases:
+  full-schema unpack, empty DB, error rows, replay full-schema, replay
+  missing trace. All exercise the real storage layer against a temp DB
+  (no mocks). 194 tests now pass (was 189).
+
 ## [0.6.1] — 2026-07-11
 
 ### Added
