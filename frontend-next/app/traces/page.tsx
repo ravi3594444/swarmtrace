@@ -4,6 +4,7 @@ import { useState, useMemo } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
+import { TruncationBanner } from '@/components/truncation-banner'
 import { SmartJson } from '@/components/swarm/SmartJson'
 import { CallChainCrumbs } from '@/components/swarm/CallChainCrumbs'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
@@ -428,7 +429,7 @@ function ScrapingBanner({ count }: { count: number }) {
 }
 
 export default function TracesPage() {
-  const { traces, loading, isLive, toggleLive } = useSwarmTraces(8000)
+  const { traces, truncated, loading, isLive, toggleLive } = useSwarmTraces(8000)
   const [selected, setSelected] = useState<Trace | null>(null)
   const { isEnabled } = useIntegrations()
   const scrapingCount = useMemo(
@@ -566,6 +567,8 @@ export default function TracesPage() {
           </div>
         }
       />
+
+      {truncated && <TruncationBanner />}
 
       {/* Tag filter bar — always visible when tags exist */}
       <TagFilterBar
