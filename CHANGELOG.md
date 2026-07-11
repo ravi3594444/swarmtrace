@@ -4,6 +4,16 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] — 2026-07-11
+
+### Added
+- **Project URLs in `pyproject.toml`** (`[project.urls]` section): Homepage,
+  Repository, Changelog, Issues, Documentation. PyPI now links to the website
+  (https://swarmtrace.vercel.app) and GitHub repo from the package page. This
+  gives Google an authoritative inbound link to the site from pypi.org (one of
+  the most highly-indexed domains), which helps with search discovery
+  independently of sitemap submission. No code changes — metadata-only release.
+
 ## [0.6.0] — 2026-07-11
 
 ### Fixed
