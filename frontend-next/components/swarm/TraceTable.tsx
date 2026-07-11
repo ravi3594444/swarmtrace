@@ -2,17 +2,12 @@
 
 import { Fragment, useMemo, useState } from "react";
 import type { Trace } from "@/lib/trace-types";
+import { formatTraceTime as formatTime } from "@/lib/format-time";
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from "lucide-react";
 
 const PAGE_SIZES = [25, 50, 100];
 
 type SortKey = "id" | "function" | "latency_sec" | "input_tokens" | "output_tokens" | "cost_usd" | "timestamp";
-
-function formatTime(iso: string) {
-  const d = new Date(iso);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getUTCHours())}:${p(d.getUTCMinutes())}:${p(d.getUTCSeconds())}`;
-}
 
 function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
   if (!active) return <ArrowUpDown className="w-3 h-3 opacity-25" />;
