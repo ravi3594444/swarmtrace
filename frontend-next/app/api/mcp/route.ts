@@ -22,8 +22,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { z } from 'zod'
-import { Redis } from '@upstash/redis'
-import { Ratelimit } from '@upstash/ratelimit'
+import { sha256Hex, createRateLimiter } from '@/lib/api-auth'
 import { stableAgentId } from '@/lib/stable-agent-id'
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -68,59 +67,18 @@ async function supaRpc(fn: string, params: Record<string, unknown>) {
 }
 
 // ── Rate limiter (Upstash Redis with per-isolate fallback) ──────────────────
-// Same pattern as /api/ingest and /api/events. 120 requests / 60s per API key.
-// Falls back to per-isolate Map when UPSTASH_REDIS_REST_URL is not set.
-// To enable: add UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN to Vercel env.
-const RATE_LIMIT     = 120
-const RATE_WINDOW_MS = 60_000
-
-let _upstashLimiter: Ratelimit | null = null
-
-function getUpstashLimiter(): Ratelimit | null {
-  if (_upstashLimiter) return _upstashLimiter
-  const url   = process.env.UPSTASH_REDIS_REST_URL
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN
-  if (!url || !token) return null
-  _upstashLimiter = new Ratelimit({
-    redis:     new Redis({ url, token }),
-    limiter:   Ratelimit.slidingWindow(RATE_LIMIT, '60 s'),
-    analytics: false,
-    prefix:    'st_mcp_rl',
-  })
-  return _upstashLimiter
-}
-
-interface RateEntry { count: number; windowStart: number }
-const RATE_MAP = new Map<string, RateEntry>()
-
-function checkRateLocal(keyHash: string): boolean {
-  const now   = Date.now()
-  const entry = RATE_MAP.get(keyHash)
-  if (!entry || now - entry.windowStart > RATE_WINDOW_MS) {
-    RATE_MAP.set(keyHash, { count: 1, windowStart: now })
-    return true
-  }
-  if (entry.count >= RATE_LIMIT) return false
-  entry.count++
-  return true
-}
-
-async function checkRate(keyHash: string): Promise<boolean> {
-  const limiter = getUpstashLimiter()
-  if (limiter) {
-    const { success } = await limiter.limit(keyHash)
-    return success
-  }
-  return checkRateLocal(keyHash)
-}
+// Same shared implementation as /api/ingest and /api/events (lib/api-auth.ts).
+// 120 requests / 60s per API key. Distinct prefix 'st_mcp_rl' so the bucket
+// doesn't collide with ingest's 'st_rl' or events' 'st_fov_rl'.
+const RATE_LIMIT = 120
+const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_mcp_rl' })
 
 // ── API key → user_id resolution ─────────────────────────────────────────────
-async function sha256Hex(input: string): Promise<string> {
-  const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
-  return Array.from(new Uint8Array(digest))
-    .map(b => b.toString(16).padStart(2, '0'))
-    .join('')
-}
+// /api/mcp intentionally does NOT cache key lookups — resolveApiKeyByKeyHash
+// hits Supabase fresh every call. That means revocation takes effect here in
+// 0 seconds, vs. up to CACHE_TTL_MS on /api/ingest and /api/events (which use
+// per-isolate caching for the DB-lookup savings). The DELETE route calls
+// invalidateAllKeyCaches() to make the in-isolate case immediate too.
 
 // Accepts a pre-computed keyHash (same one used for rate limiting) so we
 // don't hash the API key twice per request.
@@ -360,8 +318,8 @@ async function handleMcp(req: Request): Promise<Response> {
   const keyHash = await sha256Hex(apiKey)
 
   // ── Rate limit check (before DB lookup — cheap, fast) ──────────────────
-  // Same pattern as /api/ingest. 120 requests / 60s per API key.
-  if (!await checkRate(keyHash)) {
+  // Same shared rate limiter as /api/ingest. 120 requests / 60s per API key.
+  if (!await rateLimiter.check(keyHash)) {
     return new Response(null, {
       status: 429,
       headers: {
