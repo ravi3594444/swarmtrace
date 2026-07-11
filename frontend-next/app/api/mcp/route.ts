@@ -74,11 +74,12 @@ const RATE_LIMIT = 120
 const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_mcp_rl' })
 
 // ── API key → user_id resolution ─────────────────────────────────────────────
-// /api/mcp intentionally does NOT cache key lookups — resolveApiKeyByKeyHash
-// hits Supabase fresh every call. That means revocation takes effect here in
-// 0 seconds, vs. up to CACHE_TTL_MS on /api/ingest and /api/events (which use
-// per-isolate caching for the DB-lookup savings). The DELETE route calls
-// invalidateAllKeyCaches() to make the in-isolate case immediate too.
+// Fresh Supabase lookup on every call — no in-process cache. This was the
+// original pattern for /api/mcp, and /api/ingest + /api/events now match it
+// (see lib/api-auth.ts for why: Vercel's per-route serverless functions
+// can't share memory, so an in-process cache gave stale revoked keys for
+// up to 5 min in production). Revocation now takes effect in 0s on every
+// route, consistently.
 
 // Accepts a pre-computed keyHash (same one used for rate limiting) so we
 // don't hash the API key twice per request.

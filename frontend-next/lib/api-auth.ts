@@ -1,23 +1,43 @@
 /**
- * Shared API authentication primitives — sha256, per-isolate key cache,
- * rate limiter (Upstash Redis with per-isolate fallback).
+ * Shared API authentication primitives — sha256 + rate limiter
+ * (Upstash Redis with per-isolate fallback).
  *
  * Used by /api/ingest, /api/events, and /api/mcp so they don't each
- * re-implement (and drift on) the same logic. The shared key caches
- * (ingestKeyCache, eventsKeyCache) are also reachable from
- * /api/settings/api-keys/[id] via invalidateAllKeyCaches(), which is
- * the fix for the "revoked key still works for up to 5 min" bug:
- * the DELETE route used to flip revoked=true in Supabase but never
- * touched these caches, so any warm isolate that had already cached
- * the key kept accepting it until the TTL expired.
+ * re-implement (and drift on) the same logic.
  *
- * NOTE: This is still per-isolate caching. On Vercel, other warm
- * isolates will continue to serve a revoked key until their copy of
- * the cache expires (up to CACHE_TTL_MS = 5 min). To eliminate that
- * window entirely, deploy Upstash Redis (already supported by the
- * rate limiter below) and store key lookups there too. For now, the
- * 5-min worst-case on other isolates is documented and accepted —
- * same as before, but the in-isolate case is now immediate.
+ * NOTE: As of audit finding #1's second pass, this module no longer
+ * exports a per-isolate key cache. The previous version did, and
+ * DELETE /api/settings/api-keys/[id] called invalidateAllKeyCaches()
+ * to clear it on revoke. That fix was correct in unit tests but a
+ * no-op in production: Vercel compiles each /api route as a separate
+ * serverless function with its own bundled copy of this module, so
+ * the DELETE function's invalidateAllKeyCaches() call could not reach
+ * the ingest/events function's in-memory Map — they were never the
+ * same process. Revocation lag was unchanged from before.
+ *
+ * The real fix is to not cache at all: every keyed route now hits
+ * Supabase fresh on every request, matching /api/mcp's existing
+ * pattern (resolveApiKeyByKeyHash). The key_hash column has a unique
+ * index (idx_api_keys_key_hash, see supabase/migrations/0001), so
+ * the lookup is a sub-millisecond point-read — no cache needed at
+ * the volumes this service sees. Revocation now takes effect in 0
+ * seconds across all routes, with no shared-store dependency.
+ *
+ * If traffic ever justifies re-introducing a cache, use Upstash Redis
+ * (already wired up for the rate limiter below) so the cache is shared
+ * across all serverless function instances — not an in-process Map,
+ * which gives per-instance stale reads under Vercel's deployment model.
+ *
+ * Trade-off note (ingest vs mcp call patterns): mcp is occasional
+ * ad-hoc tool invocations; ingest is the SDK's background worker
+ * flushing every _BATCH_FLUSH_TIMEOUT = 2.0s under continuous load,
+ * so a single actively-traced process is up to ~30 ingest calls/min
+ * on the same key. Removing the cache turns that path from 1 DB hit
+ * per 5 min per active key into up to 30/min per active key — ~150x
+ * more lookups on ingest specifically. At current scale this is
+ * nothing (indexed point-lookups handle thousands/sec on Postgres;
+ * 100 concurrent traced agents is only ~50 req/s). If it ever matters,
+ * it'll surface as PostgREST connection pressure, not query latency.
  */
 
 import { Redis } from '@upstash/redis'
@@ -31,81 +51,18 @@ export async function sha256Hex(input: string): Promise<string> {
     .join('')
 }
 
-// ── Per-isolate key cache ──────────────────────────────────────────────────
-// Vercel serverless isolates are not shared — this Map lives per-isolate.
-// It still helps: repeated requests within the same warm isolate skip the
-// DB lookup. For a true shared cache, use Vercel KV or Upstash Redis.
-
-const DEFAULT_CACHE_TTL_MS = 5 * 60 * 1000
-
-interface CacheEntry { user_id: string; expires: number }
-
-export interface KeyCache {
-  /** Returns the cached user_id for this hash, or null if absent / expired. */
-  get(hash: string): string | null
-  /** Cache a key_hash → user_id mapping with the configured TTL. */
-  set(hash: string, user_id: string): void
-  /** Drop one entry (e.g. after a targeted revoke). */
-  invalidate(hash: string): void
-  /** Drop every entry (called by DELETE /api/settings/api-keys/[id]). */
-  invalidateAll(): void
-  /** Number of live entries — for tests / observability. */
-  size(): number
-}
-
-export function createKeyCache(ttlMs: number = DEFAULT_CACHE_TTL_MS): KeyCache {
-  const map = new Map<string, CacheEntry>()
-  return {
-    get(hash: string): string | null {
-      const entry = map.get(hash)
-      if (!entry) return null
-      if (Date.now() > entry.expires) { map.delete(hash); return null }
-      return entry.user_id
-    },
-    set(hash: string, user_id: string): void {
-      map.set(hash, { user_id, expires: Date.now() + ttlMs })
-    },
-    invalidate(hash: string): void {
-      map.delete(hash)
-    },
-    invalidateAll(): void {
-      map.clear()
-    },
-    size(): number {
-      return map.size
-    },
-  }
-}
-
-// Singleton caches shared by all routes in the same isolate.
-// Each route used to keep its own copy — that's how the revocation bug
-// crept in: the DELETE route couldn't reach them. Now it can, via
-// invalidateAllKeyCaches().
-const _ingestKeyCache = createKeyCache()
-const _eventsKeyCache = createKeyCache()
-
-export const ingestKeyCache: KeyCache = _ingestKeyCache
-export const eventsKeyCache: KeyCache = _eventsKeyCache
-
-/**
- * Drop every cached API-key lookup in every per-isolate cache. Called by
- * DELETE /api/settings/api-keys/[id] after flipping revoked=true in Supabase.
- *
- * Effect on THIS isolate: the next /api/ingest or /api/events request
- * re-checks Supabase and rejects the revoked key immediately.
- *
- * Effect on OTHER warm isolates: none — they keep their own copy until
- * TTL expiry. See file-level note about Upstash Redis for a true fix.
- */
-export function invalidateAllKeyCaches(): void {
-  _ingestKeyCache.invalidateAll()
-  _eventsKeyCache.invalidateAll()
-}
-
 // ── Rate limiter factory ───────────────────────────────────────────────────
 // Distributed (Upstash Redis) when env configured; per-isolate fallback
 // otherwise. Each route creates its own instance with its own prefix
 // (so buckets don't collide) and its own limit (ingest/mcp: 120, events: 500).
+//
+// NOTE: the per-isolate fallback for rate limiting is fine even though it
+// means "effective limit = RATE_LIMIT × n_isolates" — rate limiting is
+// about abuse prevention, not exact quotas, and being permissive under
+// fallback is safer than blocking legitimate traffic. The key-cache case
+// was different: per-isolate caching created a security gap (stale revoked
+// keys), which is why the cache was removed entirely rather than kept as
+// a per-isolate fallback.
 
 export interface RateLimiter {
   /** Returns true if the request is allowed, false if rate-limited. */

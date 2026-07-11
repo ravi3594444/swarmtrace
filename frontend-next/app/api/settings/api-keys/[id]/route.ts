@@ -1,7 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest, RlsEnforcementError } from '../../../../../lib/supabase'
-import { invalidateAllKeyCaches } from '../../../../../lib/api-auth'
 
 export async function DELETE(
   _req: Request,
@@ -32,16 +31,11 @@ export async function DELETE(
       body: JSON.stringify({ revoked: true }),
     })
 
-    // Drop every cached key_hash → user_id entry on this isolate so the next
-    // /api/ingest or /api/events request re-checks Supabase and rejects the
-    // revoked key immediately. Without this, a revoked key would still POST
-    // successfully for up to 5 minutes on any warm isolate that already
-    // cached it (the audit's finding #1). NOTE: this only covers THIS
-    // isolate — other warm isolates will still serve the revoked key until
-    // their cache TTL expires. Eliminating that residual window requires
-    // moving key lookups to a shared store (Upstash Redis already used by
-    // the rate limiter); accepted as documented for now.
-    invalidateAllKeyCaches()
+    // No cache invalidation needed — /api/ingest, /api/events, and /api/mcp
+    // all hit Supabase fresh on every request now (no in-process key cache).
+    // Revocation takes effect on the very next request to any of those routes,
+    // 0 seconds, across all serverless function instances. See lib/api-auth.ts
+    // for the history of why the per-isolate cache approach was removed.
 
     return new NextResponse(null, { status: 204 })
   } catch (error) {
