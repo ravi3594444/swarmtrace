@@ -7,8 +7,10 @@ import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { groupThreads, type Thread } from '@/lib/thread-grouping'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import type { Trace } from '@/lib/trace-types'
 import { formatFullTime as formatTime } from '@/lib/format-time'
+import { filterTracesByRange } from '@/lib/trace-utils'
 import { ChevronRight, MessagesSquare, Clock3, Coins, Hash, AlertTriangle } from 'lucide-react'
 
 function shortSessionId(sessionId: string) {
@@ -118,10 +120,20 @@ function ThreadCard({
 
 export default function ThreadsPage() {
   const { traces, loading } = useSwarmTraces(10000)
+  const { range, setRange } = useTimeRange()
   const [selected, setSelected] = useState<Trace | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
-  const threads = useMemo(() => groupThreads(traces), [traces])
+  // Filter to the selected time range before grouping into threads so old
+  // conversations don't bury today's active ones. Range is shared with
+  // Overview/Agents/Failures/Compare via localStorage, so picking "Today"
+  // on the dashboard carries over here.
+  const filteredTraces = useMemo(
+    () => filterTracesByRange(traces, range),
+    [traces, range],
+  )
+
+  const threads = useMemo(() => groupThreads(filteredTraces), [filteredTraces])
   const totalTurns = useMemo(() => threads.reduce((sum, thread) => sum + thread.turnCount, 0), [threads])
   const totalErrors = useMemo(() => threads.filter((thread) => thread.hasError).length, [threads])
 
@@ -139,6 +151,9 @@ export default function ThreadsPage() {
         title="Threads"
         description="Conversation sessions grouped by session id"
         badge={`${threads.length} THREADS`}
+        actions={
+          <TimeRangeDropdown value={range} onChange={setRange} />
+        }
       />
 
       <div className="p-6 space-y-6">
@@ -193,7 +208,7 @@ export default function ThreadsPage() {
         )}
       </div>
 
-      <DetailDrawer trace={selected} allTraces={traces} onClose={() => setSelected(null)} onJump={setSelected} />
+      <DetailDrawer trace={selected} allTraces={filteredTraces} onClose={() => setSelected(null)} onJump={setSelected} />
     </DashboardLayout>
   )
 }

@@ -1,20 +1,32 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import type { Trace } from '@/lib/trace-types'
 import { clusterErrors } from '@/lib/error-clustering'
 import { formatTraceTime as formatTime } from '@/lib/format-time'
+import { filterTracesByRange } from '@/lib/trace-utils'
 import { AlertTriangle, TrendingDown, ChevronRight, Layers } from 'lucide-react'
 
 export default function FailuresPage() {
   const { traces, loading } = useSwarmTraces(10000)
+  const { range, setRange } = useTimeRange()
   const [selected, setSelected] = useState<Trace | null>(null)
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
+
+  // Filter traces to the selected time range before computing failure stats.
+  // Matches Overview's behavior — picking "Today" on the dashboard should
+  // carry over to Failures so old errors don't dilute the "what's broken
+  // RIGHT NOW" signal. Range defaults to "today" via useTimeRange.
+  const filteredTraces = useMemo(
+    () => filterTracesByRange(traces, range),
+    [traces, range],
+  )
 
   if (loading) return (
     <DashboardLayout>
@@ -22,9 +34,9 @@ export default function FailuresPage() {
     </DashboardLayout>
   )
 
-  const failed = traces.filter((t) => t.error)
-  const errorRate = traces.length ? ((failed.length / traces.length) * 100).toFixed(1) : '0.0'
-  const clusters = clusterErrors(traces)
+  const failed = filteredTraces.filter((t) => t.error)
+  const errorRate = filteredTraces.length ? ((failed.length / filteredTraces.length) * 100).toFixed(1) : '0.0'
+  const clusters = clusterErrors(filteredTraces)
   const maxCount = clusters[0]?.count ?? 1
 
   return (
@@ -33,12 +45,15 @@ export default function FailuresPage() {
         title="Failures"
         description="Errors auto-grouped by root cause"
         badge={`${failed.length} ERRORS`}
+        actions={
+          <TimeRangeDropdown value={range} onChange={setRange} />
+        }
       />
 
       <div className="p-6 space-y-6">
         <div className="grid grid-cols-3 gap-4">
           {[
-            { label: 'Total Errors', value: String(failed.length), sub: `of ${traces.length} spans`, icon: AlertTriangle },
+            { label: 'Total Errors', value: String(failed.length), sub: `of ${filteredTraces.length} spans`, icon: AlertTriangle },
             { label: 'Error Rate', value: `${errorRate}%`, sub: 'of all executed spans', icon: TrendingDown },
             { label: 'Error Clusters', value: String(clusters.length), sub: 'distinct root causes', icon: Layers },
           ].map(({ label, value, sub, icon: Icon }) => (
@@ -114,7 +129,7 @@ export default function FailuresPage() {
         )}
       </div>
 
-      <DetailDrawer trace={selected} allTraces={traces} onClose={() => setSelected(null)} onJump={setSelected} />
+      <DetailDrawer trace={selected} allTraces={filteredTraces} onClose={() => setSelected(null)} onJump={setSelected} />
     </DashboardLayout>
   )
 }
