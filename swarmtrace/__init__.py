@@ -9,7 +9,7 @@ from swarmtrace.fov import get_events
 from swarmtrace import fov
 from swarmtrace import alerts
 
-__version__ = '0.5.0'
+__version__ = '0.6.4'
 __all__ = [
     'observe', 'init', 'session',
     'get_traces', 'save_trace',
