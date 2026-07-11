@@ -3,6 +3,12 @@ import { NextResponse } from 'next/server'
 import { supaUserRequest } from '../../../lib/supabase'
 import type { Trace } from '../../../lib/trace-types'
 import { deriveAgentCards } from '@/lib/derive-agent-cards'
+import {
+  buildTracesQuery,
+  parseSinceParam,
+  isTruncated,
+  DEFAULT_TRACE_LIMIT,
+} from '../../../lib/trace-query'
 
 export async function GET(request: Request) {
   const { userId } = (await auth())
@@ -12,27 +18,27 @@ export async function GET(request: Request) {
     // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
     // JWT in the Authorization header). The user_id filter in the URL is
     // now defence-in-depth, not the only guard.
+    //
+    // The `since` (date-range) filter is now pushed into the Supabase query
+    // itself (&timestamp=gte.<iso>), not applied client-side after the
+    // fetch. This fixes audit finding #4: previously, the 500-row limit
+    // was applied at the DB BEFORE the since filter ran in JS, so a user
+    // with >500 traces total would see only their 500 most-recent traces
+    // regardless of which time range they selected — anything older than
+    // the 500th-most-recent was silently invisible.
+    const since = parseSinceParam(request.url)
     const rows = (await supaUserRequest(
-      `traces?user_id=eq.${encodeURIComponent(userId)}&order=timestamp.desc&limit=500`,
+      buildTracesQuery(userId, { since }),
       userId
     )) as Trace[]
 
-    // ── Time-range filter (default: Today) ────────────────────────────────
-    // The Agents page defaults to "Today" so old agents don't clutter the
-    // view. The client computes the inclusive lower-bound timestamp (in the
-    // user's LOCAL timezone, via rangeStartMs in lib/trace-utils.ts) and
-    // sends it as ?since=<epoch_ms>. The server just does a numeric
-    // comparison — no timezone logic here, which keeps it correct regardless
-    // of the server's TZ (Vercel runs UTC by default).
-    //
-    // If `since` is missing/invalid, no filter is applied (All Time). This
-    // preserves backward compat for any caller that doesn't send the param.
-    const sinceParam = new URL(request.url).searchParams.get('since')
-    const sinceMs = sinceParam != null ? Number(sinceParam) : NaN
-    const filtered = Number.isFinite(sinceMs)
+    // Defense-in-depth: also filter client-side, in case of clock skew
+    // between client and server or any timestamp format mismatch. The DB
+    // filter is the actual fix; this just catches the edge cases.
+    const filtered = since != null
       ? rows.filter((t) => {
           const ms = new Date(t.timestamp).getTime()
-          return Number.isFinite(ms) && ms >= sinceMs
+          return Number.isFinite(ms) && ms >= since
         })
       : rows
 
@@ -42,7 +48,16 @@ export async function GET(request: Request) {
     // locked by tests/test_tracer.py::test_api_agents_filter_contract.
     const agents = deriveAgentCards(filtered)
 
-    return NextResponse.json({ agents })
+    return NextResponse.json({
+      agents,
+      // Signals to the client that more rows likely exist beyond the 500-row
+      // cap. The dashboard can show a "showing most recent N agents — older
+      // data not included" indicator instead of silently truncating.
+      truncated: isTruncated(rows, DEFAULT_TRACE_LIMIT),
+      // Echo the applied filter so the client can confirm what window it's
+      // actually seeing (vs. what it asked for).
+      since_applied: since,
+    })
   } catch (error) {
     console.error('[api/agents] request failed:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
