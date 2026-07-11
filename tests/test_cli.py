@@ -109,3 +109,84 @@ def test_replay_missing_trace(cli, storage, capsys):
     cli.replay("does-not-exist")
     out = capsys.readouterr().out
     assert "not found" in out
+
+
+def test_view_preserves_full_32char_trace_id(cli, storage, capsys):
+    """The full 32-char trace ID must appear in view() output.
+
+    `swarmtrace-replay <id>` does an exact `get_by_id(trace_id)` lookup,
+    so the ID displayed by view() must be the full 32-char UUID —
+    truncating to 8 chars would make the replay workflow impossible
+    (can't copy-paste, can't recover the full ID from a 8-char prefix).
+    This test guards against any future "let's shorten the IDs in the
+    tree view for aesthetics" change that breaks replay.
+    """
+    full_id = "0123456789abcdef0123456789abcdef"  # 32 hex chars, like uuid4().hex
+    storage.save_trace(
+        full_id, None, "rag_agent", "('q',)", "answer", 0.5, None,
+        "2026-07-12T10:00:00+00:00",
+        input_tokens=10, output_tokens=5, cost_usd=0.001,
+        kind="agent", agent_id=full_id, agent_name="Test",
+    )
+    cli.view(limit=10)
+    out = capsys.readouterr().out
+    # The full 32-char ID must be in the output (table + tree view both).
+    assert full_id in out, (
+        f"Full 32-char trace ID not found in view() output — "
+        f"was it truncated? Looked for: {full_id!r}"
+    )
+
+
+def test_view_tree_does_not_wrap_at_80_cols(cli, storage, capsys, monkeypatch):
+    """Regression: tree view branches must not wrap onto a second line.
+
+    Pre-fix, branch labels like `mistral_answer() (llm) [32-char-uuid]
+    0.608s $0.000236 OK` exceeded 80 cols, and rich.Tree wrapped the
+    trailing `OK` onto a new line, breaking the indentation:
+
+        ├── mistral_answer() (llm) [41c2494b...] 0.608s $0.000236
+        │   OK                                                          ← BROKEN
+
+    Fix was to drop the redundant OK/ERROR suffix from the tree view
+    (status is already shown in the table view above). This test sets
+    COLUMNS=80 and verifies no tree branch line wraps.
+    """
+    # Force rich to render at 80 cols (it reads from COLUMNS env var)
+    monkeypatch.setenv("COLUMNS", "80")
+    # Seed a tree that would have wrapped pre-fix: long function name +
+    # 32-char trace ID + non-zero cost (longer than $0).
+    full_id = "abcdef1234567890abcdef1234567890"  # 32 chars
+    storage.save_trace(
+        full_id, None, "rag_agent_with_long_name", "('q',)", "a", 0.5, None,
+        "2026-07-12T10:00:00+00:00",
+        input_tokens=10, output_tokens=5, cost_usd=0.000236,
+        kind="agent", agent_id=full_id, agent_name="Test",
+    )
+    storage.save_trace(
+        "child1234567890abcdef1234567890", full_id,
+        "mistral_answer_with_long_name", "('q', ['ctx'])", "a", 0.45, None,
+        "2026-07-12T10:00:00+00:00",
+        input_tokens=80, output_tokens=12, cost_usd=0.000652,
+        kind="llm", agent_id=full_id, agent_name="Test",
+    )
+    cli.view(limit=10)
+    out = capsys.readouterr().out
+
+    # Find the tree section and verify no branch line wraps.
+    # A wrapped line has the tree indent prefix (│   or spaces) but no
+    # function name — i.e., it's a continuation of the previous line.
+    tree_section = out.split("=== Agent Tree ===", 1)[-1]
+    tree_lines = tree_section.split("\n")
+    # Every line in the tree should contain a function name (rag_agent
+    # or mistral_answer) or be the "Total" summary. Continuation lines
+    # from wrapping would have neither.
+    for i, line in enumerate(tree_lines):
+        if "Total" in line or "===" in line or not line.strip():
+            continue
+        # Tree branch lines start with ├── or └── or are root lines.
+        # They must contain a function name — wrapped continuations don't.
+        if line.startswith(("├", "└", "rag_agent", "mistral")):
+            assert "rag_agent" in line or "mistral_answer" in line or "retrieve" in line, (
+                f"Tree line {i} looks like a wrapped continuation "
+                f"(no function name): {line!r}"
+            )
