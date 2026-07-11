@@ -4,6 +4,44 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] — 2026-07-11
+
+### Fixed
+- **`args_repr` now capped at 4000 chars to match `output`** (`swarmtrace/tracer.py`):
+  `_flush` was doing `args_repr = str(args[:2])` (no cap) while `output` went
+  through `_safe_str(result)` (capped at 4000). A function called with one
+  large argument (big string, dataframe repr, base64 screenshot, etc.) produced
+  a trace whose `args` field was unbounded while `output` was exactly 4000 chars.
+  Downstream: the oversized row could push its batch over the server's
+  `MAX_BODY_BYTES = 64KB` → 413 → `resync()` retries the row forever (it never
+  fits), never marks it `synced=1`, and it silently leaks in the local SQLite
+  DB forever while burning retry time on every resync run. Confirmed live with
+  non-compressible base64 args (the real-world case — repetitive `XXXX...`
+  gzips 250:1 and hid the bug). Fix: `args_repr = _safe_str(args[:2])` so both
+  fields cap at 4000. After fix, the previously-oversized batch gzips to ~3.4KB
+  and syncs cleanly. Audit finding #3.
+
+### Changed
+- **`SWARMTRACE_ENDPOINT` now requires `https://` (or localhost)** (`swarmtrace/tracer.py`):
+  `_normalize_base_url` previously accepted any string, so
+  `SWARMTRACE_ENDPOINT=http://example.com` would silently send the API key
+  over plaintext HTTP with zero warning. New `_validate_endpoint_scheme(url)`
+  function rejects non-https URLs unless the host is `localhost`, `127.0.0.1`,
+  or `::1`. When rejected, `_remote_config` logs a warning AND returns an empty
+  URL — the worker skips sending (matching the "no endpoint configured" path)
+  so the API key never goes over the wire. **⚠️ Breaking change for SDK users
+  with `SWARMTRACE_ENDPOINT=http://non-localhost`:** the SDK will refuse to
+  send traces after upgrading. Switch to `https://`, or use
+  `http://localhost:...` for local dev. RFC1918 IPs (`192.168.x.x`, `10.x.x.x`)
+  are intentionally NOT excepted — they're often used for internal services
+  that may not be as trusted as a dev loopback. Users who need them can set up
+  HTTPS locally (mkcert, caddy). Audit finding #5.
+
+### Notes
+- This version also includes frontend-side audit fixes (key-cache revocation
+  redesign, `truncated` indicator in dashboard UI) that ship with the Next.js
+  deployment, not the PyPI package. See PR #16 for the full breakdown.
+
 ## [0.4.10] — 2026-07-07
 
 ### Fixed
