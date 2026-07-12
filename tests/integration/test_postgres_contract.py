@@ -93,6 +93,39 @@ def db_conn():
     conn.autocommit = True
     cur = conn.cursor()
 
+    # Set up stubs for Supabase-specific dependencies before applying
+    # migrations. The migrations assume they're running in a Supabase
+    # project, which provides:
+    #   - `auth` schema with jwt() + uid() functions (used in RLS policies)
+    #   - `authenticated` + `service_role` roles (used in RLS TO clauses)
+    #   - `supabase_realtime` publication (ALTER PUBLICATION in 0002/0004/0005)
+    # Plain Postgres (CI service container) has none of these. The stubs
+    # let the migrations apply as-is. RLS policies evaluate to NULL (no
+    # rows visible via RLS), but the `postgres` superuser bypasses RLS, so
+    # tests can still read/write all tables.
+    cur.execute("""
+        CREATE SCHEMA IF NOT EXISTS auth;
+        CREATE OR REPLACE FUNCTION auth.jwt() RETURNS jsonb
+            LANGUAGE sql AS $$SELECT NULL::jsonb$$;
+        CREATE OR REPLACE FUNCTION auth.uid() RETURNS uuid
+            LANGUAGE sql AS $$SELECT NULL::uuid$$;
+    """)
+    # Roles can't be CREATEd with IF NOT EXISTS — use a DO block.
+    cur.execute("""
+        DO $$ BEGIN
+            CREATE ROLE authenticated;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+        DO $$ BEGIN
+            CREATE ROLE service_role;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+        DO $$ BEGIN
+            CREATE PUBLICATION supabase_realtime;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
+    """)
+
     # Apply migrations in order. Each migration file is idempotent
     # (CREATE TABLE IF NOT EXISTS, CREATE OR REPLACE FUNCTION, etc.) so
     # re-running on a fresh DB is safe.
@@ -114,8 +147,9 @@ def db_conn():
     cur.close()
     yield conn
 
-    # Cleanup: drop all tables + functions so re-running the suite is clean.
-    # (CI uses a fresh container per run, but this makes local iteration safe.)
+    # Cleanup: drop all tables + functions + Supabase stubs so re-running
+    # the suite is clean. (CI uses a fresh container per run, but this
+    # makes local iteration safe.)
     cleanup_cur = conn.cursor()
     cleanup_cur.execute("""
         DROP TABLE IF EXISTS public.user_integrations CASCADE;
@@ -124,6 +158,13 @@ def db_conn():
         DROP TABLE IF EXISTS public.api_keys CASCADE;
         DROP TABLE IF EXISTS public.traces CASCADE;
         DROP FUNCTION IF EXISTS public.upsert_trace_with_metrics;
+        DROP FUNCTION IF EXISTS public.upsert_trace;
+        DROP PUBLICATION IF EXISTS supabase_realtime;
+        DROP FUNCTION IF EXISTS auth.jwt();
+        DROP FUNCTION IF EXISTS auth.uid();
+        DROP SCHEMA IF EXISTS auth CASCADE;
+        DROP ROLE IF EXISTS service_role;
+        DROP ROLE IF EXISTS authenticated;
     """)
     cleanup_cur.close()
     conn.close()
