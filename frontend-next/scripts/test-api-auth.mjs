@@ -96,3 +96,69 @@ describe('createRateLimiter (per-isolate fallback path)', () => {
     assert.equal(await rlB.check('shared-key'), true)  // B unaffected
   })
 })
+
+// ── bounded memory (audit finding #7) ───────────────────────────────────────
+
+describe('createRateLimiter fallback map memory bound (finding #7)', () => {
+  test('expired entries are swept, not kept forever', async () => {
+    // Tiny window + tiny sweepEvery so a sweep is forced almost
+    // immediately instead of needing 500 real calls.
+    const rl = createRateLimiter({
+      limit: 100,
+      prefix: 'test-leak-1',
+      windowMs: 10,
+      sweepEvery: 3,
+    })
+
+    // Hit 3 distinct keys — their windows expire almost immediately.
+    await rl.check('leak-a')
+    await rl.check('leak-b')
+    await rl.check('leak-c')
+    assert.equal(rl._debugMapSize(), 3, 'all 3 keys tracked before expiry')
+
+    // Wait past the 10ms window, then make ONE more call. That call both
+    // crosses the sweepEvery=3 threshold and finds all prior entries
+    // expired — they should be swept away, not accumulate forever.
+    await new Promise(r => setTimeout(r, 20))
+    await rl.check('leak-d') // triggers the sweep (4th call, sweepEvery=3)
+    await rl.check('leak-e')
+    await rl.check('leak-f') // triggers another sweep
+
+    // Bounded: only the keys still inside their (already-expired-by-now)
+    // window survive a sweep, so the map never grows past what's
+    // "currently live" — it must NOT be 6 (one entry per key ever seen).
+    assert.ok(
+      rl._debugMapSize() < 6,
+      `map grew unboundedly: size=${rl._debugMapSize()}, expected old ` +
+        `entries to have been swept`,
+    )
+  })
+
+  test('many distinct short-lived keys do not accumulate without bound', async () => {
+    const rl = createRateLimiter({
+      limit: 1000,
+      prefix: 'test-leak-2',
+      windowMs: 5,
+      sweepEvery: 10,
+    })
+
+    // Simulate 50 distinct API keys checking in, in bursts, with the
+    // window expiring between bursts — the historical bug pattern for a
+    // long-lived isolate serving many different callers over time.
+    for (let batch = 0; batch < 5; batch++) {
+      for (let i = 0; i < 10; i++) {
+        await rl.check(`burst-${batch}-${i}`)
+      }
+      await new Promise(r => setTimeout(r, 10)) // let the window expire
+    }
+
+    // 50 distinct keys were checked total, but thanks to periodic
+    // sweeping the map should never have been allowed to hold anywhere
+    // near all 50 stale entries at once by the end.
+    assert.ok(
+      rl._debugMapSize() <= 10,
+      `map size=${rl._debugMapSize()} — expired entries from earlier ` +
+        `bursts were not being swept`,
+    )
+  })
+})

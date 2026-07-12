@@ -67,12 +67,21 @@ export async function sha256Hex(input: string): Promise<string> {
 export interface RateLimiter {
   /** Returns true if the request is allowed, false if rate-limited. */
   check(keyHash: string): Promise<boolean>
+  /** Test-only: number of distinct keys currently held in the per-isolate
+   * fallback map (always 0 when Upstash is configured, since that path
+   * never touches the map). Exists so the bounded-memory fix for audit
+   * finding #7 can be regression-tested from outside the closure. */
+  _debugMapSize?(): number
 }
 
 export function createRateLimiter(opts: {
   limit: number
   prefix: string
   windowMs?: number
+  /** Test-only: how many check() calls between expired-entry sweeps of
+   * the fallback map. Defaults to 500; tests can lower this to force a
+   * sweep deterministically without 500 calls. */
+  sweepEvery?: number
 }): RateLimiter {
   const { limit, prefix } = opts
   const windowMs = opts.windowMs ?? 60_000
@@ -94,11 +103,33 @@ export function createRateLimiter(opts: {
   }
 
   // Per-isolate fallback (used when Upstash env vars are absent).
+  // FIX #7: the map used to grow unbounded -- an entry was created for
+  // every distinct keyHash ever seen and nothing ever deleted it, even
+  // after its window expired. On a long-lived isolate (or in dev, where
+  // Upstash env vars are typically absent) this is a slow memory leak
+  // that scales with the number of distinct API keys seen over the
+  // isolate's lifetime. Sweep expired entries periodically (every
+  // SWEEP_EVERY calls, not every call, so the hot path stays O(1)) so
+  // the map stays bounded by "keys active in the last windowMs", not
+  // "keys ever seen".
   interface RateEntry { count: number; windowStart: number }
   const rateMap = new Map<string, RateEntry>()
+  const SWEEP_EVERY = opts.sweepEvery ?? 500
+  let callsSinceSweep = 0
+
+  function sweepExpired(now: number): void {
+    for (const [k, entry] of rateMap) {
+      if (now - entry.windowStart > windowMs) rateMap.delete(k)
+    }
+  }
 
   function checkLocal(keyHash: string): boolean {
     const now   = Date.now()
+    callsSinceSweep++
+    if (callsSinceSweep >= SWEEP_EVERY) {
+      callsSinceSweep = 0
+      sweepExpired(now)
+    }
     const entry = rateMap.get(keyHash)
     if (!entry || now - entry.windowStart > windowMs) {
       rateMap.set(keyHash, { count: 1, windowStart: now })
@@ -117,6 +148,9 @@ export function createRateLimiter(opts: {
         return success
       }
       return checkLocal(keyHash)
+    },
+    _debugMapSize(): number {
+      return rateMap.size
     },
   }
 }
