@@ -110,17 +110,17 @@ class ToolAttention:
         # phantom "agent" on the dashboard.
         agent_id, agent_name = _current_agent() or (None, None)
         save_trace(
-            str(uuid.uuid4().hex),   # full 32-char — short IDs collision-prone at scale
-            None,
-            "tool_attention.select",
-            query[:200],
-            str([t["name"] for t in selected]),
-            latency,
-            None,
-            datetime.now(timezone.utc).isoformat(),  # fixed: was deprecated utcnow()
-            full_tokens,
-            active_tokens,
-            round((full_tokens - active_tokens) * 0.80 / 1_000_000, 8),
+            id_=str(uuid.uuid4().hex),   # full 32-char — short IDs collision-prone at scale
+            parent_id=None,
+            function="tool_attention.select",
+            args=query[:200],
+            output=str([t["name"] for t in selected]),
+            latency_sec=latency,
+            error=None,
+            timestamp=datetime.now(timezone.utc).isoformat(),  # fixed: was deprecated utcnow()
+            input_tokens=full_tokens,
+            output_tokens=active_tokens,
+            cost_usd=round((full_tokens - active_tokens) * 0.80 / 1_000_000, 8),
             kind="tool", agent_id=agent_id, agent_name=agent_name,
         )
 

@@ -51,11 +51,11 @@ def scrape(url: str, verbose=True):
                 indent, status, latency, bytes_scraped, cost,
             )
         save_trace(
-            trace_id, parent_id, "scrape",
-            url, result[:200] if result else None,
-            latency, error,
-            datetime.now(timezone.utc).isoformat(),
-            len(url) // 4, output_tokens, cost,
+            id_=trace_id, parent_id=parent_id, function="scrape",
+            args=url, output=result[:200] if result else None,
+            latency_sec=latency, error=error,
+            timestamp=datetime.now(timezone.utc).isoformat(),
+            input_tokens=len(url) // 4, output_tokens=output_tokens, cost_usd=cost,
             kind="tool", agent_id=agent_id, agent_name=agent_name,
         )
         _parent_ctx.reset(token)

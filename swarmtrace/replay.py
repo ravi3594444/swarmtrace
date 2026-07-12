@@ -19,7 +19,7 @@ _log = logging.getLogger("swarmtrace.replay")
 
 def show_failures():
     traces = get_traces(limit=50)
-    failed = [t for t in traces if t[6]]
+    failed = [t for t in traces if t["error"]]
 
     if not failed:
         _log.info("No failures found.")
@@ -29,10 +29,6 @@ def show_failures():
     _log.info("%-10s %-20s %-40s %s", "ID", "FUNCTION", "ERROR", "TIMESTAMP")
     _log.info("-" * 90)
     for t in failed:
-        # `*_` swallows session_id, synced, and any future migration columns
-        # so this doesn't break when storage.py adds fields. Same fix as
-        # cli.py in 0.6.2 — replay.py was missed in that release.
-        id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = t
-        _log.info("%-10s %-20s %-40s %s", id_, func, str(error)[:38], timestamp)
+        _log.info("%-10s %-20s %-40s %s", t["id"], t["function"], str(t["error"])[:38], t["timestamp"])
     _log.info("Total failures: %d", len(failed))
     _log.info("Replay any failure: from swarmtrace.replay import replay; replay('id')")

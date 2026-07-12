@@ -7,11 +7,27 @@ import pytest
 import swarmtrace.tracer as tracer
 
 
+_SAVE_TRACE_FIELD_ORDER = (
+    "id_", "parent_id", "function", "args", "output", "latency_sec",
+    "error", "timestamp", "input_tokens", "output_tokens", "cost_usd",
+    "kind", "agent_id", "agent_name", "session_id",
+)
+
+
 @pytest.fixture()
 def records(monkeypatch):
-    """Capture save_trace calls instead of writing to the real SQLite DB."""
+    """Capture save_trace calls instead of writing to the real SQLite DB.
+
+    save_trace is keyword-only now (storage.py Phase 2 refactor), so this
+    reconstructs the old positional tuple shape from the captured kwargs.
+    Every row[N] / row[-N] assertion below keeps working unchanged.
+    """
     saved = []
-    monkeypatch.setattr(tracer, "save_trace", lambda *a, **k: saved.append(a))
+
+    def _capture(**kwargs):
+        saved.append(tuple(kwargs.get(key) for key in _SAVE_TRACE_FIELD_ORDER))
+
+    monkeypatch.setattr(tracer, "save_trace", _capture)
     # Ensure remote ingest stays disabled regardless of the host environment.
     monkeypatch.delenv("SWARMTRACE_API_KEY", raising=False)
     monkeypatch.delenv("SWARMTRACE_ENDPOINT", raising=False)

@@ -370,27 +370,21 @@ def _enqueue_remote(payload: dict) -> None:
 # and exit code. Returns (attempted, succeeded, failed) counts.
 # ---------------------------------------------------------------------------
 
-def _row_to_payload(row: tuple) -> dict:
-    """Convert a traces table row tuple into the /api/ingest payload shape.
-
-    Row layout matches the SELECT * column order in storage.py:
-    id, parent_id, function, args, output, latency_sec, error, timestamp,
-    input_tokens, output_tokens, cost_usd, kind, agent_id, agent_name,
-    session_id, synced.
-    """
-    (id_, parent_id, func, args, output, latency, error, timestamp,
-     in_tok, out_tok, cost, kind, agent_id, agent_name,
-     session_id, _synced) = row
+def _row_to_payload(row: dict) -> dict:
+    """Convert a traces table row (dict, keyed by column name — see
+    storage.py:TraceRow) into the /api/ingest payload shape."""
     payload = {
-        "id": id_, "parent_id": parent_id, "function": func,
-        "args": args or "", "output": output or "", "latency_sec": latency,
-        "error": error, "timestamp": timestamp,
-        "input_tokens": in_tok or 0, "output_tokens": out_tok or 0,
-        "cost_usd": cost or 0.0,
-        "kind": kind, "agent_id": agent_id, "agent_name": agent_name,
+        "id": row["id"], "parent_id": row["parent_id"], "function": row["function"],
+        "args": row["args"] or "", "output": row["output"] or "",
+        "latency_sec": row["latency_sec"],
+        "error": row["error"], "timestamp": row["timestamp"],
+        "input_tokens": row["input_tokens"] or 0,
+        "output_tokens": row["output_tokens"] or 0,
+        "cost_usd": row["cost_usd"] or 0.0,
+        "kind": row["kind"], "agent_id": row["agent_id"], "agent_name": row["agent_name"],
     }
-    if session_id is not None:
-        payload["session_id"] = session_id
+    if row.get("session_id") is not None:
+        payload["session_id"] = row["session_id"]
     return payload
 
 
@@ -650,10 +644,11 @@ def _flush(
     output = redact(output)
     error = redact(error)
     save_trace(
-        trace_id, parent_id, func_name,
-        args_repr, output, latency, error,
-        timestamp, in_tok, out_tok, cost,
-        kind, agent_id, agent_name, session_id,
+        id_=trace_id, parent_id=parent_id, function=func_name,
+        args=args_repr, output=output, latency_sec=latency, error=error,
+        timestamp=timestamp, input_tokens=in_tok, output_tokens=out_tok,
+        cost_usd=cost, kind=kind, agent_id=agent_id, agent_name=agent_name,
+        session_id=session_id,
     )
 
     payload = {

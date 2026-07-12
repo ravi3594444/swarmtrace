@@ -62,29 +62,6 @@ from swarmtrace.storage import get_all_traces, TraceRow
 _log = logging.getLogger("swarmtrace.alerts")
 
 # ---------------------------------------------------------------------------
-# Trace-row column indices — MUST match storage.py's CREATE TABLE +
-# _ADDED_COLUMNS migration order. Using named constants instead of raw
-# `row[13]` makes the indexing self-documenting and gives a single place
-# to update if the schema changes. Without this, a column migration
-# silently shifts every index and breaks alert rules in subtle ways
-# (e.g. budget_breach reads `row[10]` for cost — if a column were
-# inserted before cost_usd, it would silently read the wrong field).
-#
-# Permanent fix is to refactor storage.py to return dicts (Phase 2);
-# this is a stopgap that makes the fragility visible.
-#   0:id  1:parent_id  2:function  3:args  4:output  5:latency_sec
-#   6:error  7:timestamp  8:input_tokens  9:output_tokens  10:cost_usd
-#   11:kind  12:agent_id  13:agent_name  14:session_id  15:synced
-_T_ID = 0
-_T_FUNC = 2
-_T_LATENCY = 5
-_T_ERROR = 6
-_T_TIMESTAMP = 7
-_T_COST = 10
-_T_AGENT_ID = 12
-_T_AGENT_NAME = 13
-
-# ---------------------------------------------------------------------------
 # Schema — keep the alerts table in a SEPARATE SQLite file so the trace DB
 # stays a pure append-only log and the alert DB can be rotated independently.
 # ---------------------------------------------------------------------------
@@ -248,17 +225,16 @@ class RuleEngine:
 
     def evaluate(self, traces: List[TraceRow]) -> List[Alert]:
         """Run every enabled rule over ``traces`` and return the fired alerts."""
-        # The trace row is a tuple from the storage layer:
-        #   (id, parent_id, function, args, output, latency_sec, error,
-        #    timestamp, input_tokens, output_tokens, cost_usd,
-        #    kind, agent_id, agent_name)
+        # Each trace row is a dict from the storage layer (see
+        # storage.py:TraceRow) -- keyed by column name, so this survives any
+        # future schema migration without changes here.
         if not traces:
             return []
 
         # Bucket by agent_id for rules that need per-agent aggregation.
         by_agent: Dict[str, List[TraceRow]] = {}
         for row in traces:
-            agent_id = row[_T_AGENT_ID] or row[_T_ID] or "unknown"
+            agent_id = row["agent_id"] or row["id"] or "unknown"
             by_agent.setdefault(agent_id, []).append(row)
 
         fired: List[Alert] = []
@@ -286,14 +262,14 @@ class RuleEngine:
             latest_ts: Optional[datetime] = None
             agent_name = None
             for row in rows:
-                ts = self._parse_ts(row[_T_TIMESTAMP])
+                ts = self._parse_ts(row["timestamp"])
                 if ts is None or ts < cutoff:
                     continue
-                total += float(row[_T_COST] or 0.0)
-                trace_ids.append(row[_T_ID])
+                total += float(row["cost_usd"] or 0.0)
+                trace_ids.append(row["id"])
                 if latest_ts is None or ts > latest_ts:
                     latest_ts = ts
-                agent_name = agent_name or row[_T_AGENT_NAME]
+                agent_name = agent_name or row["agent_name"]
             if total >= cfg.budget_usd:
                 fired.append(Alert(
                     id=uuid.uuid4().hex,
@@ -326,10 +302,10 @@ class RuleEngine:
             recent = rows[: cfg.min_traces]
             if len(recent) < cfg.min_traces:
                 continue
-            errors = sum(1 for r in recent if r[_T_ERROR])   # _T_ERROR = error
+            errors = sum(1 for r in recent if r["error"])
             rate = errors / len(recent)
             if rate >= cfg.error_rate_threshold:
-                agent_name = next((r[_T_AGENT_NAME] for r in recent if r[_T_AGENT_NAME]), agent_id)
+                agent_name = next((r["agent_name"] for r in recent if r["agent_name"]), agent_id)
                 fired.append(Alert(
                     id=uuid.uuid4().hex,
                     rule="error_spike",
@@ -346,7 +322,7 @@ class RuleEngine:
                         "rate":       round(rate, 4),
                         "threshold":  cfg.error_rate_threshold,
                     }),
-                    trace_ids=[r[_T_ID] for r in recent if r[_T_ERROR]][:50],
+                    trace_ids=[r["id"] for r in recent if r["error"]][:50],
                 ))
                 self._mark_fired("error_spike", agent_id)
         return fired
@@ -361,7 +337,7 @@ class RuleEngine:
             if len(recent) < cfg.min_traces:
                 continue
             latencies = sorted(
-                float(r[_T_LATENCY] or 0.0) for r in recent
+                float(r["latency_sec"] or 0.0) for r in recent
             )
             # Round UP to the next sample so the slowest 5% (i.e. the trailing
             # outlier we actually care about) is what p95 reports. Using
@@ -370,7 +346,7 @@ class RuleEngine:
             p95_idx = max(0, min(n - 1, int(n * 0.95 + 0.999999)))
             p95 = latencies[p95_idx]
             if p95 >= cfg.latency_p95_sec:
-                agent_name = next((r[_T_AGENT_NAME] for r in recent if r[_T_AGENT_NAME]), agent_id)
+                agent_name = next((r["agent_name"] for r in recent if r["agent_name"]), agent_id)
                 fired.append(Alert(
                     id=uuid.uuid4().hex,
                     rule="latency_regression",
@@ -388,7 +364,7 @@ class RuleEngine:
                         "samples":  len(latencies),
                         "threshold": cfg.latency_p95_sec,
                     }),
-                    trace_ids=[r[_T_ID] for r in recent[:50]],
+                    trace_ids=[r["id"] for r in recent[:50]],
                 ))
                 self._mark_fired("latency_regression", agent_id)
         return fired

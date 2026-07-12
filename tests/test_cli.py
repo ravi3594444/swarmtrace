@@ -42,16 +42,16 @@ def cli(storage):
 def _seed_tree(storage):
     """Insert a parent agent span + a child llm span, mirroring real usage."""
     storage.save_trace(
-        "root-1", None, "rag_agent", "('how do I install?',)",
-        "pip install swarmtrace", 0.42, None,
-        "2026-07-12T10:00:00+00:00",
+        id_="root-1", parent_id=None, function="rag_agent", args="('how do I install?',)",
+        output="pip install swarmtrace", latency_sec=0.42, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         input_tokens=50, output_tokens=12, cost_usd=0.0001,
         kind="agent", agent_id="agent-1", agent_name="RAG Agent",
     )
     storage.save_trace(
-        "child-1", "root-1", "mistral_answer", "('q', ['ctx'])",
-        "pip install swarmtrace", 0.38, None,
-        "2026-07-12T10:00:00+00:00",
+        id_="child-1", parent_id="root-1", function="mistral_answer", args="('q', ['ctx'])",
+        output="pip install swarmtrace", latency_sec=0.38, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         input_tokens=80, output_tokens=12, cost_usd=0.0009,
         kind="llm", agent_id="agent-1", agent_name="RAG Agent",
     )
@@ -82,9 +82,10 @@ def test_view_handles_empty_db(cli, storage, capsys):
 def test_view_handles_errors_and_kinds(cli, storage, capsys):
     """Rows with errors and non-agent kinds must render without raising."""
     storage.save_trace(
-        "err-1", None, "broken_tool", "(args,)", None, 0.01,
-        "ConnectionError: mistral unreachable",
-        "2026-07-12T10:01:00+00:00",
+        id_="err-1", parent_id=None, function="broken_tool", args="(args,)",
+        output=None, latency_sec=0.01,
+        error="ConnectionError: mistral unreachable",
+        timestamp="2026-07-12T10:01:00+00:00",
         kind="tool", agent_id="agent-2", agent_name="Bad Agent",
     )
     cli.view(limit=10)
@@ -123,8 +124,9 @@ def test_view_preserves_full_32char_trace_id(cli, storage, capsys):
     """
     full_id = "0123456789abcdef0123456789abcdef"  # 32 hex chars, like uuid4().hex
     storage.save_trace(
-        full_id, None, "rag_agent", "('q',)", "answer", 0.5, None,
-        "2026-07-12T10:00:00+00:00",
+        id_=full_id, parent_id=None, function="rag_agent", args="('q',)",
+        output="answer", latency_sec=0.5, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         input_tokens=10, output_tokens=5, cost_usd=0.001,
         kind="agent", agent_id=full_id, agent_name="Test",
     )
@@ -157,15 +159,17 @@ def test_view_tree_does_not_wrap_at_80_cols(cli, storage, capsys, monkeypatch):
     # 32-char trace ID + non-zero cost (longer than $0).
     full_id = "abcdef1234567890abcdef1234567890"  # 32 chars
     storage.save_trace(
-        full_id, None, "rag_agent_with_long_name", "('q',)", "a", 0.5, None,
-        "2026-07-12T10:00:00+00:00",
+        id_=full_id, parent_id=None, function="rag_agent_with_long_name", args="('q',)",
+        output="a", latency_sec=0.5, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         input_tokens=10, output_tokens=5, cost_usd=0.000236,
         kind="agent", agent_id=full_id, agent_name="Test",
     )
     storage.save_trace(
-        "child1234567890abcdef1234567890", full_id,
-        "mistral_answer_with_long_name", "('q', ['ctx'])", "a", 0.45, None,
-        "2026-07-12T10:00:00+00:00",
+        id_="child1234567890abcdef1234567890", parent_id=full_id,
+        function="mistral_answer_with_long_name", args="('q', ['ctx'])",
+        output="a", latency_sec=0.45, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         input_tokens=80, output_tokens=12, cost_usd=0.000652,
         kind="llm", agent_id=full_id, agent_name="Test",
     )
@@ -204,18 +208,21 @@ def test_view_tree_nests_grandchildren_correctly(cli, storage, capsys, monkeypat
     """
     monkeypatch.setenv("COLUMNS", "80")
     storage.save_trace(
-        "root-1", None, "root_agent", "()", "out", 0.5, None,
-        "2026-07-12T10:00:00+00:00",
+        id_="root-1", parent_id=None, function="root_agent", args="()", output="out",
+        latency_sec=0.5, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         kind="agent", agent_id="a1", agent_name="Root",
     )
     storage.save_trace(
-        "sub-1", "root-1", "sub_agent", "()", "out", 0.3, None,
-        "2026-07-12T10:00:00+00:00",
+        id_="sub-1", parent_id="root-1", function="sub_agent", args="()", output="out",
+        latency_sec=0.3, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         kind="agent", agent_id="a2", agent_name="Sub",
     )
     storage.save_trace(
-        "tool-1", "sub-1", "tool_call", "()", "out", 0.1, None,
-        "2026-07-12T10:00:00+00:00",
+        id_="tool-1", parent_id="sub-1", function="tool_call", args="()", output="out",
+        latency_sec=0.1, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         kind="tool", agent_id="a2", agent_name="Sub",
     )
     cli.view(limit=10)
@@ -252,14 +259,16 @@ def test_view_tree_shows_status_indicators(cli, storage, capsys, monkeypatch):
     """
     monkeypatch.setenv("COLUMNS", "80")
     storage.save_trace(
-        "ok-1", None, "good_agent", "()", "out", 0.5, None,
-        "2026-07-12T10:00:00+00:00",
+        id_="ok-1", parent_id=None, function="good_agent", args="()", output="out",
+        latency_sec=0.5, error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
         kind="agent", agent_id="a1", agent_name="Good",
     )
     storage.save_trace(
-        "err-1", "ok-1", "bad_tool", "()", None, 0.1,
-        "ConnectionError: timed out",
-        "2026-07-12T10:00:00+00:00",
+        id_="err-1", parent_id="ok-1", function="bad_tool", args="()", output=None,
+        latency_sec=0.1,
+        error="ConnectionError: timed out",
+        timestamp="2026-07-12T10:00:00+00:00",
         kind="tool", agent_id="a1", agent_name="Good",
     )
     cli.view(limit=10)

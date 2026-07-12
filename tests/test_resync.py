@@ -62,8 +62,10 @@ def remote_config(monkeypatch):
 def _save_trace(storage, trace_id="t1", synced=0):
     """Insert a trace row directly via storage (bypassing the decorator)."""
     storage.save_trace(
-        trace_id, None, "fn", "()", "out", 0.1, None,
-        "2026-01-01T00:00:00+00:00", 10, 5, 0.001,
+        id_=trace_id, parent_id=None, function="fn", args="()", output="out",
+        latency_sec=0.1, error=None,
+        timestamp="2026-01-01T00:00:00+00:00", input_tokens=10, output_tokens=5,
+        cost_usd=0.001,
         kind="agent", agent_id=trace_id, agent_name="fn",
     )
     # save_trace leaves synced=0 by default; if the test wants synced=1,
@@ -127,12 +129,12 @@ class TestSyncedColumn:
         # resync picks it up.
         row = storage.get_by_id("old-row")
         assert row is not None
-        assert row[15] == 0  # synced column is index 15
+        assert row["synced"] == 0  # synced column
 
     def test_new_rows_default_to_unsynced(self, fresh_storage):
         _save_trace(fresh_storage, "t-new")
         row = fresh_storage.get_by_id("t-new")
-        assert row[15] == 0  # synced=0
+        assert row["synced"] == 0  # synced=0
 
 
 # --------------------------------------------------------------------------
@@ -245,8 +247,8 @@ class TestResyncFunction:
         assert succeeded == 2
         assert failed == 0
         # Both rows now marked synced=1 in the DB.
-        assert fresh_storage.get_by_id("t1")[15] == 1
-        assert fresh_storage.get_by_id("t2")[15] == 1
+        assert fresh_storage.get_by_id("t1")["synced"] == 1
+        assert fresh_storage.get_by_id("t2")["synced"] == 1
 
     def test_resync_leaves_failed_rows_unsynced(self, fresh_storage, remote_config):
         _save_trace(fresh_storage, "t-fail-1")
@@ -259,8 +261,8 @@ class TestResyncFunction:
         assert succeeded == 0
         assert failed == 2
         # Rows stay synced=0 — resync can retry them next run.
-        assert fresh_storage.get_by_id("t-fail-1")[15] == 0
-        assert fresh_storage.get_by_id("t-fail-2")[15] == 0
+        assert fresh_storage.get_by_id("t-fail-1")["synced"] == 0
+        assert fresh_storage.get_by_id("t-fail-2")["synced"] == 0
 
     def test_resync_only_touches_unsynced_rows(self, fresh_storage, remote_config):
         """The critical spec requirement: resync only re-sends rows where
@@ -288,7 +290,7 @@ class TestResyncFunction:
         assert "s2" not in sent_ids
         # After resync, all 4 rows are synced=1.
         for tid in ("u1", "u2", "s1", "s2"):
-            assert fresh_storage.get_by_id(tid)[15] == 1
+            assert fresh_storage.get_by_id(tid)["synced"] == 1
 
     def test_resync_respects_batch_size_limit(self, fresh_storage, remote_config):
         # 5 unsynced rows, batch_size=3 → only 3 attempted.

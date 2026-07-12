@@ -24,12 +24,16 @@ def _parse_limit(default: int = DEFAULT_VIEW_LIMIT) -> int:
 # ---------- helpers ----------
 
 def _print_tree(traces, parent_id=None, indent=0):
-    children = [t for t in traces if t[1] == parent_id]
+    # Rows are dicts keyed by column name (storage.py), so any future
+    # migration column is automatically available under its own name here
+    # with no code change needed — see storage.py:TraceRow.
+    children = [t for t in traces if t["parent_id"] == parent_id]
     for t in children:
-        # `*_` swallows session_id, synced, and any future migration columns
-        # so this doesn't break when storage.py adds fields. The CLI only reads
-        # the first 14 columns by name; see storage.py:_ADDED_COLUMNS.
-        id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = t
+        id_, func, error = t["id"], t["function"], t["error"]
+        latency, in_tok, out_tok, cost, kind = (
+            t["latency_sec"], t["input_tokens"], t["output_tokens"],
+            t["cost_usd"], t["kind"],
+        )
         status = "ERROR" if error else "OK"
         tag = "" if kind == "agent" else f" [{kind}]"
         prefix = "    " * indent + ("└── " if indent > 0 else "")
@@ -52,8 +56,8 @@ def view(limit=None):
         print("No traces found. Run your agent with @observe first.")
         return
 
-    total_cost   = sum(t[10] for t in traces if t[10])
-    total_tokens = sum((t[8] or 0) + (t[9] or 0) for t in traces)
+    total_cost   = sum(t["cost_usd"] for t in traces if t["cost_usd"])
+    total_tokens = sum((t["input_tokens"] or 0) + (t["output_tokens"] or 0) for t in traces)
 
     try:
         from rich.console import Console
@@ -72,7 +76,10 @@ def view(limit=None):
         table.add_column("Status",   width=8)
 
         for t in traces:
-            id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = t
+            id_, func, error, kind = t["id"], t["function"], t["error"], t["kind"]
+            latency, in_tok, out_tok, cost = (
+                t["latency_sec"], t["input_tokens"], t["output_tokens"], t["cost_usd"],
+            )
             status     = "[red]ERROR[/red]" if error else "[green]OK[/green]"
             tokens_str = f"{in_tok or 0}in/{out_tok or 0}out"
             table.add_row(id_, func, kind, f"{latency}s", tokens_str, f"${cost or 0}", status)
@@ -108,14 +115,16 @@ def view(limit=None):
             t.overflow = "ellipsis"
             return t
 
-        roots = [t for t in traces if t[1] is None]
+        roots = [t for t in traces if t["parent_id"] is None]
         for root in roots:
-            id_, par, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = root
+            id_, func, error, kind = root["id"], root["function"], root["error"], root["kind"]
+            latency, cost = root["latency_sec"], root["cost_usd"]
             tree = Tree(_tree_label(func, error, kind, latency, cost, id_))
 
             def add_children(tree_node, pid):
-                for child in [t for t in traces if t[1] == pid]:
-                    cid, _, cfunc, _, _, clatency, cerror, _, _, _, ccost, ckind, *_ = child
+                for child in [t for t in traces if t["parent_id"] == pid]:
+                    cid, cfunc, cerror, ckind = child["id"], child["function"], child["error"], child["kind"]
+                    clatency, ccost = child["latency_sec"], child["cost_usd"]
                     branch = tree_node.add(_tree_label(cfunc, cerror, ckind, clatency, ccost, cid))
                     # CRITICAL: recurse into `branch` (the new child node),
                     # NOT `tree_node` (the parent). Recursing into tree_node
@@ -133,7 +142,8 @@ def view(limit=None):
     except ImportError:
         print("\n=== swarmtrace Trace View ===")
         for t in traces:
-            id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = t
+            id_, func, error, kind = t["id"], t["function"], t["error"], t["kind"]
+            latency, cost = t["latency_sec"], t["cost_usd"]
             status = "ERROR" if error else "OK"
             tag = "" if kind == "agent" else f" ({kind})"
             print(f"{id_:<10} {(func + tag):<20} {str(latency)+'s':<10} ${cost or 0} {status}")
@@ -150,7 +160,12 @@ def replay(trace_id):
         print(f"Trace {trace_id} not found.")
         return
 
-    id_, parent_id, func, args, output, latency, error, timestamp, in_tok, out_tok, cost, kind, agent_id, agent_name, *_ = trace
+    func, args, output = trace["function"], trace["args"], trace["output"]
+    kind, latency, error = trace["kind"], trace["latency_sec"], trace["error"]
+    timestamp, in_tok, out_tok = trace["timestamp"], trace["input_tokens"], trace["output_tokens"]
+    cost, agent_id, agent_name, parent_id = (
+        trace["cost_usd"], trace["agent_id"], trace["agent_name"], trace["parent_id"],
+    )
 
     try:
         from rich.console import Console
@@ -191,7 +206,7 @@ def main_replay():
         print("Usage: swarmtrace-replay <trace_id>")
         print("\nRecent traces:")
         for t in get_traces(limit=5):
-            print(f"  {t[0]} — {t[2]}() — {t[7]}")
+            print(f"  {t['id']} — {t['function']}() — {t['timestamp']}")
         return
     replay(sys.argv[1])
 

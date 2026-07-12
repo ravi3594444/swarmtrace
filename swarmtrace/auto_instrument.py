@@ -270,10 +270,11 @@ def _record_async(
         # Using module reference so tests can monkeypatch tracer.save_trace.
         session_id = _tracer._current_session()
         _tracer.save_trace(
-            trace_id, parent_id, func_name,
-            args_str, output, latency, error_str,
-            timestamp, in_tok, out_tok, cost,
-            "llm", agent_id, agent_name, session_id,
+            id_=trace_id, parent_id=parent_id, function=func_name,
+            args=args_str, output=output, latency_sec=latency, error=error_str,
+            timestamp=timestamp, input_tokens=in_tok, output_tokens=out_tok,
+            cost_usd=cost, kind="llm", agent_id=agent_id, agent_name=agent_name,
+            session_id=session_id,
         )
         _tracer._enqueue_remote({
             "id": trace_id, "parent_id": parent_id, "function": func_name,
