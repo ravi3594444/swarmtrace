@@ -145,6 +145,29 @@ export async function POST(req: Request) {
     // On a confirmed-successful insert, the SDK marks the row synced=1 in
     // its local SQLite DB (task 3). If this whole batch RPC sequence fails,
     // the SDK leaves all rows synced=0 and the resync CLI replays them.
+    //
+    // TRANSACTION SEMANTICS (audit finding #5 — spelling this out
+    // explicitly since it's easy to assume otherwise from the loop shape):
+    // this `for` loop is NOT wrapped in a single database transaction.
+    // Each `supaRpc` call is its own independent Postgres transaction. If
+    // row K throws (network blip, constraint violation, Supabase 5xx),
+    // rows 1..K-1 in this batch are ALREADY DURABLY COMMITTED even though
+    // this whole HTTP request goes on to return 500 below. This is safe
+    // ONLY because `upsert_trace_with_metrics` is idempotent per-row (ON
+    // CONFLICT DO UPDATE) — the SDK's retry-the-whole-batch-on-any-failure
+    // strategy re-sends rows 1..K-1 too, and re-upserting an
+    // already-committed row is a no-op for `traces` and must stay a no-op
+    // for whatever conditional metrics increment runs alongside it (see
+    // the RPC's own SQL for how it avoids double-counting on a re-upsert
+    // of the same id).
+    //
+    // If this loop is ever replaced with a real multi-row batch RPC
+    // wrapped in one transaction, that RPC MUST preserve per-row
+    // idempotency under retry — either by keeping the same ON CONFLICT
+    // semantics per row inside the batch, or by making the whole batch
+    // idempotent as a unit (e.g. keyed by a batch id). Silently dropping
+    // idempotency in a "faster" batch RPC would turn a currently-safe
+    // retry into duplicate metrics on every retried batch.
     for (const row of rows as TraceRow[]) {
       await supaRpc('upsert_trace_with_metrics', {
         p_id:            row.id,
