@@ -195,3 +195,23 @@ def test_scrape_failure_has_zero_cost_and_tokens(fake_scrapling_failing, records
     row = records[0]
     assert row["output_tokens"] == 0
     assert row["cost_usd"] == 0.0
+
+
+def test_scrape_kind_defaults_to_tool(fake_scrapling_ok, records):
+    """Backward-compat: kind='tool' is the default. Existing callers that
+    don't pass kind= keep getting 'tool' — no behavior change."""
+    scraper.scrape("https://example.com", verbose=False)
+    assert records[0]["kind"] == "tool"
+
+
+def test_scrape_kind_override_to_retrieval(fake_scrapling_ok, records):
+    """Audit finding #12: scrape() no longer hardcodes kind='tool'.
+    Override to 'retrieval' for RAG document-loading pipelines."""
+    scraper.scrape("https://example.com", verbose=False, kind="retrieval")
+    assert records[0]["kind"] == "retrieval"
+
+
+def test_scrape_kind_override_to_function(fake_scrapling_ok, records):
+    """kind='function' is also valid — for generic function-call categorization."""
+    scraper.scrape("https://example.com", verbose=False, kind="function")
+    assert records[0]["kind"] == "function"
