@@ -17,10 +17,27 @@
 //   - Per-isolate fallback: used otherwise. Note that Vercel can run many
 //     isolates simultaneously — the effective limit is 500 × n_isolates when
 //     Upstash is not configured.
+//
+// Body encoding: Content-Encoding: gzip is supported (audit finding #6),
+// matching /api/ingest — see lib/decode-body.ts. No current SDK version
+// sends it for events (swarmtrace.fov posts one uncompressed event per
+// request), so this is dormant capability, not a live optimization yet.
 
 import { sha256Hex, createRateLimiter } from '@/lib/api-auth'
+import { decodeGzipBody } from '@/lib/decode-body'
 
 const MAX_BODY_BYTES  = 32 * 1024   // 32 KB per event (screenshots compress well)
+// Decompressed-size bound (audit finding #6). No SDK version sends
+// Content-Encoding: gzip for events today — swarmtrace.fov posts one
+// event per request, uncompressed — so this is future-proofing, not a
+// live capability being exercised in production yet. Sized generously
+// relative to MAX_BODY_BYTES (not equal to it) so that if/when a future
+// SDK batches multiple screen_tick events into one gzip-compressed POST
+// (the same shape /api/ingest already supports), this route doesn't need
+// another round of changes. Mirrors the ingest route's reasoning in
+// lib/decode-body.ts; sized down from ingest's 1 MB since a single event
+// (even with a base64 screenshot) has a much smaller legitimate ceiling.
+const MAX_DECOMPRESSED_BYTES = 256 * 1024
 const SUPA_TIMEOUT_MS = 3000
 const RATE_LIMIT      = 500
 
@@ -120,8 +137,9 @@ export async function POST(req: Request) {
     const user_id = rows[0].user_id
 
     let payload: unknown
-    try { payload = JSON.parse(new TextDecoder().decode(bodyBytes)) }
-    catch { return json(400, { error: 'Body must be valid JSON' }) }
+    try {
+      payload = JSON.parse(await decodeGzipBody(bodyBytes, req.headers.get('content-encoding'), MAX_DECOMPRESSED_BYTES))
+    } catch { return json(400, { error: 'Body must be valid JSON (gzip supported via Content-Encoding: gzip)' }) }
 
     const { row, error } = validate(payload)
     if (!row) return json(400, { error })
