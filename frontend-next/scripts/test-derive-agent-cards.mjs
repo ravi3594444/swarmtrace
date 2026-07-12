@@ -329,4 +329,50 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     const cards = deriveAgentCards(filtered, NOW)
     assert.equal(cards.length, 0, 'no cards when no traces in window')
   })
+
+  // ── Sort-order independence (audit finding #10) ──────────────────────────
+  // deriveAgentCards picks "latest" via runs[0] / traces[0] internally. The
+  // real caller (app/api/agents/route.ts) happens to pass rows already
+  // sorted most-recent-first, but that was only ever an implicit, untested
+  // cross-file assumption. These tests feed rows in NON-descending order to
+  // prove the function is correct on its own, not just lucky given its one
+  // current caller's query order.
+
+  test('SORT GUARD: latest event picked correctly from ascending (oldest-first) input', () => {
+    const aid = 'sort-agent-1'
+    const rows = [
+      // Oldest first — the OPPOSITE of what the real caller sends.
+      mkTrace({ id: 'e1', agent_id: aid, agent_name: 'bot', kind: 'agent', timestamp: OLD, args: 'first call' }),
+      mkTrace({ id: 'e2', agent_id: aid, agent_name: 'bot', kind: 'agent', timestamp: RECENT, args: 'latest call' }),
+    ]
+    const cards = deriveAgentCards(rows, NOW)
+    assert.equal(cards.length, 1)
+    assert.equal(cards[0].lastActive, RECENT, 'lastActive must be the newer timestamp, not rows[0]')
+    assert.equal(cards[0].status, 'RUNNING', 'must use the RECENT trace to decide status, not the OLD one')
+  })
+
+  test('SORT GUARD: latest run\'s agent_name wins even when it is not rows[0]', () => {
+    const aid = 'sort-agent-2'
+    const rows = [
+      mkTrace({ id: 'r1', agent_id: aid, agent_name: 'stale_name', kind: 'agent', timestamp: OLD }),
+      mkTrace({ id: 'r2', agent_id: aid, agent_name: 'current_name', kind: 'agent', timestamp: RECENT }),
+    ]
+    const cards = deriveAgentCards(rows, NOW)
+    assert.equal(cards[0].name, 'current_name', 'name must come from the most-recent run, not array position 0')
+  })
+
+  test('SORT GUARD: shuffled (randomly-ordered) rows still pick the true latest event', () => {
+    const aid = 'sort-agent-3'
+    const veryOld = new Date(NOW.getTime() - 3 * 60 * 60_000).toISOString()  // 3h ago
+    const mid     = new Date(NOW.getTime() - 30 * 60_000).toISOString()     // 30m ago
+    // Deliberately NOT in timestamp order.
+    const rows = [
+      mkTrace({ id: 'x1', agent_id: aid, agent_name: 'bot', kind: 'agent', timestamp: mid }),
+      mkTrace({ id: 'x2', agent_id: aid, agent_name: 'bot', kind: 'agent', timestamp: RECENT }),
+      mkTrace({ id: 'x3', agent_id: aid, agent_name: 'bot', kind: 'agent', timestamp: veryOld }),
+    ]
+    const cards = deriveAgentCards(rows, NOW)
+    assert.equal(cards[0].lastActive, RECENT, 'the actual most-recent timestamp must win regardless of array order')
+    assert.equal(cards[0].tasks, 3, 'grouping/counting is unaffected by order')
+  })
 })
