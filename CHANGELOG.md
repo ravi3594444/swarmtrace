@@ -4,6 +4,56 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.5] — 2026-07-12
+
+### Changed
+- **`storage.py` now returns dicts instead of tuples** (`swarmtrace/storage.py`):
+  `get_traces()`, `get_all_traces()`, `get_by_id()`, and `get_unsynced_traces()`
+  all return `List[dict]` / `Optional[dict]` now (using `sqlite3.Row` +
+  `dict(row)` at the API boundary). `TraceRow` is now `Dict[str, Any]`.
+  Consumers access fields by name (`row["agent_name"]`) instead of by
+  positional index (`row[13]`). This permanently eliminates the tuple-unpack
+  bug class that caused `cli.py` / `replay.py` / `export.py` to break silently
+  when `session_id` + `synced` columns were added — and would have broken again
+  on the next schema migration. Every consumer updated: `cli.py`, `replay.py`,
+  `export.py`, `alerts.py`, `tracer.py`'s `_row_to_payload`. The stopgap
+  `_T_*` named-index constants added to `alerts.py` in 0.6.4 have been removed
+  (the dict refactor supersedes them). Phase 2 of the audit fix plan.
+
+- **`save_trace()` is now keyword-only** (`swarmtrace/storage.py`): the
+  signature changed from positional to `def save_trace(*, id_, parent_id, ...)`.
+  This prevents the "wrong data in wrong column" class of bug — adding or
+  reordering a parameter no longer requires simultaneous update of all 5
+  callers (it bit `auto_instrument.py` when `session_id` was added). All
+  internal callers updated. **⚠️ Breaking change for external callers** who
+  called `save_trace()` with positional args — switch to keyword args. The
+  main user-facing API (`@observe`, `init`, `session`) is unaffected.
+
+### Fixed
+- **MCP `record_trace` no longer hardcodes `kind='agent'`**
+  (`frontend-next/app/api/mcp/route.ts`): line 150 had `const kind = 'agent'`
+  regardless of what the caller sent — every MCP trace got tagged `agent` and
+  nested tool/llm/function spans were indistinguishable from top-level agent
+  spans. The Python SDK properly distinguishes `agent`/`tool`/`llm`/`function`
+  via `@observe(kind=...)`; MCP couldn't distinguish anything. Fix: `record_trace`
+  schema gains a `kind` param (`z.enum(['agent','tool','llm','function','retrieval']).default('agent')`).
+  Because MCP calls are stateless (no contextvar to infer the enclosing
+  agent from), `agent_id` is now **required** when `kind` is not `'agent'` —
+  the tool returns `isError` instead of silently misattributing. `kind='agent'`
+  behavior is unchanged (agent_id still defaults to stable SHA-256 of
+  `function`). Resolution logic extracted to `lib/resolve-trace-identity.ts`
+  (10 new unit tests in `scripts/test-resolve-trace-identity.mjs`). Phase 3
+  of the audit fix plan. **Frontend-only — ships with the Next.js deployment,
+  not the PyPI package.**
+
+### Notes
+- This release addresses the dict refactor (Phase 2) and the MCP kind fix
+  (Phase 3) from the audit's recommended action plan. Phase 4 (Postgres
+  integration test in CI) is in progress.
+- 198 Python tests pass (unchanged from 0.6.4 — the dict refactor was
+  behavior-preserving). 155 frontend tests pass (was 145, +10 new for
+  `resolveTraceIdentity`).
+
 ## [0.6.4] — 2026-07-12
 
 ### Fixed
