@@ -86,7 +86,11 @@ def db_conn():
     test uses a transaction it rolls back at the end so tests are
     isolated.
     """
-    conn = psycopg2.connect(POSTGRES_TEST_URL, autocommit=True)
+    conn = psycopg2.connect(POSTGRES_TEST_URL)
+    # autocommit=True so each CREATE TABLE / DROP TABLE commits immediately
+    # and migrations persist for the tests. Can't pass as a connect() kwarg —
+    # psycopg2 rejects it with "invalid connection option 'autocommit'".
+    conn.autocommit = True
     cur = conn.cursor()
 
     # Apply migrations in order. Each migration file is idempotent
