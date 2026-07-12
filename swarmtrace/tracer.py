@@ -580,6 +580,9 @@ def _build_trace_id() -> str:
 def _stable_agent_id(func, name: Optional[str]) -> str:
     """Deterministic agent_id for a bare ``@observe`` entrypoint.
 
+    See docs/SDK_DASHBOARD_CONTRACT.md for the full SDK<->dashboard
+    agent_id/kind contract this is one half of.
+
     Repeated invocations of the same top-level ``@observe`` function (the
     auto-resolved "agent" case) used to get a fresh random ``agent_id`` per
     call, which made the dashboard's Agents page show one card per run
@@ -587,8 +590,9 @@ def _stable_agent_id(func, name: Optional[str]) -> str:
 
     Deriving the id from a SHA-256 of ``"{module}.{qualname}"`` (or an
     explicit ``name``) makes repeat runs collapse into a single agent
-    identity. The digest is 32 hex chars — same length as ``uuid4().hex``
-    — so it drops into the existing TEXT column without schema changes.
+    identity. The digest is 64 hex chars (SHA-256 is 256 bits = 32 bytes
+    = 64 hex chars — longer than ``uuid4().hex``'s 32, but it still
+    drops into the existing TEXT column without schema changes).
 
     Note: this ONLY applies to bare ``@observe`` (auto-resolved). Explicit
     ``@observe(kind="agent")`` keeps a fresh ``trace_id`` so that swarm
