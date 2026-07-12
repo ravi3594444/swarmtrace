@@ -44,3 +44,53 @@ jobs:
         # Regression guard for the SDK<->API agent_id contract.
         # See scripts/test-derive-agent-cards.mjs for what this protects.
         run: npm test
+
+  integration:
+    name: Postgres integration tests
+    runs-on: ubuntu-latest
+    # Phase 4 of the audit fix plan. Spins up a real Postgres service
+    # container, applies all supabase/migrations/*.sql in order, and runs
+    # the SDK↔DB contract tests. This catches migration drift, RPC
+    # signature changes, and the atomic-ingest idempotency trick (xmax=0)
+    # — all things the mocked unit tests can't catch.
+    #
+    # Why this exists: 3 of this session's bugs (CLI crash, tree-view
+    # wrap, grandchild flattening) shipped with 196+ tests passing because
+    # nothing exercised the real DB. This job turns "found by hand" into
+    # "caught in CI".
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: test
+        ports:
+          - 5432:5432
+        # Wait until Postgres is accepting connections before starting
+        # the test job. Without this, the test runner might hit the DB
+        # before it's ready and fail with a connection error.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+      - name: Install dependencies
+        # psycopg2-binary is the Postgres driver — only needed for these
+        # integration tests, not for the SDK itself.
+        run: pip install -e . pytest psycopg2-binary
+      - name: Run integration tests
+        env:
+          # Matches the service container credentials above.
+          # Uses POSTGRES_TEST_URL (not DATABASE_URL) to avoid collision
+          # with the SDK's own DB path env var.
+          POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/test
+        run: pytest tests/integration/ -v
+
