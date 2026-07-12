@@ -239,17 +239,23 @@ def _trace_payload(
 
 
 def _call_rpc(cur, payload: dict) -> bool:
-    """Call upsert_trace_with_metrics with the given payload."""
+    """Call upsert_trace_with_metrics with the given payload.
+
+    `clean_db` opens `cur` with `cursor_factory=RealDictCursor` (dict-like
+    rows keyed by column name), so `fetchone()[0]` raises KeyError: 0 —
+    there's no integer key 0 on a dict row. Alias the RPC result and pull
+    it by name instead, matching every other fetch in this file.
+    """
     cur.execute(
         "SELECT public.upsert_trace_with_metrics("
         "  %(p_id)s, %(p_user_id)s, %(p_parent_id)s, %(p_function)s, "
         "  %(p_args)s, %(p_output)s, %(p_latency_sec)s, %(p_error)s, "
         "  %(p_timestamp)s, %(p_input_tokens)s, %(p_output_tokens)s, "
         "  %(p_cost_usd)s, %(p_kind)s, %(p_agent_id)s, %(p_agent_name)s"
-        ");",
+        ") AS was_insert;",
         payload,
     )
-    return cur.fetchone()[0]
+    return cur.fetchone()["was_insert"]
 
 
 # ---------------------------------------------------------------------------
@@ -446,7 +452,6 @@ def test_nested_spans_via_parent_id(clean_db):
     # Child LLM span
     child = _trace_payload(
         trace_id="child-1",
-        parent_id_arg="parent-1",  # see below
         kind="llm",
         agent_id="parent-1",  # child rolls up into parent's agent_id
         function="call_mistral",
