@@ -58,6 +58,7 @@ from swarmtrace.storage import _get_conn, _lock as _storage_lock
 # ---------------------------------------------------------------------------
 
 _events_table_ready = False
+_events_table_lock = threading.Lock()
 
 # FIX #1: cap agent_events table size — was unbounded (would fill disk
 # with screenshots in days of browser automation)
@@ -67,28 +68,62 @@ _event_write_count: int = 0
 
 
 def _ensure_events_table() -> None:
+    """Create the agent_events table + index on first use (once per process).
+
+    FIX (audit finding #11 — TOCTOU race): this used to be a naive
+    check-then-act with no recheck inside the lock and the ready flag set
+    AFTER releasing the lock:
+
+        if _events_table_ready: return
+        with _storage_lock:
+            conn.execute("CREATE TABLE IF NOT EXISTS ...")
+            ...
+        _events_table_ready = True   # set OUTSIDE the lock
+
+    Every concurrent first caller (a realistic case: several traced
+    browser pages registering near-simultaneously at startup) would pass
+    the unlocked check before any of them set the flag, then each
+    redundantly re-run the CREATE TABLE/INDEX statements once it got the
+    lock. The DDL itself is idempotent (IF NOT EXISTS) so this specific
+    instance didn't corrupt data, but it's the exact TOCTOU shape that
+    HAS caused real bugs elsewhere in this file (see _ensure_fov_worker's
+    fork-survival fix) and every other one-time-init flag in this module
+    (_fov_worker_started, _screen_streamer_started) already uses a
+    dedicated lock with a proper recheck-inside-the-lock — this one was
+    the odd one out. Now matches that pattern: dedicated
+    _events_table_lock, recheck after acquiring it, flag set while still
+    holding it (not after release).
+
+    (Not a fork-survival case like the worker-thread flags — the table's
+    existence is a fact about the DB file, which survives fork() fine
+    regardless of what this in-memory flag says. No register_at_fork
+    hook needed here.)
+    """
     global _events_table_ready
     if _events_table_ready:
         return
-    with _storage_lock:
-        conn = _get_conn()
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS agent_events (
-                id           TEXT PRIMARY KEY,
-                agent_id     TEXT NOT NULL,
-                agent_name   TEXT,
-                event_type   TEXT NOT NULL,
-                status       TEXT NOT NULL DEFAULT 'info',
-                data         TEXT,
-                timestamp    TEXT NOT NULL
+    with _events_table_lock:
+        if _events_table_ready:
+            return
+        with _storage_lock:
+            conn = _get_conn()
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS agent_events (
+                    id           TEXT PRIMARY KEY,
+                    agent_id     TEXT NOT NULL,
+                    agent_name   TEXT,
+                    event_type   TEXT NOT NULL,
+                    status       TEXT NOT NULL DEFAULT 'info',
+                    data         TEXT,
+                    timestamp    TEXT NOT NULL
+                )
+            """)
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_evts_agent "
+                "ON agent_events(agent_id, timestamp DESC)"
             )
-        """)
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS idx_evts_agent "
-            "ON agent_events(agent_id, timestamp DESC)"
-        )
-        conn.commit()
-    _events_table_ready = True
+            conn.commit()
+        _events_table_ready = True
 
 
 def _purge_old_events(conn) -> None:
