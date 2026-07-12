@@ -846,3 +846,62 @@ def test_remote_config_returns_url_for_localhost_dev(monkeypatch):
     key, url = _remote_config()
     assert key == "sk_test_abc"
     assert url == "http://localhost:3000"
+
+
+# ── Audit finding #9: _normalize_base_url edge cases ────────────────────────
+#
+# The four documented patterns (bare, trailing /, /api, /api/) were always
+# handled correctly. These cover the cases that were NOT: repeated slashes
+# immediately before the /api suffix leaving a stray trailing slash behind,
+# an uppercase (or mixed-case) /API suffix not being recognized at all
+# (str.endswith is case-sensitive), and surrounding whitespace from a
+# copy-pasted or heredoc-set env var not being trimmed.
+
+from swarmtrace.tracer import _normalize_base_url
+
+
+def test_normalize_base_url_four_documented_patterns_unaffected():
+    """The fix must not regress the original four supported forms."""
+    assert _normalize_base_url("https://app.vercel.app") == "https://app.vercel.app"
+    assert _normalize_base_url("https://app.vercel.app/") == "https://app.vercel.app"
+    assert _normalize_base_url("https://app.vercel.app/api") == "https://app.vercel.app"
+    assert _normalize_base_url("https://app.vercel.app/api/") == "https://app.vercel.app"
+
+
+def test_normalize_base_url_repeated_slash_before_api_suffix():
+    """A doubled slash right before /api (plausible copy-paste typo) used
+    to leave one stray trailing slash after stripping the suffix."""
+    assert _normalize_base_url("https://example.com//api//") == "https://example.com"
+    assert _normalize_base_url("https://example.com//api") == "https://example.com"
+
+
+def test_normalize_base_url_uppercase_api_suffix_recognized():
+    """/API (or any other casing) used to survive untouched, producing a
+    doubled path like '.../API/api/ingest' once a caller appended the
+    real route."""
+    assert _normalize_base_url("https://app.vercel.app/API") == "https://app.vercel.app"
+    assert _normalize_base_url("https://app.vercel.app/Api/") == "https://app.vercel.app"
+    assert _normalize_base_url("https://example.com/API//") == "https://example.com"
+
+
+def test_normalize_base_url_surrounding_whitespace_trimmed():
+    assert _normalize_base_url("  https://example.com/api  ") == "https://example.com"
+    assert _normalize_base_url("https://example.com/api\n") == "https://example.com"
+
+
+def test_normalize_base_url_legit_path_ending_in_api_only_stripped_once():
+    """A real path that legitimately ends in '/api' as part of a reverse
+    proxy setup (e.g. '.../rest/api') only has the ONE trailing '/api'
+    stripped, not repeatedly — matches the pre-fix behavior for this case,
+    the fix doesn't change it."""
+    assert _normalize_base_url("https://example.com/rest/api") == "https://example.com/rest"
+
+
+def test_normalize_base_url_short_strings_do_not_crash():
+    """Degenerate short inputs (shorter than the '/api' suffix) must not
+    raise from the negative-index slice."""
+    assert _normalize_base_url("") == ""
+    assert _normalize_base_url("a") == "a"
+    assert _normalize_base_url("api") == "api"  # no leading slash — not the suffix
+    assert _normalize_base_url("/api") == ""
+    assert _normalize_base_url("/API") == ""
