@@ -32,13 +32,18 @@ export function HeroSection() {
   return (
     <section className="relative min-h-screen flex flex-col overflow-hidden">
 
-      {/* Animated sphere — right side */}
-      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-[600px] h-[600px] lg:w-[800px] lg:h-[800px] opacity-40 pointer-events-none">
+      {/* Animated sphere — right side. Hidden on mobile/tablet because the
+          600px-wide element overlaps the headline area on narrow viewports,
+          and the sphere renders in foreground-ish colors at opacity-40,
+          washing out the headline text against the background pattern.
+          Shown only on lg+ where there's room for it to sit beside the text. */}
+      <div className="hidden lg:block absolute right-0 top-1/2 -translate-y-1/2 w-[600px] h-[600px] lg:w-[800px] lg:h-[800px] opacity-40 pointer-events-none">
         <AnimatedSphere />
       </div>
 
-      {/* Grid lines */}
-      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-30">
+      {/* Grid lines — reduced opacity on mobile (less visual noise behind
+          the headline) and slightly stronger on lg+ where there's space. */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-15 lg:opacity-30">
         {[...Array(8)].map((_, i) => (
           <div key={`h-${i}`} className="absolute h-px bg-foreground/10"
             style={{ top: `${12.5 * (i + 1)}%`, left: 0, right: 0 }} />

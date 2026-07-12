@@ -29,6 +29,12 @@ const nextConfig = {
             // Without all three, the CAPTCHA widget doesn't render and
             // sign-up is completely blocked (reproduced in production —
             // CSP violation in console, no widget appears).
+            //
+            // SOCIAL PROOF NOTE: SocialProofBadges component fetches GitHub
+            // stars (api.github.com) + PyPI download count (pypistats.org)
+            // on mount. Without these in connect-src, the fetches fail
+            // silently and the badges never appear — no error visible to
+            // the user, just missing trust signals on the landing page.
             key:   'Content-Security-Policy',
             value: [
               "default-src 'self'",
@@ -37,7 +43,7 @@ const nextConfig = {
               "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
               "font-src 'self' https://cdn.jsdelivr.net",
               "img-src 'self' data: blob: https:",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.clerk.com https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.clerk.com https://*.clerk.accounts.dev https://challenges.cloudflare.com https://api.github.com https://pypistats.org",
               "frame-src https://challenges.cloudflare.com",
               "object-src 'none'",
               "base-uri 'self'",
