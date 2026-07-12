@@ -348,6 +348,52 @@ def _ensure_worker() -> None:
             _worker_started = True
 
 
+def _reset_worker_state_after_fork() -> None:
+    """Runs in the CHILD immediately after os.fork(). Audit finding #4.
+
+    fork() clones process memory -- including the `_worker_started = True`
+    flag -- but NOT other threads; only the calling thread survives into
+    the child. Without this hook, a child process (gunicorn/uWSGI preload
+    workers, Celery prefork pool, os.fork() directly, etc.) inherits
+    `_worker_started = True` from the parent even though its background
+    sender thread does not exist there. `_ensure_worker()`'s fast-path
+    check (`if _worker_started: return`) then short-circuits forever in
+    that child -- no sender thread is ever started, so every trace
+    enqueued via `_enqueue_remote` in that process sits in `_send_queue`
+    for the lifetime of the worker with nothing ever draining it. No
+    exception is raised anywhere; it just silently never syncs. This is
+    permanent for that process, unlike a transient `Thread.start()`
+    failure (which leaves `_worker_started` False and self-heals on the
+    next call) -- hence "real" data loss, not just a retryable blip.
+
+    Traces are NOT lost outright: `save_trace()` (SQLite) runs before
+    `_enqueue_remote()` in `_flush()`, so every trace is still on disk
+    with synced=0 and `swarmtrace resync` can ship it later -- but remote
+    ingest silently stops working in every forked child until this fires.
+
+    Fix: reset the flag so the next `_enqueue_remote()` call in the child
+    spawns a real sender thread of its own. Also replace `_send_queue`
+    with a fresh one -- any payloads already sitting in the inherited
+    queue belonged to a sender thread that only exists in the parent, and
+    replaying into a Queue whose internal locks may be in an inconsistent
+    post-fork state is riskier than just starting clean (those payloads
+    are already durable in SQLite, so nothing is lost by dropping them
+    from the in-memory queue).
+
+    Same gotcha, same fix pattern used by other telemetry SDKs with
+    background sender threads (e.g. Sentry, PostHog) for this exact
+    reason. POSIX-only -- os.fork() doesn't exist on Windows, guarded by
+    the hasattr check at registration below.
+    """
+    global _worker_started, _send_queue
+    _worker_started = False
+    _send_queue = queue.Queue(maxsize=_QUEUE_MAX)
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_worker_state_after_fork)
+
+
 def _enqueue_remote(payload: dict) -> None:
     key, url = _remote_config()
     if not (key and url):
