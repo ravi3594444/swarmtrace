@@ -61,9 +61,55 @@ class ToolAttention:
             ) from e
 
     def add_tools(self, new_tools: list):
-        """Dynamically add tools and rebuild the index."""
+        """Dynamically add tools to the index — incremental, not rebuild.
+
+        Encodes only the new tools and adds them to the existing FAISS
+        index. O(m) where m = len(new_tools). The previous implementation
+        called _build_index() which re-encoded every tool from scratch —
+        O(n+m) per call, which is O(n²) when add_tools() is called
+        repeatedly as tools are discovered over the lifetime of an agent.
+
+        FAISS IndexFlatL2 supports incremental .add() natively — no need
+        to rebuild the index structure. We just encode the new summaries
+        and append.
+
+        Raises RuntimeError if the index wasn't built at __init__ time
+        (missing optional deps). In that case, install deps and construct
+        a new ToolAttention instance.
+        """
+        if self._index is None or self._model is None or self._embeddings is None:
+            raise RuntimeError(
+                "[ToolAttention] Index not built — can't add tools incrementally. "
+                "Either _build_index() failed at __init__ (missing "
+                "sentence-transformers/faiss-cpu) or was never called. "
+                "Install deps and construct a new ToolAttention instance."
+            )
+
+        import numpy as np
+
+        # Encode ONLY the new tool summaries — not all tools from scratch.
+        # This is the fix: the old impl re-encoded every tool on every add.
+        new_summaries = [f"{t['name']}: {t['description']}" for t in new_tools]
+        new_embeddings = self._model.encode(
+            new_summaries, convert_to_numpy=True
+        ).astype(np.float32)
+
+        # FAISS IndexFlatL2 supports incremental adds natively.
+        self._index.add(new_embeddings)
+
+        # Keep self._embeddings in sync with the index (used for debugging
+        # and inspection — not strictly required for search to work).
+        self._embeddings = np.vstack([self._embeddings, new_embeddings])
         self.tools.extend(new_tools)
-        self._build_index()
+
+        if self.verbose:
+            total_tokens = sum(
+                len(json.dumps(t.get("schema", {}))) // 4 for t in self.tools
+            )
+            _log.info(
+                "Added %d tools (incremental) | Total: %d | Full schema: ~%d tokens",
+                len(new_tools), len(self.tools), total_tokens,
+            )
 
     def select(self, query: str, k: int = 3) -> list:
         """

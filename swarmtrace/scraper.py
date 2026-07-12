@@ -7,12 +7,19 @@ from swarmtrace.tracer import _parent_ctx, _current_parent, _current_agent
 
 _log = logging.getLogger("swarmtrace.scraper")
 
-def scrape(url: str, verbose=True):
+def scrape(url: str, verbose=True, kind: str = "tool"):
     """
     Trace a web scraping call using Scrapling.
     Usage:
         from swarmtrace.scraper import scrape
         result = scrape("https://news.ycombinator.com")
+
+    kind: span kind for the trace. Defaults to 'tool'. Override to
+    'function' for generic function calls, or 'retrieval' when the
+    scrape is part of a RAG document-loading pipeline (matches the
+    kind taxonomy in docs/SDK_DASHBOARD_CONTRACT.md). Whatever you
+    pick rolls up into the enclosing @observe agent's stats — it
+    never becomes its own phantom agent card.
 
     Raises the underlying exception on failure (after saving the trace)
     so callers are not silently handed a None.
@@ -56,7 +63,7 @@ def scrape(url: str, verbose=True):
             latency_sec=latency, error=error,
             timestamp=datetime.now(timezone.utc).isoformat(),
             input_tokens=len(url) // 4, output_tokens=output_tokens, cost_usd=cost,
-            kind="tool", agent_id=agent_id, agent_name=agent_name,
+            kind=kind, agent_id=agent_id, agent_name=agent_name,
         )
         _parent_ctx.reset(token)
 
