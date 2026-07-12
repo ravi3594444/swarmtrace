@@ -29,6 +29,7 @@
 const MAX_TEXT_LEN = 4000
 
 import { redact } from './redact'
+import { decodeGzipBody } from './decode-body'
 
 // Bound on the DECOMPRESSED body size. The route already caps the wire
 // (compressed) bytes at 64 KB, but gzip can expand ~1000x, so a small
@@ -39,45 +40,20 @@ export const MAX_DECOMPRESSED_BYTES = 1024 * 1024
 export const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function'])
 
 /**
- * Decode the raw request body bytes into a JSON string, inflating gzip
- * when the client sent `Content-Encoding: gzip` (the SDK's batch path).
+ * Decode the raw /api/ingest request body bytes into a JSON string,
+ * inflating gzip when the client sent `Content-Encoding: gzip` (the SDK's
+ * batch path).
  *
- * Edge/serverless runtimes do NOT auto-decompress request bodies (only
- * fetch *response* bodies are auto-decompressed), so the route must
- * inflate explicitly. Uses the web-standard DecompressionStream, which is
- * available in the Vercel Edge runtime and Node 18+.
- *
- * Throws on invalid gzip data or when the inflated size exceeds
- * {@link MAX_DECOMPRESSED_BYTES} — callers map any throw to a 400.
+ * Thin wrapper around the generic {@link decodeGzipBody} (lib/decode-
+ * body.ts), fixed to ingest's MAX_DECOMPRESSED_BYTES bound. Kept under
+ * this name/signature for backward compatibility with existing callers
+ * and tests — new code should call decodeGzipBody directly.
  */
 export async function decodeIngestBody(
   bodyBytes: ArrayBuffer,
   contentEncoding: string | null,
 ): Promise<string> {
-  if (contentEncoding?.toLowerCase().trim() !== 'gzip') {
-    return new TextDecoder().decode(bodyBytes)
-  }
-  const stream = new Response(bodyBytes).body!.pipeThrough(new DecompressionStream('gzip'))
-  const reader = stream.getReader()
-  const chunks: Uint8Array[] = []
-  let total = 0
-  for (;;) {
-    const { done, value } = await reader.read()
-    if (done) break
-    total += value.byteLength
-    if (total > MAX_DECOMPRESSED_BYTES) {
-      reader.cancel().catch(() => {})
-      throw new Error('Decompressed payload too large')
-    }
-    chunks.push(value)
-  }
-  const out = new Uint8Array(total)
-  let offset = 0
-  for (const chunk of chunks) {
-    out.set(chunk, offset)
-    offset += chunk.byteLength
-  }
-  return new TextDecoder().decode(out)
+  return decodeGzipBody(bodyBytes, contentEncoding, MAX_DECOMPRESSED_BYTES)
 }
 
 export interface TraceRow {
