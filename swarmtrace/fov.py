@@ -136,7 +136,8 @@ def _save_event_local(event: dict) -> None:
 # Remote event sender  (separate queue → /api/events)
 # ---------------------------------------------------------------------------
 
-_FOV_QUEUE: "queue.Queue[dict]" = queue.Queue(maxsize=500)
+_FOV_QUEUE_MAX = 500
+_FOV_QUEUE: "queue.Queue[dict]" = queue.Queue(maxsize=_FOV_QUEUE_MAX)
 _fov_worker_lock = threading.Lock()
 _fov_worker_started = False
 
@@ -186,6 +187,35 @@ def _ensure_fov_worker() -> None:
                 target=_fov_worker, daemon=True, name="swarmtrace-fov-sender"
             ).start()
             _fov_worker_started = True
+
+
+def _reset_fov_worker_state_after_fork() -> None:
+    """Runs in the CHILD immediately after os.fork(). Same bug as audit
+    finding #4 (tracer.py's _worker_started), applied to the FOV sender.
+
+    fork() clones process memory -- including `_fov_worker_started = True`
+    -- but not other threads; only the calling thread survives into the
+    child. Without this hook, a forked child inherits
+    `_fov_worker_started = True` from a parent with a live FOV sender
+    thread that does not exist in the child, so `_ensure_fov_worker()`'s
+    fast-path check short-circuits forever there -- no sender thread ever
+    starts, and every FOV event enqueued via `_enqueue_fov_event()` in
+    that process sits in `_FOV_QUEUE` for the process's whole life with
+    nothing draining it. Lower severity than #4 (screen-stream / live
+    activity events, not trace data -- nothing durable is lost), but the
+    same silent-failure shape.
+
+    Fix: reset the flag and swap in a fresh queue so the child spawns its
+    own real sender thread on the next enqueue. See
+    tracer.py::_reset_worker_state_after_fork for the full writeup.
+    """
+    global _fov_worker_started, _FOV_QUEUE
+    _fov_worker_started = False
+    _FOV_QUEUE = queue.Queue(maxsize=_FOV_QUEUE_MAX)
+
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_reset_fov_worker_state_after_fork)
 
 
 def _enqueue_fov_event(event: dict) -> None:
