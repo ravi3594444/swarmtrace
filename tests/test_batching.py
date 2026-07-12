@@ -229,9 +229,11 @@ class TestWorkerBatchFlush:
             # Simulate the worker's send + mark-synced loop for this batch.
             for payload in batch:
                 fresh_storage.save_trace(
-                    payload["id"], None, "f", "()", "out", 0.1, None,
-                    "2026-01-01T00:00:00+00:00", 0, 0, 0.0, "agent",
-                    payload["id"], "f",
+                    id_=payload["id"], parent_id=None, function="f",
+                    args="()", output="out", latency_sec=0.1, error=None,
+                    timestamp="2026-01-01T00:00:00+00:00", input_tokens=0,
+                    output_tokens=0, cost_usd=0.0, kind="agent",
+                    agent_id=payload["id"], agent_name="f",
                 )
             tracer._send_batch_remote(batch, "test-key", "https://example.test")
             for payload in batch:
@@ -244,7 +246,7 @@ class TestWorkerBatchFlush:
         for i in range(20):
             row = fresh_storage.get_by_id(f"t{i}")
             assert row is not None
-            assert row[15] == 1  # synced column
+            assert row["synced"] == 1
 
     def test_time_threshold_triggers_flush(self, fresh_storage):
         """When fewer than 20 traces arrive, the worker still flushes after
@@ -276,8 +278,11 @@ class TestWorkerBatchFlush:
         # Save 3 rows to the local DB.
         for i in range(3):
             fresh_storage.save_trace(
-                f"t{i}", None, "f", "()", "out", 0.1, None,
-                "2026-01-01T00:00:00+00:00", 0, 0, 0.0, "agent", f"t{i}", "f",
+                id_=f"t{i}", parent_id=None, function="f",
+                args="()", output="out", latency_sec=0.1, error=None,
+                timestamp="2026-01-01T00:00:00+00:00", input_tokens=0,
+                output_tokens=0, cost_usd=0.0, kind="agent",
+                agent_id=f"t{i}", agent_name="f",
             )
         # The batch send fails every time.
         with patch("swarmtrace.tracer._send_batch_remote",
@@ -298,15 +303,18 @@ class TestWorkerBatchFlush:
         assert not sent_ok
         # All 3 rows still synced=0 — resync will pick them up.
         for i in range(3):
-            assert fresh_storage.get_by_id(f"t{i}")[15] == 0
+            assert fresh_storage.get_by_id(f"t{i}")["synced"] == 0
 
     def test_successful_batch_marks_all_synced(self, fresh_storage):
         """On a confirmed-successful batch send, EVERY row in the batch is
         marked synced=1 (not just the first one)."""
         for i in range(5):
             fresh_storage.save_trace(
-                f"t{i}", None, "f", "()", "out", 0.1, None,
-                "2026-01-01T00:00:00+00:00", 0, 0, 0.0, "agent", f"t{i}", "f",
+                id_=f"t{i}", parent_id=None, function="f",
+                args="()", output="out", latency_sec=0.1, error=None,
+                timestamp="2026-01-01T00:00:00+00:00", input_tokens=0,
+                output_tokens=0, cost_usd=0.0, kind="agent",
+                agent_id=f"t{i}", agent_name="f",
             )
         with patch("swarmtrace.tracer._send_batch_remote") as mock_send:
             mock_send.return_value = None
@@ -316,7 +324,7 @@ class TestWorkerBatchFlush:
                 tracer.mark_synced(p["id"])
 
         for i in range(5):
-            assert fresh_storage.get_by_id(f"t{i}")[15] == 1
+            assert fresh_storage.get_by_id(f"t{i}")["synced"] == 1
 
     def test_session_id_preserved_through_batch(self, fresh_storage):
         """session_id survives the batch round-trip — the dashboard's thread
@@ -356,8 +364,11 @@ class TestResyncStillSingleObject:
 
     def test_resync_uses_send_remote_not_batch(self, fresh_storage):
         fresh_storage.save_trace(
-            "t1", None, "f", "()", "out", 0.1, None,
-            "2026-01-01T00:00:00+00:00", 0, 0, 0.0, "agent", "t1", "f",
+            id_="t1", parent_id=None, function="f",
+            args="()", output="out", latency_sec=0.1, error=None,
+            timestamp="2026-01-01T00:00:00+00:00", input_tokens=0,
+            output_tokens=0, cost_usd=0.0, kind="agent",
+            agent_id="t1", agent_name="f",
         )
         with patch("swarmtrace.tracer._send_remote") as mock_single, \
              patch("swarmtrace.tracer._send_batch_remote") as mock_batch:

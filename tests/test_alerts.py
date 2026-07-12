@@ -38,33 +38,34 @@ def _trace(
     function: str = "step",
     n: int = 1,
     within_window: bool = True,
-) -> tuple:
+) -> list:
     """
-    Build a synthetic TraceRow matching swarmtrace.storage.TraceRow layout:
-        (id, parent_id, function, args, output, latency_sec, error,
-         timestamp, input_tokens, output_tokens, cost_usd,
-         kind, agent_id, agent_name)
+    Build synthetic TraceRow dicts matching swarmtrace.storage.TraceRow —
+    one dict per row, keyed by column name (id, parent_id, function, args,
+    output, latency_sec, error, timestamp, input_tokens, output_tokens,
+    cost_usd, kind, agent_id, agent_name, ...), same shape get_all_traces()
+    hands the rule engine in production.
     """
     rows = []
     base = datetime.now(timezone.utc)
     for i in range(n):
         ts = base if within_window else base.replace(year=base.year - 1)
-        rows.append((
-            f"trace-{agent_id}-{i}",   # id
-            None,                       # parent_id
-            function,                   # function
-            "()",                       # args
-            "ok",                       # output
-            latency,                    # latency_sec
-            error,                      # error
-            ts.isoformat(),             # timestamp
-            100,                        # input_tokens
-            50,                         # output_tokens
-            cost,                       # cost_usd
-            "agent",                    # kind
-            agent_id,                   # agent_id
-            agent_name,                 # agent_name
-        ))
+        rows.append({
+            "id": f"trace-{agent_id}-{i}",
+            "parent_id": None,
+            "function": function,
+            "args": "()",
+            "output": "ok",
+            "latency_sec": latency,
+            "error": error,
+            "timestamp": ts.isoformat(),
+            "input_tokens": 100,
+            "output_tokens": 50,
+            "cost_usd": cost,
+            "kind": "agent",
+            "agent_id": agent_id,
+            "agent_name": agent_name,
+        })
     return rows
 
 

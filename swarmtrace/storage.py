@@ -16,7 +16,7 @@ import logging
 import os
 import sqlite3
 import threading
-from typing import List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 _log = logging.getLogger("swarmtrace")
 
@@ -33,10 +33,17 @@ CHECKPOINT_EVERY: int = 500
 # 5 s is generous enough for any realistic write burst.
 BUSY_TIMEOUT_MS: int = 5_000
 
-TraceRow = Tuple  # (id, parent_id, function, args, output,
-                  #  latency_sec, error, timestamp,
-                  #  input_tokens, output_tokens, cost_usd,
-                  #  kind, agent_id, agent_name)
+
+# TraceRow used to be a raw sqlite tuple, positionally indexed. That shape
+# is why a single schema migration (adding session_id + synced) broke
+# replay.py, export.py, and every row[N] site in cli.py/alerts.py in one
+# shot -- every consumer had to be found and updated by hand. get_traces()/
+# get_all_traces()/get_by_id()/get_unsynced_traces() now return dicts (one
+# key per column, via sqlite3.Row) so consumers read row["agent_name"]
+# instead of row[13]. Any future ALTER TABLE ADD COLUMN in _ADDED_COLUMNS
+# is automatically available under its own name everywhere -- no consumer
+# needs to change.
+TraceRow = Dict[str, Any]
 
 _ADDED_COLUMNS: List[Tuple[str, str]] = [
     ("kind",       "TEXT NOT NULL DEFAULT 'agent'"),
@@ -71,6 +78,11 @@ def _get_conn() -> sqlite3.Connection:
 
     if _conn is None:
         _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        # sqlite3.Row supports both row["col"] and row[i] (PRAGMA table_info
+        # parsing below still works unchanged) -- this is what lets
+        # get_traces()/get_all_traces()/get_by_id() hand back plain dicts
+        # instead of positional tuples.
+        _conn.row_factory = sqlite3.Row
         # busy_timeout: wait up to BUSY_TIMEOUT_MS before raising "database is locked"
         _conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
         _conn.execute("PRAGMA journal_mode=WAL")
@@ -142,6 +154,7 @@ def _purge_old_rows(conn: sqlite3.Connection) -> None:
 # ---------------------------------------------------------------------------
 
 def save_trace(
+    *,
     id_: str,
     parent_id: Optional[str],
     function: str,
@@ -189,9 +202,10 @@ def get_traces(limit: int = 20) -> List[TraceRow]:
     try:
         with _lock:
             conn = _get_conn()
-            return conn.execute(
+            rows = conn.execute(
                 "SELECT * FROM traces ORDER BY timestamp DESC LIMIT ?", (limit,)
             ).fetchall()
+            return [dict(r) for r in rows]
     except Exception:
         return []
 
@@ -200,12 +214,14 @@ def get_all_traces(limit: Optional[int] = 500) -> List[TraceRow]:
         with _lock:
             conn = _get_conn()
             if limit is None:
-                return conn.execute(
+                rows = conn.execute(
                     "SELECT * FROM traces ORDER BY timestamp DESC"
                 ).fetchall()
-            return conn.execute(
-                "SELECT * FROM traces ORDER BY timestamp DESC LIMIT ?", (limit,)
-            ).fetchall()
+            else:
+                rows = conn.execute(
+                    "SELECT * FROM traces ORDER BY timestamp DESC LIMIT ?", (limit,)
+                ).fetchall()
+            return [dict(r) for r in rows]
     except Exception:
         return []
 
@@ -213,9 +229,10 @@ def get_by_id(trace_id: str) -> Optional[TraceRow]:
     try:
         with _lock:
             conn = _get_conn()
-            return conn.execute(
+            row = conn.execute(
                 "SELECT * FROM traces WHERE id = ?", (trace_id,)
             ).fetchone()
+            return dict(row) if row is not None else None
     except Exception:
         return None
 
@@ -251,11 +268,12 @@ def get_unsynced_traces(limit: int = 100) -> List[TraceRow]:
     try:
         with _lock:
             conn = _get_conn()
-            return conn.execute(
+            rows = conn.execute(
                 "SELECT * FROM traces WHERE synced = 0 "
                 "ORDER BY timestamp ASC LIMIT ?",
                 (limit,),
             ).fetchall()
+            return [dict(r) for r in rows]
     except Exception:
         return []
 

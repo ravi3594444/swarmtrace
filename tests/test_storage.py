@@ -19,8 +19,10 @@ def storage(tmp_path, monkeypatch):
 
 def _save(storage, trace_id="abc", error=None):
     storage.save_trace(
-        trace_id, None, "fn", "()", "out", 0.1, error,
-        "2026-01-01T00:00:00+00:00", 10, 5, 0.001,
+        id_=trace_id, parent_id=None, function="fn", args="()", output="out",
+        latency_sec=0.1, error=error,
+        timestamp="2026-01-01T00:00:00+00:00", input_tokens=10,
+        output_tokens=5, cost_usd=0.001,
     )
 
 
@@ -28,15 +30,17 @@ def test_save_and_get_by_id(storage):
     _save(storage)
     row = storage.get_by_id("abc")
     assert row is not None
-    assert row[2] == "fn"
-    assert row[8] == 10
+    assert row["function"] == "fn"
+    assert row["input_tokens"] == 10
 
 
 def test_get_traces_newest_first(storage):
-    storage.save_trace("a", None, "f1", "()", "", 0.1, None, "2026-01-01T00:00:00+00:00")
-    storage.save_trace("b", None, "f2", "()", "", 0.1, None, "2026-01-02T00:00:00+00:00")
+    storage.save_trace(id_="a", parent_id=None, function="f1", args="()", output="",
+                        latency_sec=0.1, error=None, timestamp="2026-01-01T00:00:00+00:00")
+    storage.save_trace(id_="b", parent_id=None, function="f2", args="()", output="",
+                        latency_sec=0.1, error=None, timestamp="2026-01-02T00:00:00+00:00")
     rows = storage.get_traces(limit=10)
-    assert [r[0] for r in rows] == ["b", "a"]
+    assert [r["id"] for r in rows] == ["b", "a"]
 
 
 def test_purge_all(storage):
@@ -53,28 +57,25 @@ def test_save_never_raises(storage, monkeypatch):
 
 def test_save_trace_round_trips_session_id(storage):
     storage.save_trace(
-        "sid",
-        None,
-        "fn",
-        "()",
-        "out",
-        0.1,
-        None,
-        "2026-01-03T00:00:00+00:00",
-        1,
-        2,
-        0.003,
+        id_="sid",
+        parent_id=None,
+        function="fn",
+        args="()",
+        output="out",
+        latency_sec=0.1,
+        error=None,
+        timestamp="2026-01-03T00:00:00+00:00",
+        input_tokens=1,
+        output_tokens=2,
+        cost_usd=0.003,
         session_id="thread-42",
     )
     row = storage.get_by_id("sid")
     assert row is not None
-    # Row layout: id, parent_id, function, args, output, latency_sec, error,
-    # timestamp, input_tokens, output_tokens, cost_usd, kind, agent_id,
-    # agent_name, session_id, synced. session_id is index 14, synced is 15.
-    assert row[14] == "thread-42"
+    assert row["session_id"] == "thread-42"
     # New rows start unsynced (synced=0) until the background sender
     # confirms a successful remote POST.
-    assert row[15] == 0
+    assert row["synced"] == 0
 
 
 # ---------------------------------------------------------------------------
@@ -96,14 +97,18 @@ def test_purge_only_evicts_synced_rows(storage, monkeypatch):
     # Total = 6 > MAX_ROWS=5, so purge should evict 1 synced row.
     for i in range(3):
         storage.save_trace(
-            f"synced-{i}", None, "fn", "()", "out", 0.1, None,
-            f"2026-01-0{i+1}T00:00:00+00:00", 0, 0, 0.0,
+            id_=f"synced-{i}", parent_id=None, function="fn", args="()", output="out",
+            latency_sec=0.1, error=None,
+            timestamp=f"2026-01-0{i+1}T00:00:00+00:00",
+            input_tokens=0, output_tokens=0, cost_usd=0.0,
         )
         storage.mark_synced(f"synced-{i}", 1)
     for i in range(3):
         storage.save_trace(
-            f"unsynced-{i}", None, "fn", "()", "out", 0.1, None,
-            f"2026-02-0{i+1}T00:00:00+00:00", 0, 0, 0.0,
+            id_=f"unsynced-{i}", parent_id=None, function="fn", args="()", output="out",
+            latency_sec=0.1, error=None,
+            timestamp=f"2026-02-0{i+1}T00:00:00+00:00",
+            input_tokens=0, output_tokens=0, cost_usd=0.0,
         )
         # leave synced=0 (default)
 
@@ -112,8 +117,10 @@ def test_purge_only_evicts_synced_rows(storage, monkeypatch):
     # purge runs AFTER the insert so it sees 7 rows. It will evict 2 synced
     # rows (the oldest two: synced-0 and synced-1).
     storage.save_trace(
-        "trigger", None, "fn", "()", "out", 0.1, None,
-        "2026-03-01T00:00:00+00:00", 0, 0, 0.0,
+        id_="trigger", parent_id=None, function="fn", args="()", output="out",
+        latency_sec=0.1, error=None,
+        timestamp="2026-03-01T00:00:00+00:00",
+        input_tokens=0, output_tokens=0, cost_usd=0.0,
     )
 
     # The 2 oldest synced rows evicted.
@@ -140,14 +147,18 @@ def test_purge_leaves_db_over_max_when_only_unsynced_rows(storage, monkeypatch):
     # Insert 5 unsynced rows — all over MAX_ROWS.
     for i in range(5):
         storage.save_trace(
-            f"unsynced-{i}", None, "fn", "()", "out", 0.1, None,
-            f"2026-01-0{i+1}T00:00:00+00:00", 0, 0, 0.0,
+            id_=f"unsynced-{i}", parent_id=None, function="fn", args="()", output="out",
+            latency_sec=0.1, error=None,
+            timestamp=f"2026-01-0{i+1}T00:00:00+00:00",
+            input_tokens=0, output_tokens=0, cost_usd=0.0,
         )
 
     # Trigger purge.
     storage.save_trace(
-        "trigger", None, "fn", "()", "out", 0.1, None,
-        "2026-02-01T00:00:00+00:00", 0, 0, 0.0,
+        id_="trigger", parent_id=None, function="fn", args="()", output="out",
+        latency_sec=0.1, error=None,
+        timestamp="2026-02-01T00:00:00+00:00",
+        input_tokens=0, output_tokens=0, cost_usd=0.0,
     )
 
     # All 5 unsynced rows + the trigger row survive (6 total, over MAX_ROWS=3).
@@ -168,15 +179,19 @@ def test_purge_evicts_oldest_synced_first(storage, monkeypatch):
     # 4 synced rows with ascending timestamps.
     for i in range(4):
         storage.save_trace(
-            f"row-{i}", None, "fn", "()", "out", 0.1, None,
-            f"2026-01-0{i+1}T00:00:00+00:00", 0, 0, 0.0,
+            id_=f"row-{i}", parent_id=None, function="fn", args="()", output="out",
+            latency_sec=0.1, error=None,
+            timestamp=f"2026-01-0{i+1}T00:00:00+00:00",
+            input_tokens=0, output_tokens=0, cost_usd=0.0,
         )
         storage.mark_synced(f"row-{i}", 1)
 
     # Trigger purge (5th save, PURGE_EVERY=1). Now 5 rows total, excess=2.
     storage.save_trace(
-        "trigger", None, "fn", "()", "out", 0.1, None,
-        "2026-02-01T00:00:00+00:00", 0, 0, 0.0,
+        id_="trigger", parent_id=None, function="fn", args="()", output="out",
+        latency_sec=0.1, error=None,
+        timestamp="2026-02-01T00:00:00+00:00",
+        input_tokens=0, output_tokens=0, cost_usd=0.0,
     )
 
     # row-0 and row-1 (oldest synced) evicted; row-2, row-3 survive.
