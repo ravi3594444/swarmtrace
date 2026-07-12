@@ -181,16 +181,43 @@ def _normalize_base_url(url: str) -> str:
         https://app.vercel.app/api
         https://app.vercel.app/api/
 
-    All four should work. We strip trailing slashes and a trailing /api,
-    then callers append the full path (/api/ingest, /api/events, etc.).
+    All four should work. We strip surrounding whitespace and trailing
+    slashes and a trailing /api, then callers append the full path
+    (/api/ingest, /api/events, etc.).
 
     Note: scheme validation happens in _validate_endpoint_scheme (called
     from _remote_config), NOT here. This function is purely about path
     normalization — it doesn't second-guess whether the URL is safe.
+
+    Edge cases handled (audit finding #9):
+      - Repeated slashes before the suffix, e.g. ``.../api//`` or
+        ``...//api/`` (a plausible copy-paste typo) — previously left a
+        stray trailing slash after stripping ``/api`` (only the OUTER
+        slashes were stripped by the single ``rstrip("/")``, so a doubled
+        slash immediately before ``api`` survived the ``[:-4]`` cut). Now
+        re-strips trailing slashes after removing the suffix.
+      - Case: ``.../API`` (or ``/Api``, etc.) — previously not recognized
+        as the suffix at all (plain ``str.endswith`` is case-sensitive),
+        so the stray ``/API`` segment survived and calling code would
+        build a doubled, wrong path like ``.../API/api/ingest``. Matched
+        case-insensitively now, while the RETAINED portion of the URL
+        keeps its original casing (only the recognized ``/api`` suffix
+        itself is stripped, not lowercased-and-compared-then-reinserted).
+      - Leading/trailing whitespace (e.g. a trailing newline or space from
+        an env var set via a shell heredoc or `.env` file) is now trimmed.
+
+    Known remaining limitation, NOT handled (documented rather than
+    fixed — a query string or fragment in the endpoint URL is not a
+    realistic configuration for this env var, so it isn't worth the
+    complexity of full URL parsing here): ``https://host/api?x=1`` will
+    NOT have ``/api`` recognized as the suffix (the string doesn't end in
+    ``/api``), so the ``?x=1`` survives into the "normalized" base and
+    breaks subsequent path concatenation. Don't put a query string or
+    fragment in SWARMTRACE_ENDPOINT.
     """
-    s = url.rstrip("/")
-    if s.endswith("/api"):
-        s = s[:-4]
+    s = url.strip().rstrip("/")
+    if s[-4:].casefold() == "/api":
+        s = s[:-4].rstrip("/")
     return s
 
 
