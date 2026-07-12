@@ -23,7 +23,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { z } from 'zod'
 import { sha256Hex, createRateLimiter } from '@/lib/api-auth'
-import { stableAgentId } from '@/lib/stable-agent-id'
+import { resolveTraceIdentity } from '@/lib/resolve-trace-identity'
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL!
@@ -114,8 +114,11 @@ function buildMcpServer(userId: string): McpServer {
       output:        z.string().max(4000).optional().describe('Serialised function return value'),
       error:         z.string().max(4000).optional().describe('Error message if the call failed'),
       parent_id:     z.string().max(64).optional().describe('Parent trace ID for nested spans'),
+      kind:          z.enum(['agent', 'tool', 'llm', 'function', 'retrieval']).default('agent').describe(
+        'Span type. Nested steps (tool/llm/function/retrieval) must pass agent_id explicitly — MCP calls are stateless, there is no enclosing-agent context to infer it from the way the Python SDK\'s contextvars can.'
+      ),
       agent_id:      z.string().max(64).optional().describe(
-        'Stable agent identity. If omitted, derived from `function` (SHA-256) so repeat calls aggregate into one dashboard card. Pass an explicit unique value per call ONLY if you want each call to be its own agent card.'
+        'Stable agent identity. Required when kind is not "agent" (MCP has no enclosing-agent context to derive it from). When kind is "agent" and this is omitted, derived from `function` (SHA-256) so repeat calls aggregate into one dashboard card. Pass an explicit unique value per call ONLY if you want each call to be its own agent card.'
       ),
       agent_name:    z.string().max(256).optional().describe(
         'Display name for the agent card. Defaults to `function`.'
@@ -133,23 +136,23 @@ function buildMcpServer(userId: string): McpServer {
         // don't double-count costs. See supabase/migrations/0007_atomic_ingest.sql.
         //
         // Agent identity (mirrors swarmtrace/tracer.py::_stable_agent_id):
-        //   - If the caller passes an explicit `agent_id`, use it as-is.
-        //   - Otherwise derive a STABLE id from `function` (SHA-256), so
-        //     repeat calls of the same agent function aggregate into one
-        //     dashboard card with tasks=N — matching the SDK's behavior
-        //     for bare @observe.
-        //   - kind is always 'agent' for MCP (the MCP tool IS the agent
-        //     entry point; there's no nested tool/llm distinction here).
-        //   - agent_name defaults to `function` if not provided.
-        //
-        // BEFORE this change, agent_id was hardcoded to params.id (fresh
-        // per call), which meant every MCP call became its own agent card
-        // with tasks=1 — inconsistent with the SDK. See
-        // tests/test_tracer.py::test_api_agents_filter_contract and
-        // frontend-next/scripts/test-derive-agent-cards.mjs.
-        const kind      = 'agent'
-        const agentId   = params.agent_id ?? stableAgentId(params.function)
-        const agentName = params.agent_name ?? params.function
+        // see lib/resolve-trace-identity.ts for the full rationale — this
+        // is the fix for the "kind is hardcoded on the MCP path" audit
+        // finding. Extracted to its own module so it's unit-testable
+        // without a live Supabase connection (scripts/test-resolve-trace-identity.mjs).
+        const identity = resolveTraceIdentity({
+          kind: params.kind,
+          agent_id: params.agent_id,
+          agent_name: params.agent_name,
+          function: params.function,
+        })
+        if (!identity.ok) {
+          return {
+            content: [{ type: 'text', text: identity.error }],
+            isError: true,
+          }
+        }
+        const { kind, agentId, agentName } = identity
 
         await supaRpc('upsert_trace_with_metrics', {
           p_id:            params.id,
