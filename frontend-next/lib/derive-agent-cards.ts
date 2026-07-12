@@ -6,6 +6,8 @@
  * and passes them here.
  *
  * CONTRACT (do not break without coordinating with swarmtrace/tracer.py):
+ *   See docs/SDK_DASHBOARD_CONTRACT.md for the full agent_id/kind
+ *   contract this function implements one half of. Summary:
  *   - Group traces by `agent_id`.
  *   - A group becomes an agent card iff it contains at least one
  *     `kind === 'agent'` span.
@@ -58,9 +60,24 @@ export function deriveAgentCards(
     // (See CONTRACT above — do NOT add `&& t.id === id`.)
     if (!traces.some((t) => t.kind === 'agent')) continue
 
-    const runs        = traces.filter((t) => t.kind === 'agent')
+    // FIX #10: `latestRun` / `latestEvent` below are picked by index [0],
+    // which is only correct if the group is sorted most-recent-first.
+    // The current caller (app/api/agents/route.ts) does sort upstream
+    // (`order=timestamp.desc` in lib/trace-query.ts), but that was an
+    // *implicit* cross-file invariant this function never enforced or
+    // even documented — any future caller (a test, a new route, a
+    // client-side filter that reorders) that passes unsorted rows would
+    // silently get the wrong "latest" run/event with no error anywhere.
+    // Sorting a copy here makes the function correct on its own terms
+    // regardless of input order, matching what its own inline comments
+    // already assume it does.
+    const sorted = [...traces].sort(
+      (a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+    )
+
+    const runs        = sorted.filter((t) => t.kind === 'agent')
     const latestRun   = runs[0]
-    const latestEvent = traces[0]
+    const latestEvent = sorted[0]
     const isRecent    = latestEvent.timestamp >= fiveMinutesAgo
 
     const errorCount  = traces.filter((t) => t.error).length
