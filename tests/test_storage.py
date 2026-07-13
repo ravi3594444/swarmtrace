@@ -199,3 +199,183 @@ def test_purge_evicts_oldest_synced_first(storage, monkeypatch):
     assert storage.get_by_id("row-1") is None
     assert storage.get_by_id("row-2") is not None
     assert storage.get_by_id("row-3") is not None
+
+
+# ---------------------------------------------------------------------------
+# DB file permission hardening (audit finding: world-readable DB)
+#
+# Bug: ~/.swarmtrace.db was created with the process umask (typically 0644
+# on most systems), so on a multi-user machine any local user could read
+# captured prompts, outputs, args, error messages, and FOV browser-event
+# data. Fix: _secure_db_path() securely opens a regular DB file as 0600,
+# creates only package-owned directories as 0700, and rejects unsafe paths.
+# ---------------------------------------------------------------------------
+
+import os
+import stat
+
+
+def test_db_file_created_with_0600_permissions(storage):
+    """The DB file must be 0600 (owner-only) — not the umask default of 0644."""
+    # Trigger _get_conn() (which calls _secure_db_path).
+    conn = storage._get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS t (x INT)")
+    conn.commit()
+
+    mode = stat.S_IMODE(os.stat(storage.DB_PATH).st_mode)
+    assert mode == 0o600, f"DB file mode is {oct(mode)}, expected 0o600"
+
+
+def test_db_parent_dir_created_with_0700_when_we_create_it(storage, tmp_path):
+    """When the DB path includes a not-yet-existing parent dir that WE
+    create, that dir must be created with 0700 (owner-only)."""
+    nested = tmp_path / "deep" / "subdir" / "traces.db"
+    os.environ["SWARMTRACE_DB_PATH"] = str(nested)
+    import importlib as _il
+    _il.reload(storage)
+
+    conn = storage._get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS t (x INT)")
+    conn.commit()
+
+    parent = os.path.dirname(os.path.abspath(storage.DB_PATH))
+    dirmode = stat.S_IMODE(os.stat(parent).st_mode)
+    assert dirmode == 0o700, f"Created parent dir mode is {oct(dirmode)}, expected 0o700"
+
+
+def test_db_parent_dir_NOT_chmod_when_it_already_exists(storage, tmp_path):
+    """Reviewer P1 fix: we must NOT chmod an existing parent directory.
+
+    The first implementation unconditionally chmod'd the parent to 0700,
+    which broke /tmp (1777→0700 when running as root), the user's home
+    directory, and shared app directories. Now we only chmod dirs we
+    created ourselves.
+    """
+    # tmp_path already exists (pytest creates it). Put the DB directly
+    # inside it — tmp_path is the parent, and it already exists.
+    db = tmp_path / "traces.db"
+    os.environ["SWARMTRACE_DB_PATH"] = str(db)
+    import importlib as _il
+    _il.reload(storage)
+
+    # Give tmp_path a non-0700 mode to verify we don't overwrite it.
+    os.chmod(str(tmp_path), 0o755)
+
+    conn = storage._get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS t (x INT)")
+    conn.commit()
+
+    # Parent dir mode must be UNCHANGED (0o755), not overwritten to 0o700.
+    dirmode = stat.S_IMODE(os.stat(str(tmp_path)).st_mode)
+    assert dirmode == 0o755, (
+        f"Existing parent dir was chmod'd from 0o755 to {oct(dirmode)} — "
+        f"this breaks shared/system directories like /tmp"
+    )
+
+    # DB file itself IS still tightened to 0600.
+    filemode = stat.S_IMODE(os.stat(str(db)).st_mode)
+    assert filemode == 0o600
+
+
+def test_secure_db_path_is_idempotent(storage):
+    """Calling _secure_db_path multiple times must be a no-op (no error,
+    same permissions). _get_conn() calls it twice in succession."""
+    conn = storage._get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS t (x INT)")
+    conn.commit()
+
+    storage._secure_db_path(storage.DB_PATH)
+    storage._secure_db_path(storage.DB_PATH)
+    storage._secure_db_path(storage.DB_PATH)
+
+    mode = stat.S_IMODE(os.stat(storage.DB_PATH).st_mode)
+    assert mode == 0o600
+
+
+def test_secure_db_path_pre_creates_file_with_0600(tmp_path):
+    """When the DB file doesn't exist yet, _secure_db_path pre-creates it
+    with 0600 (via os.open) to avoid the umask race where sqlite3.connect
+    would create it with 0644 before we could chmod it."""
+    from swarmtrace.storage import _secure_db_path
+    target = tmp_path / "precreated.db"
+    _secure_db_path(str(target))
+
+    # File was pre-created.
+    assert target.exists()
+    # And it's already 0600, not the umask default.
+    mode = stat.S_IMODE(os.stat(str(target)).st_mode)
+    assert mode == 0o600, f"Pre-created file mode is {oct(mode)}, expected 0o600"
+
+
+def test_secure_db_path_does_not_raise_on_missing_file(tmp_path):
+    """_secure_db_path must not raise when the DB file doesn't exist yet.
+    It pre-creates it with 0600. The parent dir (tmp_path) already exists
+    and must NOT be chmod'd (reviewer P1 fix)."""
+    from swarmtrace.storage import _secure_db_path
+    missing = tmp_path / "never.db"
+
+    # Set a non-0700 mode on tmp_path to verify we don't overwrite it.
+    # (pytest's tmp_path may default to 0o700 on some systems, so we
+    # can't just assert "!= 0o700" — we need to set a known different
+    # mode and verify it's preserved.)
+    os.chmod(str(tmp_path), 0o755)
+
+    # Must not raise.
+    _secure_db_path(str(missing))
+
+    # File was pre-created with 0600.
+    assert missing.exists()
+    mode = stat.S_IMODE(os.stat(str(missing)).st_mode)
+    assert mode == 0o600
+
+    # Parent dir (tmp_path, which already existed) must NOT have been
+    # chmod'd — that was the P1 bug. Mode must still be 0o755.
+    dirmode = stat.S_IMODE(os.stat(str(tmp_path)).st_mode)
+    assert dirmode == 0o755, (
+        f"existing parent dir was chmod'd from 0o755 to {oct(dirmode)} — "
+        f"this is the P1 bug"
+    )
+
+
+def test_secure_db_path_fails_closed_when_fchmod_fails(tmp_path, monkeypatch):
+    """A permission-hardening failure must disable storage, not continue
+    writing sensitive traces to an insecure file."""
+    import swarmtrace.storage as storage_mod
+
+    target = tmp_path / "x.db"
+    target.touch()
+
+    def raise_fchmod(*args, **kwargs):
+        raise OSError("permission denied (simulated)")
+
+    monkeypatch.setattr(storage_mod.os, "fchmod", raise_fchmod)
+    with pytest.raises(OSError, match="permission denied"):
+        storage_mod._secure_db_path(str(target))
+
+
+def test_secure_db_path_rejects_symlink(tmp_path):
+    """The hardening helper must never chmod or open a symlink target."""
+    import swarmtrace.storage as storage_mod
+
+    target = tmp_path / "operator-config"
+    target.write_text("not a database")
+    os.chmod(target, 0o644)
+    link = tmp_path / "traces.db"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symbolic links are unavailable on this platform")
+
+    with pytest.raises(OSError, match="non-regular"):
+        storage_mod._secure_db_path(str(link))
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o644
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory modes required")
+def test_secure_db_path_rejects_other_writable_parent(tmp_path):
+    """A predictable DB directly in a shared directory is symlink-raceable."""
+    import swarmtrace.storage as storage_mod
+
+    os.chmod(tmp_path, 0o777)
+    with pytest.raises(PermissionError, match="group/other-writable"):
+        storage_mod._secure_db_path(str(tmp_path / "traces.db"))

@@ -14,7 +14,12 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { redact, luhnOk } from '../lib/redact.ts'
+import {
+  redact,
+  luhnOk,
+  redactDeep,
+  redactEventData,
+} from '../lib/redact.ts'
 import { validateIngest } from '../lib/validate-ingest.ts'
 
 // Issuer-published test PANs (safe to hardcode).
@@ -279,5 +284,163 @@ describe('validateIngest applies redaction at ingest boundary', () => {
     assert.ok(!rows[0].args.includes('alice@example.com'))
     assert.ok(!rows[1].error.includes('sk-' + 'A'.repeat(48)))
     assert.ok(!rows[2].output.includes(VISA_TEST_PAN))
+  })
+})
+
+
+// ── redactDeep — recursive server-side redaction for /api/events ──────────
+//
+// Reviewer P1 fix: the SDK redacts client-side, but any client that posts
+// directly to /api/events (curl, MCP, a third-party SDK port) bypasses the
+// SDK. redactDeep() is the server-side defense-in-depth that scrubs PII from
+// event data BEFORE it hits Supabase, regardless of which client sent it.
+
+describe('redactDeep', () => {
+  test('redacts strings in a flat object', () => {
+    const out = redactDeep({ email: 'alice@example.com', name: 'Alice' })
+    assert.equal(out.email, '[REDACTED]')
+    assert.equal(out.name, 'Alice')
+  })
+
+  test('redacts strings in nested objects', () => {
+    const out = redactDeep({
+      data: {
+        args: ['user@example.com', 'normal'],
+        error: 'sk-' + 'A'.repeat(48) + ' failed',
+      },
+    })
+    assert.equal(out.data.args[0], '[REDACTED]')
+    assert.equal(out.data.args[1], 'normal')
+    assert.ok(!out.data.error.includes('sk-' + 'A'.repeat(48)))
+    assert.ok(out.data.error.includes('[REDACTED]'))
+  })
+
+  test('redacts strings in arrays', () => {
+    const out = redactDeep(['alice@example.com', 'bob@example.com', 'plain'])
+    assert.deepEqual(out, ['[REDACTED]', '[REDACTED]', 'plain'])
+  })
+
+  test('redacts API keys in deeply nested structures', () => {
+    const apiKey = 'ghp_' + 'a'.repeat(36)
+    const out = redactDeep({
+      level1: {
+        level2: {
+          level3: [{ key: apiKey }],
+        },
+      },
+    })
+    assert.equal(out.level1.level2.level3[0].key, '[REDACTED]')
+  })
+
+  test('redacts JWTs in event data', () => {
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c'
+    const out = redactDeep({ data: { token: jwt } })
+    assert.equal(out.data.token, '[REDACTED]')
+  })
+
+  test('redacts Luhn-valid credit card numbers', () => {
+    const out = redactDeep({ card: `card: ${VISA_TEST_PAN}` })
+    assert.ok(!out.card.includes(VISA_TEST_PAN))
+    assert.ok(out.card.includes('[REDACTED]'))
+  })
+
+  test('passes through null, undefined, numbers, booleans', () => {
+    const out = redactDeep({ a: null, b: undefined, c: 42, d: true, e: false })
+    assert.equal(out.a, null)
+    assert.equal(out.b, undefined)
+    assert.equal(out.c, 42)
+    assert.equal(out.d, true)
+    assert.equal(out.e, false)
+  })
+
+  test('does not redact object keys (structural metadata)', () => {
+    const out = redactDeep({ email_field: 'alice@example.com' })
+    assert.ok('email_field' in out)
+    assert.equal(out.email_field, '[REDACTED]')
+  })
+
+  test('handles empty objects and arrays', () => {
+    assert.deepEqual(redactDeep({}), {})
+    assert.deepEqual(redactDeep([]), [])
+  })
+
+  test('handles mixed nested structures', () => {
+    const input = {
+      method: 'fill',
+      args: ['#password', 'secret-value'],
+      url: 'https://example.com/login?session=abc123',
+      nested: { token: 'sk-' + 'B'.repeat(48) },
+    }
+    const out = redactDeep(input)
+    // method and selector pass through (not PII).
+    assert.equal(out.method, 'fill')
+    assert.equal(out.args[0], '#password')
+    // Value is not pattern-PII but the recursive redactor runs redact()
+    // on every string — 'secret-value' doesn't match any pattern so it
+    // passes through. (Server-side redactDeep catches pattern-PII; the
+    // client-side FOV redactor catches fill/type values by field-aware
+    // logic. Both layers are needed.)
+    assert.equal(out.args[1], 'secret-value')
+    // API key in nested object IS redacted.
+    assert.equal(out.nested.token, '[REDACTED]')
+    assert.equal(out.url, 'https://example.com/login')
+  })
+
+  test('redacts generic secrets by structural key', () => {
+    const out = redactDeep({
+      password: 'CorrectHorseBatteryStaple!',
+      clientSecret: 'custom-value',
+      headers: { authorization: 'Basic custom-credential' },
+      token_chars: 42,
+    })
+    assert.equal(out.password, '[REDACTED]')
+    assert.equal(out.clientSecret, '[REDACTED]')
+    assert.equal(out.headers.authorization, '[REDACTED]')
+    assert.equal(out.token_chars, 42)
+  })
+
+  test('handles cyclic objects without overflowing', () => {
+    const input = { value: 'safe' }
+    input.self = input
+    const out = redactDeep(input)
+    assert.equal(out.value, 'safe')
+    assert.equal(out.self, '[REDACTED]')
+  })
+})
+
+
+describe('redactEventData', () => {
+  test('redacts direct-client browser fill values and repeated errors', () => {
+    const secret = 'CorrectHorseBatteryStaple!'
+    const out = redactEventData('browser', {
+      method: 'fill',
+      args: ['input:nth-of-type(2)', secret],
+      error: `could not submit value ${secret}`,
+      url: 'https://example.com/login?session=custom-secret',
+    })
+    assert.deepEqual(out.args, ['input:nth-of-type(2)', '[REDACTED(len=26)]'])
+    assert.ok(!out.error.includes(secret))
+    assert.equal(out.url, 'https://example.com/login')
+  })
+
+  test('redacts token and accumulated fields regardless of chunk shape', () => {
+    const out = redactEventData('llm_token', {
+      token: 'sk-',
+      accumulated: 'sk-AAAAAAAAAA',
+      token_chars: 3,
+      accumulated_chars: 13,
+    })
+    assert.equal(out.token, '[REDACTED]')
+    assert.equal(out.accumulated, '[REDACTED]')
+    assert.equal(out.token_chars, 3)
+    assert.equal(out.accumulated_chars, 13)
+  })
+
+  test('strips goto URL arguments', () => {
+    const out = redactEventData('browser', {
+      method: 'goto',
+      args: ['https://example.com/reset?token=custom-secret'],
+    })
+    assert.deepEqual(out.args, ['https://example.com/reset'])
   })
 })

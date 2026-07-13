@@ -22,7 +22,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js'
 import { z } from 'zod'
-import { sha256Hex, createRateLimiter } from '@/lib/api-auth'
+import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '@/lib/api-auth'
 import { resolveTraceIdentity } from '@/lib/resolve-trace-identity'
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
@@ -72,6 +72,9 @@ async function supaRpc(fn: string, params: Record<string, unknown>) {
 // doesn't collide with ingest's 'st_rl' or events' 'st_fov_rl'.
 const RATE_LIMIT = 120
 const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_mcp_rl' })
+// Per-IP limiter runs BEFORE the per-key limiter — caps attackers who
+// rotate fake API keys. See lib/api-auth.ts::createIpRateLimiter.
+const ipRateLimiter = createIpRateLimiter({ prefix: 'st_ip_rl_mcp' })
 
 // ── API key → user_id resolution ─────────────────────────────────────────────
 // Fresh Supabase lookup on every call — no in-process cache. This was the
@@ -321,7 +324,21 @@ async function handleMcp(req: Request): Promise<Response> {
 
   const keyHash = await sha256Hex(apiKey)
 
-  // ── Rate limit check (before DB lookup — cheap, fast) ──────────────────
+  // ── Per-IP rate limit (BEFORE per-key — caps key-rotation attacks) ────
+  // An attacker rotating fake API keys gets a fresh per-key bucket for
+  // each key but shares one per-IP bucket. See lib/api-auth.ts.
+  const clientIp = getClientIp(req)
+  if (!await ipRateLimiter.check(clientIp)) {
+    return new Response(null, {
+      status: 429,
+      headers: {
+        'Retry-After':       '60',
+        'X-RateLimit-Scope': 'ip',
+      },
+    })
+  }
+
+  // ── Per-key rate limit check (before DB lookup — cheap, fast) ──────────
   // Same shared rate limiter as /api/ingest. 120 requests / 60s per API key.
   if (!await rateLimiter.check(keyHash)) {
     return new Response(null, {

@@ -9,7 +9,7 @@
 
 // sha256 + rate limiter live in lib/api-auth.ts so they can be shared
 // with /api/events and /api/mcp without copy-paste drift.
-import { sha256Hex, createRateLimiter } from '@/lib/api-auth'
+import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '@/lib/api-auth'
 
 const MAX_BODY_BYTES  = 64 * 1024
 const MAX_BATCH_SIZE = 50
@@ -17,6 +17,13 @@ const SUPA_TIMEOUT_MS = 5000
 
 const RATE_LIMIT = 120
 const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_rl' })
+// Per-IP limiter runs BEFORE the per-key limiter — caps attackers who
+// rotate fake API keys (each key would get its own per-key bucket, but
+// they all share the per-IP bucket). 600/60s is 10x the per-key ingest
+// limit, so legitimate single-source workloads (the SDK's ~30/min per
+// active traced process) never hit it. See lib/api-auth.ts for the full
+// reasoning.
+const ipRateLimiter = createIpRateLimiter({ prefix: 'st_ip_rl_ingest' })
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY!
@@ -83,7 +90,23 @@ export async function POST(req: Request) {
   try {
     const keyHash = await sha256Hex(apiKey)
 
-    // ── Rate limit check (before DB lookup — cheap, fast) ─────────────────
+    // ── Per-IP rate limit (BEFORE per-key — caps key-rotation attacks) ────
+    // An attacker rotating fake API keys gets a fresh per-key bucket for
+    // each key but shares one per-IP bucket, so the IP limit catches them
+    // before the per-key limiter or the Supabase lookup ever runs. See
+    // lib/api-auth.ts::createIpRateLimiter for the full reasoning.
+    const clientIp = getClientIp(req)
+    if (!await ipRateLimiter.check(clientIp)) {
+      return new Response(null, {
+        status: 429,
+        headers: {
+          'Retry-After': '60',
+          'X-RateLimit-Scope': 'ip',
+        },
+      })
+    }
+
+    // ── Per-key rate limit check (before DB lookup — cheap, fast) ─────────
     if (!await rateLimiter.check(keyHash)) {
       return new Response(null, {
         status: 429,

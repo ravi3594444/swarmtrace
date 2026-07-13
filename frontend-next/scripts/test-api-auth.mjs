@@ -20,6 +20,8 @@ import assert from 'node:assert/strict'
 import {
   sha256Hex,
   createRateLimiter,
+  createIpRateLimiter,
+  resolveClientIp,
 } from '../lib/api-auth.ts'
 
 // ── sha256Hex ──────────────────────────────────────────────────────────────
@@ -160,5 +162,209 @@ describe('createRateLimiter fallback map memory bound (finding #7)', () => {
       `map size=${rl._debugMapSize()} — expired entries from earlier ` +
         `bursts were not being swept`,
     )
+  })
+})
+
+
+// ── getClientIp (audit fix: rate-limit bypass + reviewer P2 fix) ──────────
+//
+// Reviewer P2 fix: the first implementation trusted x-forwarded-for
+// unconditionally. On Vercel that's safe (platform overwrites it), but
+// on self-hosted deployments an attacker can rotate X-Forwarded-For
+// values to get a fresh rate-limit bucket per request. Now forwarded-for is
+// trusted only on Vercel; self-hosted trusted-proxy mode accepts only the
+// documented, proxy-overwritten x-real-ip header. All values are validated.
+
+describe('getClientIp', () => {
+  function headers(values = {}) {
+    return new Headers(values)
+  }
+
+  test('self-hosted default ignores all forwarded client-IP headers', () => {
+    const h = headers({
+      'x-forwarded-for': '203.0.113.99',
+      'x-vercel-forwarded-for': '198.51.100.20',
+      'x-real-ip': '192.0.2.10',
+    })
+    assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: false }), 'unknown')
+  })
+
+  test('self-hosted trusted proxy uses only x-real-ip', () => {
+    const h = headers({
+      // Attacker-controlled XFF must not override the proxy-managed value.
+      'x-forwarded-for': '203.0.113.99',
+      'x-real-ip': '192.0.2.10',
+    })
+    assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: true }), '192.0.2.10')
+  })
+
+  test('self-hosted trusted proxy does not accept x-forwarded-for alone', () => {
+    const h = headers({ 'x-forwarded-for': '203.0.113.99' })
+    assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: true }), 'unknown')
+  })
+
+  test('rejects invalid and injection-shaped x-real-ip values', () => {
+    for (const value of ['not-an-ip', "1' OR '1'='1", '999.1.1.1']) {
+      const h = headers({ 'x-real-ip': value })
+      assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: true }), 'unknown')
+    }
+  })
+
+  test('accepts and normalizes IPv6 from a trusted proxy', () => {
+    const h = headers({ 'x-real-ip': 'FE80::1%attacker-controlled-zone' })
+    assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: true }), 'fe80::1')
+  })
+
+  test('Vercel prefers its platform-specific header over XFF', () => {
+    const h = headers({
+      'x-vercel-forwarded-for': '192.0.2.5, 10.0.0.1',
+      'x-forwarded-for': '203.0.113.9',
+    })
+    assert.equal(resolveClientIp(h, { isVercel: true, trustProxy: false }), '192.0.2.5')
+  })
+
+  test('Vercel falls back to its managed x-forwarded-for equivalent', () => {
+    const h = headers({ 'x-forwarded-for': '198.51.100.42, 10.0.0.1' })
+    assert.equal(resolveClientIp(h, { isVercel: true, trustProxy: false }), '198.51.100.42')
+  })
+
+  test('returns unknown when no valid trusted header exists', () => {
+    assert.equal(
+      resolveClientIp(headers(), { isVercel: true, trustProxy: false }),
+      'unknown',
+    )
+  })
+})
+
+
+// ── createIpRateLimiter (audit fix: rate-limit bypass) ───────────────────
+//
+// The whole point of the per-IP limiter: cap an attacker who rotates fake
+// API keys. Each fake key would get its own per-key bucket (defeating the
+// per-key limiter), but they all share one per-IP bucket.
+
+describe('createIpRateLimiter', () => {
+  test('default limit is 600/60s (10x the per-key ingest limit)', async () => {
+    // We can't read the limit back directly, but we can verify that 600
+    // checks pass and the 601st fails. Use a fresh limiter with a unique
+    // prefix so no other test's state interferes.
+    const rl = createIpRateLimiter({ prefix: 'test-ip-default-limit' })
+    const ip = '203.0.113.100'
+
+    for (let i = 0; i < 600; i++) {
+      const ok = await rl.check(ip)
+      if (!ok) {
+        assert.fail(`check #${i + 1} was rejected, expected 600 to pass`)
+        return
+      }
+    }
+    // 601st must fail.
+    const over = await rl.check(ip)
+    assert.equal(over, false, '601st check from same IP must be rate-limited')
+  })
+
+  test('caps attacker rotating 1000 fake keys from one IP', async () => {
+    // The exact attack pattern from the audit finding: 1000 distinct fake
+    // API keys, all from one IP. Each key gets its own per-key bucket
+    // (so per-key limiting is useless), but they all share one per-IP
+    // bucket.
+    const rl = createIpRateLimiter({
+      limit: 50,         // small for test speed
+      prefix: 'test-ip-rotation-attack',
+      windowMs: 60_000,
+    })
+    const attackerIp = '198.51.100.99'
+
+    let allowed = 0
+    for (let i = 0; i < 1000; i++) {
+      // 1000 distinct fake keys — per-key limiter would let all 1000
+      // through (one per bucket). Per-IP limiter must cap at 50.
+      const ok = await rl.check(attackerIp)
+      if (ok) allowed++
+    }
+
+    assert.equal(
+      allowed, 50,
+      `attacker rotating 1000 fake keys from one IP got ${allowed} ` +
+        `requests through, expected per-IP cap of 50`,
+    )
+  })
+
+  test('distinct IPs get distinct buckets', async () => {
+    const rl = createIpRateLimiter({
+      limit: 5,
+      prefix: 'test-ip-distinct-buckets',
+      windowMs: 60_000,
+    })
+
+    // IP A uses up its full bucket.
+    for (let i = 0; i < 5; i++) {
+      assert.equal(await rl.check('203.0.113.1'), true)
+    }
+    // IP A's 6th request must be rejected.
+    assert.equal(await rl.check('203.0.113.1'), false)
+
+    // IP B has its own fresh bucket — first request must pass.
+    assert.equal(
+      await rl.check('198.51.100.2'), true,
+      'distinct IP must have its own bucket — per-IP limit must NOT ' +
+        'be global',
+    )
+  })
+
+  test('"unknown" IP (no headers) shares one bucket — safe default', async () => {
+    // When the IP can't be determined, all such requests share one
+    // 'unknown' bucket. This is the safe default: if each unknown-origin
+    // request got a fresh bucket, the limiter would be a no-op for any
+    // request that omits IP headers (which an attacker can do).
+    const rl = createIpRateLimiter({
+      limit: 3,
+      prefix: 'test-ip-unknown-shared',
+      windowMs: 60_000,
+    })
+
+    assert.equal(await rl.check('unknown'), true)
+    assert.equal(await rl.check('unknown'), true)
+    assert.equal(await rl.check('unknown'), true)
+    assert.equal(
+      await rl.check('unknown'), false,
+      '4th "unknown"-origin request must be rate-limited — they share ' +
+        'one bucket, not each get a fresh one',
+    )
+  })
+
+  test('per-IP and per-key buckets do not collide (distinct prefixes)', async () => {
+    // Both limiters use the per-isolate fallback Map (Upstash env absent
+    // in tests). The map is keyed by the bucket key (IP or keyHash) with
+    // the prefix baked into the limiter's internal state — wait, the
+    // createRateLimiter map is keyed by just the keyHash arg, NOT by
+    // prefix. So per-IP and per-key buckets with overlapping key strings
+    // COULD collide.
+    //
+    // In practice this is fine: per-key keys are 64-char sha256 hex
+    // digests, per-IP keys are IP addresses or 'unknown'. They never
+    // overlap. This test locks that assumption: a per-IP check for an
+    // IP-shaped string does NOT consume a per-key bucket.
+    const ipLimiter = createIpRateLimiter({
+      limit: 2,
+      prefix: 'test-no-collision-ip',
+      windowMs: 60_000,
+    })
+    const keyLimiter = createRateLimiter({
+      limit: 2,
+      prefix: 'test-no-collision-key',
+      windowMs: 60_000,
+    })
+
+    // Use the IP '2' — same string would be a per-key bucket key.
+    // (In production this can't happen: per-key keys are sha256 hex.)
+    assert.equal(await ipLimiter.check('2'), true)
+    assert.equal(await ipLimiter.check('2'), true)
+    assert.equal(await ipLimiter.check('2'), false) // per-IP exhausted
+
+    // Per-key bucket for '2' must be untouched (still has all 2 left).
+    assert.equal(await keyLimiter.check('2'), true)
+    assert.equal(await keyLimiter.check('2'), true)
+    assert.equal(await keyLimiter.check('2'), false)
   })
 })
