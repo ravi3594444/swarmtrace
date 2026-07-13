@@ -15,6 +15,7 @@ Design notes:
 import logging
 import os
 import sqlite3
+import stat
 import threading
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -68,6 +69,65 @@ _write_count: int = 0
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _secure_db_path(path: str) -> None:
+    """Create/open a regular DB file without following symbolic links.
+
+    The DB is always mode 0600. A missing parent directory created by this
+    function is mode 0700, while an existing parent is never chmod'd. Direct
+    placement in a group/other-writable directory is rejected because another
+    local user could swap the path for a symlink between validation and
+    SQLite's open.
+
+    Security failures propagate to ``_get_conn``. Public tracing APIs already
+    catch storage errors, so the observed application keeps running while
+    insecure local persistence fails closed.
+    """
+    parent = os.path.dirname(os.path.abspath(path))
+
+    if parent and not os.path.isdir(parent):
+        try:
+            os.makedirs(parent, mode=0o700, exist_ok=False)
+        except FileExistsError:
+            if not os.path.isdir(parent):
+                raise
+        else:
+            os.chmod(parent, 0o700)
+
+    parent_mode = os.stat(parent).st_mode
+    if os.name == "posix" and parent_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        raise PermissionError(
+            f"refusing SWARMTRACE_DB_PATH in group/other-writable directory: {parent}"
+        )
+
+    nofollow = getattr(os, "O_NOFOLLOW", 0)
+    nonblock = getattr(os, "O_NONBLOCK", 0)
+    flags = os.O_WRONLY | nofollow | nonblock
+
+    try:
+        fd = os.open(path, flags | os.O_CREAT | os.O_EXCL, 0o600)
+        expected = None
+    except FileExistsError:
+        expected = os.lstat(path)
+        if stat.S_ISLNK(expected.st_mode) or not stat.S_ISREG(expected.st_mode):
+            raise OSError(f"refusing non-regular SwarmTrace DB path: {path}")
+        fd = os.open(path, flags)
+
+    try:
+        actual = os.fstat(fd)
+        if not stat.S_ISREG(actual.st_mode):
+            raise OSError(f"refusing non-regular SwarmTrace DB path: {path}")
+        if expected is not None and (
+            expected.st_dev != actual.st_dev or expected.st_ino != actual.st_ino
+        ):
+            raise OSError(f"SwarmTrace DB path changed while opening: {path}")
+        if hasattr(os, "fchmod"):
+            os.fchmod(fd, 0o600)
+        else:  # pragma: no cover - Windows has limited POSIX mode support
+            os.chmod(path, 0o600)
+    finally:
+        os.close(fd)
+
+
 def _get_conn() -> sqlite3.Connection:
     global _conn
     if _conn is not None:
@@ -77,7 +137,11 @@ def _get_conn() -> sqlite3.Connection:
             _conn = None
 
     if _conn is None:
+        # Securely pre-create/validate the regular file before SQLite opens it,
+        # then verify it again after connect as defense-in-depth.
+        _secure_db_path(DB_PATH)
         _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _secure_db_path(DB_PATH)
         # sqlite3.Row supports both row["col"] and row[i] (PRAGMA table_info
         # parsing below still works unchanged) -- this is what lets
         # get_traces()/get_all_traces()/get_by_id() hand back plain dicts
