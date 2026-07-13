@@ -286,6 +286,42 @@ def test_invalid_kind_rejected():
             ...
 
 
+def test_retrieval_kind_accepted_by_observe(records):
+    """Regression: @observe(kind="retrieval") must NOT raise.
+
+    The Phase 3 RAG effort added 'retrieval' to the MCP route's Zod enum
+    (frontend-next/app/api/mcp/route.ts), to resolve-trace-identity.ts's
+    TraceKind union, to scraper.scrape(kind="retrieval"), and to the
+    integration test test_phase3_retrieval_kind_round_trips — but never
+    to the Python SDK's canonical _VALID_KINDS in tracer.py. So the
+    primary entry point (@observe) raised ValueError on the very kind
+    the docs and the rest of the stack already endorsed. Same taxonomy,
+    three different rules. This test locks @observe in step with the
+    other entry points.
+
+    Attribution follows the established house pattern: a bare
+    @observe(kind=...) with no enclosing agent falls back to its own
+    identity, so agent_id == trace_id (mirrors
+    test_orphan_tool_call_self_attributes_but_is_not_an_agent and
+    test_explicit_kind_agent_keeps_fresh_id_across_runs). We assert the
+    resolved kind is persisted and the row is non-agent (no phantom
+    agent card is created for a retrieval span on its own).
+    """
+    @tracer.observe(kind="retrieval")
+    def rag_search(query):
+        return f"docs about {query}"
+
+    rag_search("qdrant")
+
+    assert len(records) == 1
+    kind, agent_id, agent_name = records[0][-4:-1]
+    assert kind == "retrieval"
+    # No enclosing agent → falls back to self (the row's own trace_id),
+    # matching the orphan-tool-call pattern. agent_id == trace_id (pos 0).
+    assert agent_id == records[0][0]
+    assert agent_name == "rag_search"
+
+
 def test_async_kind_and_agent_attribution(records):
     @tracer.observe(kind="llm")
     async def acall_llm(prompt):
