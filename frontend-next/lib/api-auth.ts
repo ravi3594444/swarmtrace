@@ -64,38 +64,93 @@ export async function sha256Hex(input: string): Promise<string> {
 
 // ── Client IP extraction ───────────────────────────────────────────────────
 //
-// Vercel sets x-forwarded-for with the client IP as the first entry
-// (followed by any proxy chain). x-real-ip is set by some load balancers
-// and is a single IP. x-vercel-forwarded-for is Vercel-specific but
-// carries the same semantics as x-forwarded-for.
+// Reviewer P2 fix: the first implementation trusted x-forwarded-for,
+// x-vercel-forwarded-for, and x-real-ip unconditionally. On Vercel,
+// x-forwarded-for is overwritten by the platform to prevent spoofing, so
+// the production deployment is safe. But a self-hosted `next start`
+// deployment or an incorrectly configured proxy lets an attacker rotate
+// X-Forwarded-For values and obtain a new rate-limit bucket for every
+// request.
 //
-// We take the FIRST IP in x-forwarded-for (the original client) — not
-// the last (which would be the closest proxy). For x-real-ip we take
-// the whole value (it's already a single IP).
+// New behavior:
+//   - On Vercel (VERCEL=1 or VERCEL_ENV set): trust x-forwarded-for and
+//     x-vercel-forwarded-for (Vercel overwrites them to prevent spoofing).
+//   - Off Vercel (self-hosted): do NOT trust client-supplied forwarded-for
+//     headers. Use x-real-ip only if the operator explicitly sets
+//     SWARMTRACE_TRUST_PROXY=1 (signaling they've configured their reverse
+//     proxy to set x-real-ip correctly). Otherwise return 'unknown'.
+//   - All extracted values are validated as IPv4 or IPv6. Invalid values
+//     map to 'unknown' (shared bucket) so an attacker can't pollute the
+//     rate-map with arbitrary strings.
 //
-// Returns 'unknown' if no header is present, which the IP rate limiter
-// treats as a single shared bucket — that's a safe default: it means
-// "all unknown-origin requests share one bucket" rather than "each
-// unknown-origin request gets a fresh bucket" (which would be no limit
-// at all).
+// Returns 'unknown' when no valid IP can be extracted. 'unknown' shares
+// one bucket — the safe default (no IP = one shared cap, not a fresh
+// bucket per request).
+//
+// SELF-HOSTING NOTE: if you run `next start` behind a reverse proxy,
+// set SWARMTRACE_TRUST_PROXY=1 and configure your proxy to overwrite
+// x-real-ip with the client IP. Without this, all requests share one
+// 'unknown' IP bucket, which is safe but coarse. For production-grade
+// per-IP limiting on self-hosted deployments, enforce the limit at the
+// reverse proxy / WAF (nginx limit_req, Cloudflare rate limiting, etc.)
+// and also configure Upstash Redis for distributed limiting across
+// multiple Node.js instances.
+
+const _IS_VERCEL = !!(process.env.VERCEL || process.env.VERCEL_ENV)
+
+// Read SWARMTRACE_TRUST_PROXY at call time (not module-load time) so
+// tests can toggle it. In production it's set once and never changes.
+function _trustProxy(): boolean {
+  return process.env.SWARMTRACE_TRUST_PROXY === '1'
+}
+
+// IPv4: four dot-separated octets, 0-255 each.
+const _IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
+
+// IPv6: fairly permissive — covers standard compressed forms like
+// 2001:db8::1, ::1, fe80::1%eth0. Not RFC-5952-strict, but good enough
+// to reject arbitrary strings that would pollute the rate-map.
+const _IPV6_RE = /^(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)*:?(?::[0-9a-fA-F]{1,4})+$/
+
+function _isValidIp(ip: string): boolean {
+  if (!ip) return false
+  // Strip optional zone-id (fe80::1%eth0 → fe80::1).
+  const bare = ip.split('%')[0]
+  return _IPV4_RE.test(bare) || _IPV6_RE.test(bare)
+}
+
 export function getClientIp(req: Request): string {
   const h = req.headers
-  // x-forwarded-for: "client, proxy1, proxy2" — take the first.
-  const xff = h.get('x-forwarded-for')
-  if (xff) {
-    const first = xff.split(',')[0]?.trim()
-    if (first) return first
+  const trustProxy = _IS_VERCEL || _trustProxy()
+
+  // On Vercel, x-forwarded-for is platform-managed (spoof-proof).
+  // Off Vercel, only trust it if the operator explicitly opted in.
+  if (trustProxy) {
+    const xff = h.get('x-forwarded-for')
+    if (xff) {
+      const first = xff.split(',')[0]?.trim()
+      if (first && _isValidIp(first)) return first
+    }
+    const vff = h.get('x-vercel-forwarded-for')
+    if (vff) {
+      const first = vff.split(',')[0]?.trim()
+      if (first && _isValidIp(first)) return first
+    }
+
+    // x-real-ip: trusted only under the same conditions.
+    const xrip = h.get('x-real-ip')
+    if (xrip) {
+      const trimmed = xrip.trim()
+      if (_isValidIp(trimmed)) return trimmed
+    }
   }
-  // x-vercel-forwarded-for: same shape as x-forwarded-for (Vercel-specific).
-  const vff = h.get('x-vercel-forwarded-for')
-  if (vff) {
-    const first = vff.split(',')[0]?.trim()
-    if (first) return first
-  }
-  // x-real-ip: single IP, no comma-split needed.
-  const xrip = h.get('x-real-ip')
-  if (xrip) return xrip.trim()
+
   return 'unknown'
+}
+
+/** Test-only: expose the Vercel detection flag for unit tests. */
+export function _isVercel(): boolean {
+  return _IS_VERCEL
 }
 
 // ── Rate limiter factory ───────────────────────────────────────────────────

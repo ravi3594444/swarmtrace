@@ -25,6 +25,7 @@
 
 import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '@/lib/api-auth'
 import { decodeGzipBody } from '@/lib/decode-body'
+import { redactDeep } from '@/lib/redact'
 
 const MAX_BODY_BYTES  = 32 * 1024   // 32 KB per event (screenshots compress well)
 // Decompressed-size bound (audit finding #6). No SDK version sends
@@ -97,9 +98,15 @@ function validate(p: unknown): { row?: Record<string, unknown>; error?: string }
   const status = typeof v.status === 'string' && VALID_STATUSES.has(v.status)
     ? v.status : 'info'
 
-  // data can be anything serialisable; screenshots (base64) live here
+  // data can be anything serialisable; screenshots (base64) live here.
+  // Reviewer P1 fix: apply redactDeep() to scrub PII from event data
+  // BEFORE it hits Supabase. The SDK already redacts client-side, but
+  // any client that posts directly (curl, MCP, a third-party port)
+  // bypasses the SDK. Server-side redaction is defense-in-depth so PII
+  // never lands in the DB regardless of which client sent it.
   let data: unknown = v.data ?? {}
   if (typeof data !== 'object') data = { value: String(data) }
+  data = redactDeep(data)
 
   return {
     row: {
