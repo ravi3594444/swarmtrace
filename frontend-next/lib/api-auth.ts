@@ -51,6 +51,7 @@
  * createIpRateLimiter() + getClientIp() below.
  */
 
+import { isIP } from 'node:net'
 import { Redis } from '@upstash/redis'
 import { Ratelimit } from '@upstash/ratelimit'
 
@@ -104,48 +105,47 @@ function _trustProxy(): boolean {
   return process.env.SWARMTRACE_TRUST_PROXY === '1'
 }
 
-// IPv4: four dot-separated octets, 0-255 each.
-const _IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
-
-// IPv6: fairly permissive — covers standard compressed forms like
-// 2001:db8::1, ::1, fe80::1%eth0. Not RFC-5952-strict, but good enough
-// to reject arbitrary strings that would pollute the rate-map.
-const _IPV6_RE = /^(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)*:?(?::[0-9a-fA-F]{1,4})+$/
-
-function _isValidIp(ip: string): boolean {
-  if (!ip) return false
-  // Strip optional zone-id (fe80::1%eth0 → fe80::1).
-  const bare = ip.split('%')[0]
-  return _IPV4_RE.test(bare) || _IPV6_RE.test(bare)
+// Validate with Node's parser rather than a permissive hand-written regex.
+// Strip IPv6 zone IDs before using the value as a bucket key so one address
+// cannot create arbitrary buckets by rotating `%zone` suffixes.
+function _normalizeIp(ip: string): string | null {
+  const bare = ip.trim().split('%')[0]
+  return isIP(bare) ? bare.toLowerCase() : null
 }
 
-export function getClientIp(req: Request): string {
-  const h = req.headers
-  const trustProxy = _IS_VERCEL || _trustProxy()
+export function resolveClientIp(
+  h: Headers,
+  { isVercel, trustProxy }: { isVercel: boolean; trustProxy: boolean },
+): string {
+  if (isVercel) {
+    // These headers are platform-managed on Vercel. Prefer the Vercel-named
+    // header, then its documented x-forwarded-for equivalent.
+    for (const name of ['x-vercel-forwarded-for', 'x-forwarded-for', 'x-real-ip']) {
+      const raw = h.get(name)
+      const first = raw?.split(',')[0]?.trim()
+      const ip = first ? _normalizeIp(first) : null
+      if (ip) return ip
+    }
+    return 'unknown'
+  }
 
-  // On Vercel, x-forwarded-for is platform-managed (spoof-proof).
-  // Off Vercel, only trust it if the operator explicitly opted in.
   if (trustProxy) {
-    const xff = h.get('x-forwarded-for')
-    if (xff) {
-      const first = xff.split(',')[0]?.trim()
-      if (first && _isValidIp(first)) return first
-    }
-    const vff = h.get('x-vercel-forwarded-for')
-    if (vff) {
-      const first = vff.split(',')[0]?.trim()
-      if (first && _isValidIp(first)) return first
-    }
-
-    // x-real-ip: trusted only under the same conditions.
-    const xrip = h.get('x-real-ip')
-    if (xrip) {
-      const trimmed = xrip.trim()
-      if (_isValidIp(trimmed)) return trimmed
-    }
+    // Self-hosting documentation requires the trusted reverse proxy to
+    // overwrite x-real-ip. Do not also trust client-supplied XFF here: many
+    // otherwise-correct proxies pass it through unchanged.
+    const raw = h.get('x-real-ip')
+    const ip = raw ? _normalizeIp(raw) : null
+    return ip ?? 'unknown'
   }
 
   return 'unknown'
+}
+
+export function getClientIp(req: Request): string {
+  return resolveClientIp(req.headers, {
+    isVercel: _IS_VERCEL,
+    trustProxy: _trustProxy(),
+  })
 }
 
 /** Test-only: expose the Vercel detection flag for unit tests. */
