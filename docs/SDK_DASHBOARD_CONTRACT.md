@@ -21,9 +21,9 @@ agent collapse into one card instead of spawning a new card per run.
 
 ## `kind` — how a trace gets classified
 
-Five values: `"agent"`, `"tool"`, `"llm"`, `"function"`, and the
-SDK-only input value `"auto"` (never stored — always resolved before
-save). Resolution logic (`tracer.py::_resolve_kind`):
+Six values: `"agent"`, `"tool"`, `"llm"`, `"function"`, `"retrieval"`,
+and the SDK-only input value `"auto"` (never stored — always resolved
+before save). Resolution logic (`tracer.py::_resolve_kind`):
 
 ```
 resolved_kind = kind if kind != "auto" else (
@@ -34,15 +34,27 @@ resolved_kind = kind if kind != "auto" else (
 In plain terms: a bare `@observe` call becomes `kind="agent"` only when
 nothing else is already tracking it as a sub-call; if it's nested inside
 another traced call, it becomes `kind="function"` instead. Explicit
-`@observe(kind="agent")`, `@observe(kind="tool")`, etc. always keep the
-kind you asked for, no resolution needed.
+`@observe(kind="agent")`, `@observe(kind="tool")`, `@observe(kind="retrieval")`,
+etc. always keep the kind you asked for, no resolution needed.
 
-**Anti-phantom guarantee:** an orphan `tool`/`llm`/`function` call with
-no enclosing agent still gets `kind != "agent"` — the SDK only assigns
-`kind="agent"` to the auto-resolved top-level span itself, never to
-tool/llm/function spans underneath it. This is why `deriveAgentCards`
-can safely gate on "has at least one `kind=='agent'` row" without
-separately checking for orphans.
+`"retrieval"` was added in the Phase 3 RAG effort for document-loading /
+vector-search spans (qdrant/pinecone/chroma lookups, `scraper.scrape(kind="retrieval")`
+for RAG ingestion, etc.). It is a leaf kind like `"tool"`/`"llm"`/`"function"`
+— never auto-resolved to, never becomes its own agent card, and must
+have an `agent_id` when recorded through the stateless MCP route (see
+`lib/resolve-trace-identity.ts`). The same kind set must be accepted by
+all four entry points: the Python `@observe` decorator (`tracer.py::_VALID_KINDS`),
+`scraper.scrape(kind=...)`, the MCP `record_trace` Zod enum
+(`app/api/mcp/route.ts`), and the dashboard's `TraceKind` union
+(`lib/resolve-trace-identity.ts`). Drift between any of them is the
+failure mode this section exists to prevent.
+
+**Anti-phantom guarantee:** an orphan `tool`/`llm`/`function`/`retrieval`
+call with no enclosing agent still gets `kind != "agent"` — the SDK only
+assigns `kind="agent"` to the auto-resolved top-level span itself, never
+to tool/llm/function/retrieval spans underneath it. This is why
+`deriveAgentCards` can safely gate on "has at least one `kind=='agent'`
+row" without separately checking for orphans.
 
 ## `agent_id` — how runs get grouped into one card
 
@@ -100,6 +112,7 @@ the `SORT GUARD` tests in `scripts/test-derive-agent-cards.mjs`.
 | Rule | Source of truth | Tests |
 |---|---|---|
 | `kind` resolution (`auto` → `agent`/`function`) | `swarmtrace/tracer.py::_resolve_kind` | `tests/test_tracer.py` |
+| The accepted `kind` set (`agent`/`tool`/`llm`/`function`/`retrieval` + SDK-only `auto`) must be identical across `@observe`, `scraper.scrape`, MCP `record_trace`, and the dashboard's `TraceKind` union | `swarmtrace/tracer.py::_VALID_KINDS`, `swarmtrace/scraper.py`, `frontend-next/app/api/mcp/route.ts` (Zod enum), `frontend-next/lib/resolve-trace-identity.ts::TraceKind` | `tests/test_tracer.py::test_invalid_kind_rejected`, `tests/test_tracer.py::test_retrieval_kind_accepted_by_observe`, `tests/test_scraper.py::test_scrape_kind_override_to_retrieval`, `frontend-next/scripts/test-resolve-trace-identity.mjs`, `tests/integration/test_postgres_contract.py::test_phase3_retrieval_kind_round_trips` |
 | Stable `agent_id` hashing (SDK side) | `swarmtrace/tracer.py::_stable_agent_id` | `tests/test_tracer.py` |
 | Stable `agent_id` hashing (MCP/frontend side) | `frontend-next/lib/stable-agent-id.ts::stableAgentId` | `frontend-next/scripts/test-derive-agent-cards.mjs` |
 | Grouping traces into agent cards | `frontend-next/lib/derive-agent-cards.ts::deriveAgentCards` | `frontend-next/scripts/test-derive-agent-cards.mjs` |
@@ -114,10 +127,19 @@ hash input, a new grouping rule):
    construction changes) together, in the same commit — not staggered
    across sessions. A hash-input change on only one side is the failure
    mode this doc exists to prevent.
-2. Update `derive-agent-cards.ts`'s grouping logic if the "what counts
+2. **When adding or removing a `kind`:** update all four entry points in
+   the same commit — `tracer.py::_VALID_KINDS` (the `@observe` decorator),
+   `scraper.scrape`'s docstring/defaults, the MCP `record_trace` Zod enum
+   in `app/api/mcp/route.ts`, and the `TraceKind` union in
+   `lib/resolve-trace-identity.ts`. The Phase 3 RAG effort added
+   `"retrieval"` to three of the four but missed `_VALID_KINDS`, which
+   left `@observe(kind="retrieval")` raising `ValueError` while
+   `scraper.scrape(kind="retrieval")` and the MCP route silently accepted
+   it — same taxonomy, three different rules. Don't repeat that.
+3. Update `derive-agent-cards.ts`'s grouping logic if the "what counts
    as an agent" rule itself changes (not just the id scheme).
-3. Update the tests in the table above, and this doc, in the same
+4. Update the tests in the table above, and this doc, in the same
    commit.
-4. Run both suites (`pytest` and `npm test` in `frontend-next/`) before
+5. Run both suites (`pytest` and `npm test` in `frontend-next/`) before
    pushing — a passing Python suite says nothing about whether the
    TypeScript side still agrees with it, and vice versa.
