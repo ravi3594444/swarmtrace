@@ -481,11 +481,18 @@ _PAGE_METHODS = [
 
 
 # Methods whose second positional arg is the VALUE being entered/selected
-# (the first arg is the selector). For these, field-aware redaction kicks
-# in: if the selector matches _SENSITIVE_SELECTOR_RE, the value is
-# replaced with [REDACTED] before the event is built — long before it
-# reaches local SQLite, the remote /api/events endpoint, or Supabase.
+# (the first arg is the selector). For these, we ALWAYS redact the value
+# and record only metadata (length) — not just when the selector matches
+# a keyword. Reviewer P1 fix: generic selectors like 'input:nth-of-type(2)'
+# or '#field-2' don't contain password/token/secret keywords, so keyword-
+# based detection leaks the value. The only safe default is to redact
+# every fill/type value.
 _VALUE_METHODS = {"fill", "type", "press", "select_option"}
+
+# Methods whose first positional arg is a URL. We apply _redact_url() to
+# strip query strings and fragments (which carry session tokens, OAuth
+# codes, API keys, and reset tokens).
+_URL_METHODS = {"goto"}
 
 # Selectors that name a sensitive input. We match case-insensitively
 # anywhere in the selector string (covers #password, [name="password"],
@@ -527,47 +534,42 @@ def _redact_url(url: str) -> str:
 def _redact_browser_args(method: str, args: tuple) -> list:
     """Redact positional args captured for a Playwright method call.
 
-    Two layers:
+    Three layers:
 
-    1. **Field-aware** (the high-value layer): for fill/type/press/select_option,
-       if the FIRST arg (the selector) names a sensitive field, replace the
-       SECOND arg (the value being entered) with [REDACTED]. This catches
-       raw passwords, custom tokens, and internal secrets that have NO
-       recognizable pattern — exactly the case pattern-based redact()
-       cannot help with.
+    1. **Value-method redaction** (the high-value layer): for fill/type/
+       press/select_option, the VALUE arg (position 1) is ALWAYS replaced
+       with [REDACTED(len=N)] — regardless of the selector. Reviewer P1
+       fix: generic selectors like 'input:nth-of-type(2)' or '#field-2'
+       don't contain password/token/secret keywords, so keyword-based
+       detection leaked the value. The only safe default is to redact
+       every fill/type value and record only the length for debugging.
 
-    2. **Pattern-based** (defense-in-depth): run every string arg through
-       redact() to catch API keys / JWTs / emails / card numbers that
-       might appear in any position (e.g. a selector like
-       'input[value="sk-live-xxx"]' or a value that happens to be a
-       real API key).
+    2. **URL redaction**: for goto, the URL arg (position 0) is passed
+       through _redact_url() to strip query strings and fragments that
+       carry session tokens, OAuth codes, API keys, and reset tokens.
 
-    Both layers run; field-aware wins where it applies (it short-circuits
-    the value arg to [REDACTED] before pattern-based ever sees it).
+    3. **Pattern-based** (defense-in-depth): run every remaining string
+       arg through redact() to catch API keys / JWTs / emails / card
+       numbers in any position.
 
     Args are truncated to 200 chars after redaction, matching the
     pre-existing behavior.
     """
     out = []
-    selector_is_sensitive = False
     for i, a in enumerate(args):
-        # Field-aware: redact the VALUE arg of sensitive fill/type/etc. calls.
-        if (
-            method in _VALUE_METHODS
-            and i == 1
-            and selector_is_sensitive
-        ):
-            out.append(_REDACTED)
+        # Layer 1: always redact the VALUE arg of fill/type/press/select_option.
+        if method in _VALUE_METHODS and i == 1:
+            val_len = len(str(a))
+            out.append(f"[REDACTED(len={val_len})]")
             continue
+        # Layer 2: redact URLs in goto's first arg.
+        if method in _URL_METHODS and i == 0 and isinstance(a, str):
+            out.append(_redact_url(a)[:200])
+            continue
+        # Layer 3: pattern-based defense-in-depth on every remaining arg.
         s = str(a)
-        # Pattern-based defense-in-depth on every arg.
         s = _redact_text(s) or s
-        # Truncation (preserves pre-existing 200-char cap).
         out.append(s[:200])
-        # Detect sensitive selector on the first arg.
-        if i == 0 and method in _VALUE_METHODS and isinstance(a, str):
-            if _SENSITIVE_SELECTOR_RE.search(a):
-                selector_is_sensitive = True
     return out
 
 
@@ -602,7 +604,7 @@ def _wrap_sync_method(name: str, original):
                 _save_event(ev2)
             return result
         except Exception as exc:
-            ev3 = _mk_event("browser", "error", {"method": name, "error": str(exc)})
+            ev3 = _mk_event("browser", "error", {"method": name, "error": _redact_text(str(exc)) or ""})
             if ev3:
                 _save_event(ev3)
             raise
@@ -634,7 +636,7 @@ def _wrap_async_method(name: str, original):
                 _save_event(ev2)
             return result
         except Exception as exc:
-            ev3 = _mk_event("browser", "error", {"method": name, "error": str(exc)})
+            ev3 = _mk_event("browser", "error", {"method": name, "error": _redact_text(str(exc)) or ""})
             if ev3:
                 _save_event(ev3)
             raise
@@ -705,8 +707,10 @@ class _StreamWrapper:
                     "event_type": "llm_token",
                     "status": "streaming",
                     "data": {
-                        "token": token,
-                        "accumulated": self._accum,
+                        # Redact tokens/accumulated for PII (API keys,
+                        # emails, JWTs may appear in LLM output).
+                        "token": _redact_text(token) or "",
+                        "accumulated": _redact_text(self._accum) or "",
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
@@ -752,8 +756,9 @@ class _AsyncStreamWrapper:
                     "event_type": "llm_token",
                     "status": "streaming",
                     "data": {
-                        "token": token,
-                        "accumulated": self._accum,
+                        # Redact tokens/accumulated for PII.
+                        "token": _redact_text(token) or "",
+                        "accumulated": _redact_text(self._accum) or "",
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
@@ -864,7 +869,7 @@ def patch_network() -> bool:
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "done",
                     "data": {
-                        "method": method.upper(), "url": str(url)[:300],
+                        "method": method.upper(), "url": _redact_url(str(url))[:300],
                         "status_code": resp.status_code,
                         "latency_sec": round(time.perf_counter() - t0, 3),
                     },
@@ -876,7 +881,7 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": method.upper(), "url": str(url)[:300], "error": str(exc)},
+                    "data": {"method": method.upper(), "url": _redact_url(str(url))[:300], "error": _redact_text(str(exc)) or ""},
                     "timestamp": ts,
                 })
                 raise
@@ -907,7 +912,7 @@ def patch_network() -> bool:
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "done",
                     "data": {
-                        "method": request.method, "url": url[:300],
+                        "method": request.method, "url": _redact_url(url)[:300],
                         "status_code": resp.status_code,
                         "latency_sec": round(time.perf_counter() - t0, 3),
                     },
@@ -919,7 +924,7 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": request.method, "url": url[:300], "error": str(exc)},
+                    "data": {"method": request.method, "url": _redact_url(url)[:300], "error": _redact_text(str(exc)) or ""},
                     "timestamp": ts,
                 })
                 raise
@@ -950,7 +955,7 @@ def patch_network() -> bool:
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "done",
                     "data": {
-                        "method": request.method, "url": url[:300],
+                        "method": request.method, "url": _redact_url(url)[:300],
                         "status_code": resp.status_code,
                         "latency_sec": round(time.perf_counter() - t0, 3),
                     },
@@ -962,7 +967,7 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": request.method, "url": url[:300], "error": str(exc)},
+                    "data": {"method": request.method, "url": _redact_url(url)[:300], "error": _redact_text(str(exc)) or ""},
                     "timestamp": ts,
                 })
                 raise

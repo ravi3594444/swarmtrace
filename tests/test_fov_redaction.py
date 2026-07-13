@@ -6,34 +6,22 @@ VALUE arg of fill()/type()/press()/select_option(). So code like::
 
     page.fill("#password", "CorrectHorseBatteryStaple!")
 
-produced a browser 'started' event with:
-
-    {"method": "fill", "args": ["#password", "CorrectHorseBatteryStaple!"]}
-
+produced a browser 'started' event with the password stored verbatim,
 which was then persisted to local SQLite, queued for remote /api/events
-ingest, and ultimately stored in Supabase — all without any redaction.
-The existing redact() module was never imported by fov.py at all, so
-this wasn't a "redactor missed it" gap; the FOV browser-event path
-simply bypassed redaction entirely. A raw password like
-"CorrectHorseBatteryStaple!" matches none of redact()'s patterns (no
-email shape, no API-key prefix, no Luhn-valid card number, no JWT
-shape), so even wiring redact() in alone wouldn't have caught it.
+ingest, and stored in Supabase — all without any redaction.
 
-Fix: _redact_browser_args() adds two layers —
-  1. Field-aware: for value methods (fill/type/press/select_option),
-     if the SELECTOR names a sensitive field (password, token, secret,
-     api_key, auth, cookie, session, etc.), the VALUE arg is replaced
-     with [REDACTED] before the event is built. This catches raw
-     passwords and custom tokens that have no pattern shape.
-  2. Pattern-based (defense-in-depth): every arg also runs through
-     redact() to catch API keys / JWTs / emails / cards embedded in
-     any position.
+Fix (reviewer P1): ALWAYS redact the value arg of fill/type/press/
+select_option, regardless of the selector. The first implementation
+only redacted when the selector matched a keyword (password|token|...),
+but generic selectors like 'input:nth-of-type(2)' or '#field-2' don't
+contain those keywords — so the password leaked. The only safe default
+is to redact every fill/type value and record only the length for
+debugging: [REDACTED(len=N)].
 
-URLs captured on 'done' and 'screen_tick' events also have their
-query strings and fragments stripped via _redact_url(), since those
-routine carry session tokens, OAuth codes, and access tokens.
-
-These tests lock both layers in place.
+Also: goto() URL args are passed through _redact_url() to strip query
+strings and fragments (which carry session tokens, OAuth codes, API
+keys, reset tokens). HTTP events (requests/httpx) get the same URL
+redaction. LLM token events and exception messages are pattern-redacted.
 """
 
 from __future__ import annotations
@@ -42,81 +30,134 @@ import swarmtrace.fov as fov
 
 
 # ---------------------------------------------------------------------------
-# Field-aware redaction — the high-value layer that catches raw passwords
+# Value-method redaction — ALWAYS redact fill/type/press/select_option values
 # ---------------------------------------------------------------------------
 
 def test_fill_password_value_is_redacted():
     """The exact reproduction from the security report: page.fill('#password',
     'CorrectHorseBatteryStaple!') must NOT persist the password."""
     out = fov._redact_browser_args("fill", ("#password", "CorrectHorseBatteryStaple!"))
-    assert out == ["#password", "[REDACTED]"]
+    assert out[0] == "#password"
+    assert "CorrectHorseBatteryStaple" not in out[1]
+    assert out[1] == "[REDACTED(len=26)]"
 
 
 def test_type_password_value_is_redacted():
     """type() is also a value method — same redaction."""
     out = fov._redact_browser_args("type", ("#password", "hunter2"))
-    assert out == ["#password", "[REDACTED]"]
+    assert out[1] == "[REDACTED(len=7)]"
+
+
+def test_fill_generic_selector_still_redacts_value():
+    """Reviewer P1 fix: generic selectors like 'input:nth-of-type(2)' don't
+    contain password/token/secret keywords. The first implementation only
+    redacted when the selector matched a keyword, leaking the value. Now
+    we ALWAYS redact fill/type values regardless of the selector."""
+    out = fov._redact_browser_args("fill", ("input:nth-of-type(2)", "CorrectHorseBatteryStaple!"))
+    assert out[0] == "input:nth-of-type(2)"
+    assert "CorrectHorseBatteryStaple" not in out[1]
+    assert out[1] == "[REDACTED(len=26)]"
+
+
+def test_fill_field_2_selector_still_redacts_value():
+    """Another generic selector that doesn't match any keyword."""
+    out = fov._redact_browser_args("fill", ("#field-2", "my-secret-password"))
+    assert out[0] == "#field-2"
+    assert "my-secret-password" not in out[1]
+
+
+def test_fill_login_input_selector_still_redacts_value():
+    """'.login-input' — common in generated apps, doesn't match keywords."""
+    out = fov._redact_browser_args("fill", (".login-input", "p@ssw0rd123"))
+    assert "p@ssw0rd123" not in out[1]
 
 
 def test_fill_token_selector_redacts_value():
-    """Selector names a token field — value is redacted even though the
-    value itself has no recognizable pattern."""
     out = fov._redact_browser_args("fill", ('input[name="user_token"]', "tok_xyz_abc"))
     assert out[0] == 'input[name="user_token"]'
-    assert out[1] == "[REDACTED]"
+    assert "tok_xyz_abc" not in out[1]
 
 
 def test_fill_secret_selector_redacts_value():
     out = fov._redact_browser_args("fill", ("#client_secret", "super-secret-value"))
-    assert out == ["#client_secret", "[REDACTED]"]
+    assert "super-secret-value" not in out[1]
 
 
 def test_fill_apikey_selector_redacts_value():
-    # Covers api_key, api-key, apikey spellings.
     for sel in ("#api_key", "#api-key", "#apiKey"):
         out = fov._redact_browser_args("fill", (sel, "AIzaSyA" + "a" * 35))
-        assert out[1] == "[REDACTED]", f"selector {sel!r} did not trigger redaction: {out}"
+        assert "AIzaSyA" not in out[1], f"selector {sel!r} did not trigger redaction: {out}"
 
 
 def test_fill_auth_cookie_session_selectors_redact_value():
     for sel in ("#auth_token", "#authorization", "#session_cookie", "#csrf_session"):
         out = fov._redact_browser_args("fill", (sel, "some-value"))
-        assert out[1] == "[REDACTED]", f"selector {sel!r} did not trigger redaction: {out}"
+        assert "some-value" not in out[1], f"selector {sel!r} did not trigger redaction: {out}"
 
 
-def test_fill_non_sensitive_field_preserves_value():
-    """False-positive check: a non-sensitive field's value MUST pass through
-    unchanged. Over-redacting normal form fields would make the FOV dashboard
-    useless for debugging."""
+def test_fill_non_sensitive_field_also_redacts_value():
+    """Reviewer P1 fix: we now redact ALL fill/type values, not just sensitive
+    ones. Even '#username' and '#search' get redacted — the value length is
+    recorded for debugging, but the actual value is never persisted. This
+    is the safe default since we can't reliably detect which fields are
+    sensitive from the selector alone."""
     out = fov._redact_browser_args("fill", ("#username", "ravi"))
-    assert out == ["#username", "ravi"]
+    assert out[0] == "#username"
+    assert "ravi" not in out[1]
+    assert out[1] == "[REDACTED(len=4)]"
+
     out = fov._redact_browser_args("fill", ("#search", "hello world"))
-    assert out == ["#search", "hello world"]
+    assert "hello world" not in out[1]
+    assert out[1] == "[REDACTED(len=11)]"
 
 
 def test_click_is_not_value_redacted():
-    """click() is not in _VALUE_METHODS — its args should pass through
-    (subject only to pattern-based redaction, which doesn't match a bare
-    selector)."""
+    """click() is not in _VALUE_METHODS — its args pass through (subject
+    only to pattern-based redaction, which doesn't match a bare selector)."""
     out = fov._redact_browser_args("click", ("#submit",))
     assert out == ["#submit"]
 
 
-def test_select_option_value_redacted_for_sensitive_selector():
+def test_select_option_value_redacted():
     out = fov._redact_browser_args("select_option", ("#security_question", "my_first_pet"))
-    assert out == ["#security_question", "[REDACTED]"]
+    assert "my_first_pet" not in out[1]
 
 
-def test_case_insensitive_selector_match():
-    """Password, PASSWORD, PassWord all match."""
-    for sel in ("#Password", "#PASSWORD", "#passWORD"):
-        out = fov._redact_browser_args("fill", (sel, "secret"))
-        assert out[1] == "[REDACTED]", f"selector {sel!r} did not trigger redaction"
+def test_value_length_is_recorded():
+    """The redacted placeholder records the value length for debugging —
+    so the dashboard can show 'user entered 26 chars into #password'
+    without revealing what those chars were."""
+    out = fov._redact_browser_args("fill", ("#password", "a" * 42))
+    assert out[1] == "[REDACTED(len=42)]"
+
+
+# ---------------------------------------------------------------------------
+# goto URL redaction — strip query strings and fragments
+# ---------------------------------------------------------------------------
+
+def test_goto_url_strips_query_string():
+    """Reviewer P1 fix: page.goto('https://example.com/reset?token=...')
+    was leaking the token in the 'started' event args. Now goto's URL arg
+    is passed through _redact_url()."""
+    out = fov._redact_browser_args("goto", ("https://example.com/reset?token=CorrectHorseBatteryStaple!",))
+    assert out[0] == "https://example.com/reset"
+    assert "token=" not in out[0]
+    assert "CorrectHorseBatteryStaple" not in out[0]
+
+
+def test_goto_url_strips_fragment():
+    out = fov._redact_browser_args("goto", ("https://example.com/app#access_token=eyJxyz",))
+    assert out[0] == "https://example.com/app"
+
+
+def test_goto_clean_url_preserved():
+    out = fov._redact_browser_args("goto", ("https://example.com/path",))
+    assert out[0] == "https://example.com/path"
 
 
 # ---------------------------------------------------------------------------
 # Pattern-based defense-in-depth — catches API keys / JWTs / emails / cards
-# in ANY arg position (not just sensitive selectors)
+# in ANY arg position
 # ---------------------------------------------------------------------------
 
 def test_api_key_in_selector_is_pattern_redacted():
@@ -129,35 +170,16 @@ def test_api_key_in_selector_is_pattern_redacted():
     assert "[REDACTED]" in out[0]
 
 
-def test_jwt_in_arg_is_pattern_redacted():
+def test_jwt_in_non_value_method_arg_is_pattern_redacted():
+    """A JWT in a click arg is pattern-redacted."""
     jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c"
-    out = fov._redact_browser_args("fill", ("#note", jwt))
-    # #note is not sensitive, so the value passes field-aware redaction,
-    # but the pattern layer should still scrub the JWT.
-    assert out[0] == "#note"
-    assert "[REDACTED]" in out[1]
-    assert jwt not in out[1]
-
-
-def test_email_in_arg_is_pattern_redacted():
-    out = fov._redact_browser_args("fill", ("#username", "user@example.com"))
-    # Field-aware doesn't trigger (#username isn't sensitive), but the
-    # pattern layer redacts the email.
-    assert "[REDACTED]" in out[1]
-    assert "user@example.com" not in out[1]
-
-
-def test_field_aware_wins_over_pattern_for_sensitive_value():
-    """When BOTH layers apply (sensitive selector AND pattern-matchable
-    value), field-aware short-circuits so we get a clean [REDACTED] rather
-    than the pattern layer seeing the value at all."""
-    # An API-key-shaped value being typed into a password field.
-    out = fov._redact_browser_args("type", ("#password", "sk-ant-" + "x" * 30))
-    assert out == ["#password", "[REDACTED]"]
+    out = fov._redact_browser_args("click", (f"[data-token='{jwt}']",))
+    assert "[REDACTED]" in out[0]
+    assert jwt not in out[0]
 
 
 # ---------------------------------------------------------------------------
-# URL redaction — query strings and fragments carry tokens
+# URL redaction helper — query strings and fragments carry tokens
 # ---------------------------------------------------------------------------
 
 def test_redact_url_strips_query_string():
@@ -199,18 +221,17 @@ def test_redact_url_strips_at_first_query_or_fragment():
 
 def test_wrapped_fill_emits_redacted_event(monkeypatch):
     """Drive _wrap_sync_method with a fake Page and confirm the captured
-    event has [REDACTED] for the password value — not the raw password.
+    event has [REDACTED(len=N)] for the password value — not the raw password.
 
     This is the test that would have FAILED on the original bug. It exercises
-    the full code path: _wrap_sync_method → _redact_browser_args → _mk_event
-    → _save_event (captured via monkeypatch).
+    the full code path: _wrap_sync_method -> _redact_browser_args -> _mk_event
+    -> _save_event (captured via monkeypatch).
     """
     captured_events: list[dict] = []
     monkeypatch.setattr(fov, "_save_event", lambda ev: captured_events.append(ev))
     monkeypatch.setattr(fov, "_register_page", lambda *a, **k: None)
     monkeypatch.setattr(fov, "_current_agent", lambda: ("agent-1", "rag_bot"))
 
-    # Fake Page: fill() returns "ok" and exposes .url
     class FakePage:
         url = "https://example.com/login"
         def fill(self, selector, value):
@@ -224,8 +245,6 @@ def test_wrapped_fill_emits_redacted_event(monkeypatch):
     result = wrapped(page, "#password", "CorrectHorseBatteryStaple!")
     assert result == "ok"
 
-    # The real method got the real password (redaction is observability-only,
-    # never changes behavior). Above assert already checked that.
     assert len(captured_events) == 2  # started + done
 
     started = captured_events[0]
@@ -237,9 +256,34 @@ def test_wrapped_fill_emits_redacted_event(monkeypatch):
     assert "CorrectHorseBatteryStaple" not in str(done), \
         f"password leaked into done event: {done}"
 
-    # The value arg must be [REDACTED].
-    assert started["data"]["args"] == ["#password", "[REDACTED]"], started["data"]
-    assert done["data"]["args"] == ["#password", "[REDACTED]"], done["data"]
+    # The value arg must be [REDACTED(len=26)].
+    assert started["data"]["args"] == ["#password", "[REDACTED(len=26)]"], started["data"]
+    assert done["data"]["args"] == ["#password", "[REDACTED(len=26)]"], done["data"]
 
     # URL on the done event must have its query string stripped.
     assert done["data"]["url"] == "https://example.com/login"
+
+
+def test_wrapped_goto_emits_redacted_url(monkeypatch):
+    """Reviewer P1 fix: page.goto('https://example.com/reset?token=...')
+    must not leak the token in the 'started' event args."""
+    captured_events: list[dict] = []
+    monkeypatch.setattr(fov, "_save_event", lambda ev: captured_events.append(ev))
+    monkeypatch.setattr(fov, "_register_page", lambda *a, **k: None)
+    monkeypatch.setattr(fov, "_current_agent", lambda: ("agent-1", "rag_bot"))
+
+    class FakePage:
+        url = "https://example.com/reset?token=secret123"
+        def goto(self, url, **kwargs):
+            return "ok"
+
+    orig_goto = FakePage.goto
+    wrapped = fov._wrap_sync_method("goto", orig_goto)
+    page = FakePage()
+    wrapped(page, "https://example.com/reset?token=secret123")
+
+    started = captured_events[0]
+    # The token must NOT appear in the event.
+    assert "secret123" not in str(started), f"token leaked into goto event: {started}"
+    # The URL must be stripped to origin + path.
+    assert started["data"]["args"] == ["https://example.com/reset"], started["data"]
