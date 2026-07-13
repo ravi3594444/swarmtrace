@@ -207,8 +207,8 @@ def test_purge_evicts_oldest_synced_first(storage, monkeypatch):
 # Bug: ~/.swarmtrace.db was created with the process umask (typically 0644
 # on most systems), so on a multi-user machine any local user could read
 # captured prompts, outputs, args, error messages, and FOV browser-event
-# data. Fix: _secure_db_path() chmods the DB file to 0600 and its parent
-# dir to 0700 on every _get_conn(). These tests lock that in.
+# data. Fix: _secure_db_path() securely opens a regular DB file as 0600,
+# creates only package-owned directories as 0700, and rejects unsafe paths.
 # ---------------------------------------------------------------------------
 
 import os
@@ -337,17 +337,45 @@ def test_secure_db_path_does_not_raise_on_missing_file(tmp_path):
     )
 
 
-def test_secure_db_path_does_not_raise_on_unwritable_dir(tmp_path, monkeypatch):
-    """Permission-tightening failures must never crash the agent being traced.
-    If os.chmod raises (e.g. running as a non-owner), _secure_db_path logs
-    and continues."""
-    from swarmtrace.storage import _secure_db_path
+def test_secure_db_path_fails_closed_when_fchmod_fails(tmp_path, monkeypatch):
+    """A permission-hardening failure must disable storage, not continue
+    writing sensitive traces to an insecure file."""
+    import swarmtrace.storage as storage_mod
+
     target = tmp_path / "x.db"
     target.touch()
 
-    def raise_os_chmod(*args, **kwargs):
+    def raise_fchmod(*args, **kwargs):
         raise OSError("permission denied (simulated)")
 
-    monkeypatch.setattr("os.chmod", raise_os_chmod)
-    # Must not raise.
-    _secure_db_path(str(target))
+    monkeypatch.setattr(storage_mod.os, "fchmod", raise_fchmod)
+    with pytest.raises(OSError, match="permission denied"):
+        storage_mod._secure_db_path(str(target))
+
+
+def test_secure_db_path_rejects_symlink(tmp_path):
+    """The hardening helper must never chmod or open a symlink target."""
+    import swarmtrace.storage as storage_mod
+
+    target = tmp_path / "operator-config"
+    target.write_text("not a database")
+    os.chmod(target, 0o644)
+    link = tmp_path / "traces.db"
+    try:
+        link.symlink_to(target)
+    except (OSError, NotImplementedError):
+        pytest.skip("symbolic links are unavailable on this platform")
+
+    with pytest.raises(OSError, match="non-regular"):
+        storage_mod._secure_db_path(str(link))
+    assert stat.S_IMODE(os.stat(target).st_mode) == 0o644
+
+
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory modes required")
+def test_secure_db_path_rejects_other_writable_parent(tmp_path):
+    """A predictable DB directly in a shared directory is symlink-raceable."""
+    import swarmtrace.storage as storage_mod
+
+    os.chmod(tmp_path, 0o777)
+    with pytest.raises(PermissionError, match="group/other-writable"):
+        storage_mod._secure_db_path(str(tmp_path / "traces.db"))

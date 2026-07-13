@@ -21,7 +21,7 @@ import {
   sha256Hex,
   createRateLimiter,
   createIpRateLimiter,
-  getClientIp,
+  resolveClientIp,
 } from '../lib/api-auth.ts'
 
 // ── sha256Hex ──────────────────────────────────────────────────────────────
@@ -171,141 +171,68 @@ describe('createRateLimiter fallback map memory bound (finding #7)', () => {
 // Reviewer P2 fix: the first implementation trusted x-forwarded-for
 // unconditionally. On Vercel that's safe (platform overwrites it), but
 // on self-hosted deployments an attacker can rotate X-Forwarded-For
-// values to get a fresh rate-limit bucket per request. Now we only trust
-// forwarded-for headers on Vercel or when SWARMTRACE_TRUST_PROXY=1, and
-// we validate all values as IPv4/IPv6 (invalid → 'unknown' shared bucket).
+// values to get a fresh rate-limit bucket per request. Now forwarded-for is
+// trusted only on Vercel; self-hosted trusted-proxy mode accepts only the
+// documented, proxy-overwritten x-real-ip header. All values are validated.
 
 describe('getClientIp', () => {
-  function mkReq(headers = {}) {
-    return new Request('https://example.com/api/ingest', { headers })
+  function headers(values = {}) {
+    return new Headers(values)
   }
 
-  // Tests run off Vercel, so we need SWARMTRACE_TRUST_PROXY=1 to trust
-  // the forwarded-for headers. (On Vercel, _IS_VERCEL would be true and
-  // these would work without the env var.)
-  function withTrustedProxy(fn) {
-    const prev = process.env.SWARMTRACE_TRUST_PROXY
-    process.env.SWARMTRACE_TRUST_PROXY = '1'
-    try { return fn() } finally { process.env.SWARMTRACE_TRUST_PROXY = prev }
-  }
-
-  test('extracts first IP from x-forwarded-for (trusted proxy)', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-forwarded-for': '203.0.113.1, 10.0.0.1, 10.0.0.2' })
-      assert.equal(getClientIp(req), '203.0.113.1')
+  test('self-hosted default ignores all forwarded client-IP headers', () => {
+    const h = headers({
+      'x-forwarded-for': '203.0.113.99',
+      'x-vercel-forwarded-for': '198.51.100.20',
+      'x-real-ip': '192.0.2.10',
     })
+    assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: false }), 'unknown')
   })
 
-  test('extracts single-IP x-forwarded-for (trusted proxy)', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-forwarded-for': '198.51.100.42' })
-      assert.equal(getClientIp(req), '198.51.100.42')
+  test('self-hosted trusted proxy uses only x-real-ip', () => {
+    const h = headers({
+      // Attacker-controlled XFF must not override the proxy-managed value.
+      'x-forwarded-for': '203.0.113.99',
+      'x-real-ip': '192.0.2.10',
     })
+    assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: true }), '192.0.2.10')
   })
 
-  test('trims whitespace around x-forwarded-for IP', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-forwarded-for': '  203.0.113.5  , 10.0.0.1' })
-      assert.equal(getClientIp(req), '203.0.113.5')
-    })
+  test('self-hosted trusted proxy does not accept x-forwarded-for alone', () => {
+    const h = headers({ 'x-forwarded-for': '203.0.113.99' })
+    assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: true }), 'unknown')
   })
 
-  test('falls back to x-vercel-forwarded-for when x-forwarded-for absent', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-vercel-forwarded-for': '192.0.2.99, 10.0.0.1' })
-      assert.equal(getClientIp(req), '192.0.2.99')
-    })
-  })
-
-  test('falls back to x-real-ip when no forwarded-for header present', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-real-ip': '203.0.113.7' })
-      assert.equal(getClientIp(req), '203.0.113.7')
-    })
-  })
-
-  test('x-forwarded-for takes precedence over x-real-ip', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({
-        'x-forwarded-for': '203.0.113.1',
-        'x-real-ip': '10.0.0.1',
-      })
-      assert.equal(getClientIp(req), '203.0.113.1')
-    })
-  })
-
-  test('returns "unknown" when no IP header is present', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({})
-      assert.equal(getClientIp(req), 'unknown')
-    })
-  })
-
-  test('returns "unknown" for empty x-forwarded-for', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-forwarded-for': '   ' })
-      assert.equal(getClientIp(req), 'unknown')
-    })
-  })
-
-  // ── Reviewer P2 fix tests ────────────────────────────────────────────
-
-  test('does NOT trust x-forwarded-for without SWARMTRACE_TRUST_PROXY or Vercel', () => {
-    // Ensure neither env var is set.
-    const prevTrust = process.env.SWARMTRACE_TRUST_PROXY
-    const prevVercel = process.env.VERCEL
-    const prevVercelEnv = process.env.VERCEL_ENV
-    delete process.env.SWARMTRACE_TRUST_PROXY
-    delete process.env.VERCEL
-    delete process.env.VERCEL_ENV
-    try {
-      const req = mkReq({ 'x-forwarded-for': '203.0.113.99' })
-      assert.equal(
-        getClientIp(req), 'unknown',
-        'self-hosted deployment without SWARMTRACE_TRUST_PROXY=1 must NOT ' +
-          'trust client-supplied x-forwarded-for (spoofable)',
-      )
-    } finally {
-      if (prevTrust !== undefined) process.env.SWARMTRACE_TRUST_PROXY = prevTrust
-      if (prevVercel !== undefined) process.env.VERCEL = prevVercel
-      if (prevVercelEnv !== undefined) process.env.VERCEL_ENV = prevVercelEnv
+  test('rejects invalid and injection-shaped x-real-ip values', () => {
+    for (const value of ['not-an-ip', "1' OR '1'='1", '999.1.1.1']) {
+      const h = headers({ 'x-real-ip': value })
+      assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: true }), 'unknown')
     }
   })
 
-  test('rejects invalid IP values (not IPv4/IPv6) → unknown', () => {
-    withTrustedProxy(() => {
-      // Arbitrary string that would pollute the rate-map if not validated.
-      const req = mkReq({ 'x-forwarded-for': 'not-an-ip-at-all' })
-      assert.equal(getClientIp(req), 'unknown')
-    })
+  test('accepts and normalizes IPv6 from a trusted proxy', () => {
+    const h = headers({ 'x-real-ip': 'FE80::1%attacker-controlled-zone' })
+    assert.equal(resolveClientIp(h, { isVercel: false, trustProxy: true }), 'fe80::1')
   })
 
-  test('rejects SQL-injection-shaped x-forwarded-for → unknown', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-forwarded-for': "1' OR '1'='1" })
-      assert.equal(getClientIp(req), 'unknown')
+  test('Vercel prefers its platform-specific header over XFF', () => {
+    const h = headers({
+      'x-vercel-forwarded-for': '192.0.2.5, 10.0.0.1',
+      'x-forwarded-for': '203.0.113.9',
     })
+    assert.equal(resolveClientIp(h, { isVercel: true, trustProxy: false }), '192.0.2.5')
   })
 
-  test('accepts IPv6 addresses', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-forwarded-for': '2001:db8::1' })
-      assert.equal(getClientIp(req), '2001:db8::1')
-    })
+  test('Vercel falls back to its managed x-forwarded-for equivalent', () => {
+    const h = headers({ 'x-forwarded-for': '198.51.100.42, 10.0.0.1' })
+    assert.equal(resolveClientIp(h, { isVercel: true, trustProxy: false }), '198.51.100.42')
   })
 
-  test('accepts loopback IPv4', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-forwarded-for': '127.0.0.1' })
-      assert.equal(getClientIp(req), '127.0.0.1')
-    })
-  })
-
-  test('accepts loopback IPv6', () => {
-    withTrustedProxy(() => {
-      const req = mkReq({ 'x-forwarded-for': '::1' })
-      assert.equal(getClientIp(req), '::1')
-    })
+  test('returns unknown when no valid trusted header exists', () => {
+    assert.equal(
+      resolveClientIp(headers(), { isVercel: true, trustProxy: false }),
+      'unknown',
+    )
   })
 })
 
