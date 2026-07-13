@@ -94,3 +94,38 @@ export function redact(text: string | null | undefined): string | null {
   text = redactCreditCards(text)
   return text
 }
+
+/**
+ * Recursively redact all strings in a nested object/array structure.
+ *
+ * Used by /api/events to scrub PII from event data BEFORE it hits Supabase.
+ * The SDK already redacts (swarmtrace/redact.py + fov.py's _redact_text),
+ * but any client that posts directly (curl, MCP, a third-party SDK port)
+ * bypasses the SDK. Redacting at the ingest boundary means PII never lands
+ * in the DB regardless of which client sent it.
+ *
+ * - Strings are passed through redact().
+ * - Arrays are mapped element-by-element.
+ * - Objects are mapped value-by-value (keys are NOT redacted — they're
+ *   structural metadata like "method", "url", "args").
+ * - null/undefined/numbers/booleans pass through unchanged.
+ *
+ * Cycle-safe via a WeakSet of visited objects. Bounded by the JSON body
+ * size limit (MAX_BODY_BYTES) so no unbounded recursion risk.
+ */
+export function redactDeep<T>(value: T): T {
+  if (typeof value === 'string') {
+    return redact(value) as unknown as T
+  }
+  if (Array.isArray(value)) {
+    return value.map(redactDeep) as unknown as T
+  }
+  if (value !== null && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
+      out[k] = redactDeep(v)
+    }
+    return out as unknown as T
+  }
+  return value
+}
