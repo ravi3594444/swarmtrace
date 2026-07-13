@@ -68,6 +68,46 @@ _write_count: int = 0
 # Internal helpers
 # ---------------------------------------------------------------------------
 
+def _secure_db_path(path: str) -> None:
+    """Tighten permissions on the DB file (0600) and its parent dir (0700).
+
+    Audit finding (medium): the default DB path is ~/.swarmtrace.db, which
+    SQLite creates with the process umask — typically 0644 on most systems.
+    On a multi-user machine, any other local user can then read captured
+    prompts, outputs, args, error messages, and (via FOV) browser-event
+    data including redacted-but-still-sensitive context. The 0600/0700
+    tightening is the standard mitigation.
+
+    Idempotent: safe to call on every _get_conn() — os.chmod is a no-op
+    if the mode is already correct. Also safe if the file doesn't exist
+    yet (we create the dir first, then sqlite creates the file with
+    whatever umask dictates, then we chmod it).
+
+    Failures are logged but non-fatal — a permission-tightening failure
+    must not prevent the agent being traced from running.
+    """
+    try:
+        # 1. Parent dir: 0700 (owner-only). Create if missing.
+        parent = os.path.dirname(os.path.abspath(path))
+        if parent and not os.path.isdir(parent):
+            os.makedirs(parent, mode=0o700, exist_ok=True)
+        try:
+            os.chmod(parent, 0o700)
+        except OSError as exc:
+            _log.debug("could not chmod dir %s to 0700: %s", parent, exc)
+
+        # 2. DB file: 0600 (owner-only read/write). Only if it exists.
+        if os.path.exists(path):
+            try:
+                os.chmod(path, 0o600)
+            except OSError as exc:
+                _log.debug("could not chmod db %s to 0600: %s", path, exc)
+    except Exception as exc:
+        # Broad catch: never let a security-hardening step crash the
+        # agent being traced. Log and move on.
+        _log.warning("db path hardening skipped for %s: %s", path, exc)
+
+
 def _get_conn() -> sqlite3.Connection:
     global _conn
     if _conn is not None:
@@ -77,7 +117,13 @@ def _get_conn() -> sqlite3.Connection:
             _conn = None
 
     if _conn is None:
+        # Tighten permissions BEFORE creating the connection — sqlite3.connect
+        # creates the file with the process umask, so we want the dir already
+        # at 0700 before that happens. We chmod the file again AFTER connect
+        # in case sqlite created it with looser perms than the dir.
+        _secure_db_path(DB_PATH)
         _conn = sqlite3.connect(DB_PATH, check_same_thread=False)
+        _secure_db_path(DB_PATH)  # re-tighten in case sqlite just created it
         # sqlite3.Row supports both row["col"] and row[i] (PRAGMA table_info
         # parsing below still works unchanged) -- this is what lets
         # get_traces()/get_all_traces()/get_by_id() hand back plain dicts

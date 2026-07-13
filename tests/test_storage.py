@@ -199,3 +199,91 @@ def test_purge_evicts_oldest_synced_first(storage, monkeypatch):
     assert storage.get_by_id("row-1") is None
     assert storage.get_by_id("row-2") is not None
     assert storage.get_by_id("row-3") is not None
+
+
+# ---------------------------------------------------------------------------
+# DB file permission hardening (audit finding: world-readable DB)
+#
+# Bug: ~/.swarmtrace.db was created with the process umask (typically 0644
+# on most systems), so on a multi-user machine any local user could read
+# captured prompts, outputs, args, error messages, and FOV browser-event
+# data. Fix: _secure_db_path() chmods the DB file to 0600 and its parent
+# dir to 0700 on every _get_conn(). These tests lock that in.
+# ---------------------------------------------------------------------------
+
+import os
+import stat
+
+
+def test_db_file_created_with_0600_permissions(storage):
+    """The DB file must be 0600 (owner-only) — not the umask default of 0644."""
+    # Trigger _get_conn() (which calls _secure_db_path).
+    conn = storage._get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS t (x INT)")
+    conn.commit()
+
+    mode = stat.S_IMODE(os.stat(storage.DB_PATH).st_mode)
+    assert mode == 0o600, f"DB file mode is {oct(mode)}, expected 0o600"
+
+
+def test_db_parent_dir_created_with_0700_permissions(storage, tmp_path):
+    """When the DB path includes a not-yet-existing parent dir, that dir
+    must be created with 0700 (owner-only), not the umask default."""
+    # Reload storage with a nested path that doesn't exist yet.
+    nested = tmp_path / "deep" / "subdir" / "traces.db"
+    os.environ["SWARMTRACE_DB_PATH"] = str(nested)
+    import importlib as _il
+    _il.reload(storage)
+
+    conn = storage._get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS t (x INT)")
+    conn.commit()
+
+    parent = os.path.dirname(os.path.abspath(storage.DB_PATH))
+    dirmode = stat.S_IMODE(os.stat(parent).st_mode)
+    assert dirmode == 0o700, f"Parent dir mode is {oct(dirmode)}, expected 0o700"
+
+
+def test_secure_db_path_is_idempotent(storage):
+    """Calling _secure_db_path multiple times must be a no-op (no error,
+    same permissions). _get_conn() calls it twice in succession; if it
+    weren't idempotent, every connection would warn-log."""
+    conn = storage._get_conn()
+    conn.execute("CREATE TABLE IF NOT EXISTS t (x INT)")
+    conn.commit()
+
+    # Call it directly several times — no exception, perms unchanged.
+    storage._secure_db_path(storage.DB_PATH)
+    storage._secure_db_path(storage.DB_PATH)
+    storage._secure_db_path(storage.DB_PATH)
+
+    mode = stat.S_IMODE(os.stat(storage.DB_PATH).st_mode)
+    assert mode == 0o600
+
+
+def test_secure_db_path_does_not_raise_on_missing_file(tmp_path):
+    """_secure_db_path must not raise when the DB file doesn't exist yet
+    (the pre-connect call). It should still tighten the parent dir."""
+    from swarmtrace.storage import _secure_db_path
+    missing = tmp_path / "never.db"
+    # Must not raise.
+    _secure_db_path(str(missing))
+    # Parent dir (tmp_path) was tightened to 0700.
+    dirmode = stat.S_IMODE(os.stat(str(tmp_path)).st_mode)
+    assert dirmode == 0o700
+
+
+def test_secure_db_path_does_not_raise_on_unwritable_dir(tmp_path, monkeypatch):
+    """Permission-tightening failures must never crash the agent being traced.
+    If os.chmod raises (e.g. running as a non-owner), _secure_db_path logs
+    and continues."""
+    from swarmtrace.storage import _secure_db_path
+    target = tmp_path / "x.db"
+    target.touch()
+
+    def raise_os_chmod(*args, **kwargs):
+        raise OSError("permission denied (simulated)")
+
+    monkeypatch.setattr("os.chmod", raise_os_chmod)
+    # Must not raise.
+    _secure_db_path(str(target))
