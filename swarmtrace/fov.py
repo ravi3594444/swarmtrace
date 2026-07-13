@@ -39,6 +39,7 @@ import json
 import logging
 import os
 import queue
+import re
 import threading
 import time
 import uuid
@@ -47,6 +48,14 @@ from datetime import datetime, timezone
 
 # ── context from tracer ──────────────────────────────────────────────────────
 from swarmtrace.tracer import _current_agent, _remote_config
+# Redactor — used by tracer.py for span args/output, and now by FOV's
+# browser-event path too. See _redact_browser_args below for why FOV
+# needs field-aware redaction ON TOP of the pattern-based redact() (a
+# raw password like "CorrectHorseBatteryStaple!" matches none of the
+# pattern shapes, so pattern-only redaction would let it straight
+# through into local SQLite, the remote /api/events endpoint, and
+# Supabase).
+from swarmtrace.redact import redact as _redact_text
 
 _log = logging.getLogger("swarmtrace.fov")
 
@@ -431,7 +440,7 @@ def _screen_streamer_loop() -> None:
                         "status": "info",
                         "data": {
                             "screenshot": shot,
-                            "url": getattr(page, "url", ""),
+                            "url": _redact_url(getattr(page, "url", "")),
                         },
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
@@ -471,6 +480,97 @@ _PAGE_METHODS = [
 ]
 
 
+# Methods whose second positional arg is the VALUE being entered/selected
+# (the first arg is the selector). For these, field-aware redaction kicks
+# in: if the selector matches _SENSITIVE_SELECTOR_RE, the value is
+# replaced with [REDACTED] before the event is built — long before it
+# reaches local SQLite, the remote /api/events endpoint, or Supabase.
+_VALUE_METHODS = {"fill", "type", "press", "select_option"}
+
+# Selectors that name a sensitive input. We match case-insensitively
+# anywhere in the selector string (covers #password, [name="password"],
+# input[name="user_token"], #apiKey, .auth-secret, etc.). The alternation
+# is deliberately broad — false positives (redacting a non-sensitive
+# field) are far cheaper than false negatives (leaking a credential).
+_SENSITIVE_SELECTOR_RE = re.compile(
+    r"(?i)(password|passwd|pwd|token|secret|api[_-]?key|apikey|"
+    r"auth(?:orization)?|cookie|session|credential|access[_-]?key|"
+    r"private[_-]?key|client[_-]?secret|otp|totp|mfa|2fa|"
+    r"ssn|social[_-]?security|credit[_-]?card|card[_-]?number|cvv|cvc|"
+    r"security[_-]?answer|security[_-]?question|pin|"
+    r"recovery[_-]?code|backup[_-]?code)"
+)
+
+_REDACTED = "[REDACTED]"
+
+
+def _redact_url(url: str) -> str:
+    """Strip query strings and fragments from a captured URL.
+
+    URLs are recorded on every browser 'done' event and on every
+    screen_tick. Query strings routinely contain session tokens
+    (?session=...), OAuth codes (?code=...), API keys (?key=...),
+    and reset tokens (?token=...). Fragments can carry JWTs and
+    access tokens in SPA auth flows. We keep origin + path only.
+    """
+    if not url or not isinstance(url, str):
+        return url or ""
+    # Cut at the first '?' or '#' — whichever comes first.
+    cut = len(url)
+    for ch in ("?", "#"):
+        idx = url.find(ch)
+        if idx != -1 and idx < cut:
+            cut = idx
+    return url[:cut]
+
+
+def _redact_browser_args(method: str, args: tuple) -> list:
+    """Redact positional args captured for a Playwright method call.
+
+    Two layers:
+
+    1. **Field-aware** (the high-value layer): for fill/type/press/select_option,
+       if the FIRST arg (the selector) names a sensitive field, replace the
+       SECOND arg (the value being entered) with [REDACTED]. This catches
+       raw passwords, custom tokens, and internal secrets that have NO
+       recognizable pattern — exactly the case pattern-based redact()
+       cannot help with.
+
+    2. **Pattern-based** (defense-in-depth): run every string arg through
+       redact() to catch API keys / JWTs / emails / card numbers that
+       might appear in any position (e.g. a selector like
+       'input[value="sk-live-xxx"]' or a value that happens to be a
+       real API key).
+
+    Both layers run; field-aware wins where it applies (it short-circuits
+    the value arg to [REDACTED] before pattern-based ever sees it).
+
+    Args are truncated to 200 chars after redaction, matching the
+    pre-existing behavior.
+    """
+    out = []
+    selector_is_sensitive = False
+    for i, a in enumerate(args):
+        # Field-aware: redact the VALUE arg of sensitive fill/type/etc. calls.
+        if (
+            method in _VALUE_METHODS
+            and i == 1
+            and selector_is_sensitive
+        ):
+            out.append(_REDACTED)
+            continue
+        s = str(a)
+        # Pattern-based defense-in-depth on every arg.
+        s = _redact_text(s) or s
+        # Truncation (preserves pre-existing 200-char cap).
+        out.append(s[:200])
+        # Detect sensitive selector on the first arg.
+        if i == 0 and method in _VALUE_METHODS and isinstance(a, str):
+            if _SENSITIVE_SELECTOR_RE.search(a):
+                selector_is_sensitive = True
+    return out
+
+
 def _wrap_sync_method(name: str, original):
     @functools.wraps(original)
     def wrapper(self, *args, **kwargs):
@@ -480,9 +580,13 @@ def _wrap_sync_method(name: str, original):
         aid, aname = agent
         # Register this page for background screen streaming (idempotent)
         _register_page(self, aid, aname)
+        # Redact args ONCE here, reuse for both started/done events.
+        # _redact_browser_args field-aware-redacts sensitive fill/type/etc.
+        # values and pattern-redacts every arg as defense-in-depth.
+        redacted_args = _redact_browser_args(name, args)
         ev = _mk_event("browser", "started", {
             "method": name,
-            "args": [str(a)[:200] for a in args],
+            "args": redacted_args,
         })
         if ev:
             _save_event(ev)
@@ -491,8 +595,8 @@ def _wrap_sync_method(name: str, original):
             # No inline screenshot — background streamer handles it every SCREEN_INTERVAL s
             ev2 = _mk_event("browser", "done", {
                 "method": name,
-                "args": [str(a)[:200] for a in args],
-                "url": getattr(self, "url", ""),
+                "args": redacted_args,
+                "url": _redact_url(getattr(self, "url", "")),
             })
             if ev2:
                 _save_event(ev2)
@@ -515,15 +619,16 @@ def _wrap_async_method(name: str, original):
         aid, aname = agent
         # Register page for background streaming (sync registry — safe from async)
         _register_page(self, aid, aname)
-        ev = _mk_event("browser", "started", {"method": name, "args": [str(a)[:200] for a in args]})
+        redacted_args = _redact_browser_args(name, args)
+        ev = _mk_event("browser", "started", {"method": name, "args": redacted_args})
         if ev:
             _save_event(ev)
         try:
             result = await original(self, *args, **kwargs)
             ev2 = _mk_event("browser", "done", {
                 "method": name,
-                "args": [str(a)[:200] for a in args],
-                "url": getattr(self, "url", ""),
+                "args": redacted_args,
+                "url": _redact_url(getattr(self, "url", "")),
             })
             if ev2:
                 _save_event(ev2)
