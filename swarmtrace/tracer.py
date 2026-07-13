@@ -572,7 +572,13 @@ def session(session_id: Optional[str] = None) -> Iterator[str]:
 # Shared record-and-save logic
 # ---------------------------------------------------------------------------
 
-_VALID_KINDS  = {"agent", "tool", "llm", "function"}
+# 'retrieval' was added in the Phase 3 RAG effort — the MCP route's Zod enum
+# (frontend-next/app/api/mcp/route.ts), resolve-trace-identity.ts's TraceKind,
+# scraper.scrape(kind=...), and the integration test
+# test_phase3_retrieval_kind_round_trips all already accept it. The Python
+# SDK's primary entry point (@observe) was the only hold-out — see
+# docs/SDK_DASHBOARD_CONTRACT.md for the cross-component contract.
+_VALID_KINDS  = {"agent", "tool", "llm", "function", "retrieval"}
 _KIND_CHOICES = _VALID_KINDS | {"auto"}
 
 # FIX #3: use a ThreadPoolExecutor for _safe_str instead of spawning a new
