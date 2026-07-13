@@ -38,6 +38,17 @@
  * nothing (indexed point-lookups handle thousands/sec on Postgres;
  * 100 concurrent traced agents is only ~50 req/s). If it ever matters,
  * it'll surface as PostgREST connection pressure, not query latency.
+ *
+ * ── Per-IP rate limit (audit fix: rate-limit bypass) ─────────────────────
+ *
+ * The per-key limiter below is keyed by sha256(apiKey). An attacker can
+ * rotate random fake API keys, receiving a fresh bucket for each one
+ * while still forcing a Supabase key-validity lookup on every request.
+ * At 1000 fake keys/sec that's 1000 DB round-trips/sec and an arbitrary
+ * number of "legitimate-looking" 401s — a cheap DoS that bypasses the
+ * per-key limiter entirely. The fix: a per-IP rate limit that runs
+ * BEFORE the per-key limit, so key rotation doesn't help. See
+ * createIpRateLimiter() + getClientIp() below.
  */
 
 import { Redis } from '@upstash/redis'
@@ -49,6 +60,42 @@ export async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('')
+}
+
+// ── Client IP extraction ───────────────────────────────────────────────────
+//
+// Vercel sets x-forwarded-for with the client IP as the first entry
+// (followed by any proxy chain). x-real-ip is set by some load balancers
+// and is a single IP. x-vercel-forwarded-for is Vercel-specific but
+// carries the same semantics as x-forwarded-for.
+//
+// We take the FIRST IP in x-forwarded-for (the original client) — not
+// the last (which would be the closest proxy). For x-real-ip we take
+// the whole value (it's already a single IP).
+//
+// Returns 'unknown' if no header is present, which the IP rate limiter
+// treats as a single shared bucket — that's a safe default: it means
+// "all unknown-origin requests share one bucket" rather than "each
+// unknown-origin request gets a fresh bucket" (which would be no limit
+// at all).
+export function getClientIp(req: Request): string {
+  const h = req.headers
+  // x-forwarded-for: "client, proxy1, proxy2" — take the first.
+  const xff = h.get('x-forwarded-for')
+  if (xff) {
+    const first = xff.split(',')[0]?.trim()
+    if (first) return first
+  }
+  // x-vercel-forwarded-for: same shape as x-forwarded-for (Vercel-specific).
+  const vff = h.get('x-vercel-forwarded-for')
+  if (vff) {
+    const first = vff.split(',')[0]?.trim()
+    if (first) return first
+  }
+  // x-real-ip: single IP, no comma-split needed.
+  const xrip = h.get('x-real-ip')
+  if (xrip) return xrip.trim()
+  return 'unknown'
 }
 
 // ── Rate limiter factory ───────────────────────────────────────────────────
@@ -153,4 +200,34 @@ export function createRateLimiter(opts: {
       return rateMap.size
     },
   }
+}
+
+// ── Per-IP rate limiter (audit fix: rate-limit bypass) ─────────────────────
+//
+// Same factory shape as createRateLimiter but with a distinct prefix so
+// IP buckets never collide with per-key buckets. Limits are deliberately
+// generous — high enough that no legitimate single-source workload (the
+// SDK's ~30 ingest/min per active traced process, or one developer
+// running tests) would ever hit them, low enough that an attacker
+// rotating 1000 fake keys/sec from one IP gets capped at the IP level
+// before the per-key limiter ever sees a bucket refill.
+//
+// Defaults: 600 req / 60s per IP. That's 10x the per-key ingest limit
+// (120) and ~17x a single active traced process's natural rate (~30/min).
+// A legitimate multi-tenant NAT (office network, CI runner pool) could
+// plausibly hit this if many traced agents share one egress IP — if that
+// becomes a real problem, raise the limit or add a per-IP+per-route
+// override. The number is a starting point, not a hard contract.
+export function createIpRateLimiter(opts?: Partial<{
+  limit: number
+  prefix: string
+  windowMs: number
+  sweepEvery: number
+}>): RateLimiter {
+  return createRateLimiter({
+    limit: opts?.limit ?? 600,
+    prefix: opts?.prefix ?? 'st_ip_rl',
+    windowMs: opts?.windowMs ?? 60_000,
+    sweepEvery: opts?.sweepEvery,
+  })
 }
