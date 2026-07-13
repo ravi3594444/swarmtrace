@@ -21,7 +21,9 @@ debugging: [REDACTED(len=N)].
 Also: goto() URL args are passed through _redact_url() to strip query
 strings and fragments (which carry session tokens, OAuth codes, API
 keys, reset tokens). HTTP events (requests/httpx) get the same URL
-redaction. LLM token events and exception messages are pattern-redacted.
+redaction. Browser exceptions contextually remove submitted values, and LLM
+stream events retain only character-count metadata so split secrets cannot be
+reassembled from earlier chunks.
 """
 
 from __future__ import annotations
@@ -287,3 +289,57 @@ def test_wrapped_goto_emits_redacted_url(monkeypatch):
     assert "secret123" not in str(started), f"token leaked into goto event: {started}"
     # The URL must be stripped to origin + path.
     assert started["data"]["args"] == ["https://example.com/reset"], started["data"]
+
+
+def test_wrapped_fill_redacts_value_repeated_in_error(monkeypatch):
+    """A browser exception must not re-introduce an already-redacted value."""
+    captured_events: list[dict] = []
+    monkeypatch.setattr(fov, "_save_event", captured_events.append)
+    monkeypatch.setattr(fov, "_register_page", lambda *a, **k: None)
+    monkeypatch.setattr(fov, "_current_agent", lambda: ("agent-1", "browser_bot"))
+
+    class FakePage:
+        url = "https://example.com/login"
+
+        def fill(self, selector, value):
+            raise RuntimeError(f"could not submit value {value}")
+
+    wrapped = fov._wrap_sync_method("fill", FakePage.fill)
+    secret = "CorrectHorseBatteryStaple!"
+    try:
+        wrapped(FakePage(), "#password", secret)
+    except RuntimeError:
+        pass
+
+    error = captured_events[-1]
+    assert error["status"] == "error"
+    assert secret not in str(error)
+    assert "[REDACTED(len=26)]" in error["data"]["error"]
+
+
+def test_stream_events_cannot_reassemble_split_api_key(monkeypatch):
+    """Token-by-token redaction is insufficient when a key spans chunks."""
+    captured_events: list[dict] = []
+    monkeypatch.setattr(fov, "_save_event", captured_events.append)
+
+    class Delta:
+        def __init__(self, content):
+            self.content = content
+
+    class Choice:
+        def __init__(self, content):
+            self.delta = Delta(content)
+
+    class Chunk:
+        def __init__(self, content):
+            self.choices = [Choice(content)]
+
+    parts = ["sk-", "A" * 10, "A" * 20]
+    list(fov._StreamWrapper(iter(Chunk(part) for part in parts), "agent-1", "bot"))
+
+    assert len(captured_events) == 3
+    assert all(event["data"]["token"] == "[REDACTED]" for event in captured_events)
+    assert all(event["data"]["accumulated"] == "[REDACTED]" for event in captured_events)
+    assert [event["data"]["token_chars"] for event in captured_events] == [3, 10, 20]
+    assert "sk-" not in str(captured_events)
+    assert "A" * 20 not in str(captured_events)
