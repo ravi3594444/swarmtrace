@@ -14,7 +14,12 @@
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-import { redact, luhnOk, redactDeep } from '../lib/redact.ts'
+import {
+  redact,
+  luhnOk,
+  redactDeep,
+  redactEventData,
+} from '../lib/redact.ts'
 import { validateIngest } from '../lib/validate-ingest.ts'
 
 // Issuer-published test PANs (safe to hardcode).
@@ -378,5 +383,64 @@ describe('redactDeep', () => {
     assert.equal(out.args[1], 'secret-value')
     // API key in nested object IS redacted.
     assert.equal(out.nested.token, '[REDACTED]')
+    assert.equal(out.url, 'https://example.com/login')
+  })
+
+  test('redacts generic secrets by structural key', () => {
+    const out = redactDeep({
+      password: 'CorrectHorseBatteryStaple!',
+      clientSecret: 'custom-value',
+      headers: { authorization: 'Basic custom-credential' },
+      token_chars: 42,
+    })
+    assert.equal(out.password, '[REDACTED]')
+    assert.equal(out.clientSecret, '[REDACTED]')
+    assert.equal(out.headers.authorization, '[REDACTED]')
+    assert.equal(out.token_chars, 42)
+  })
+
+  test('handles cyclic objects without overflowing', () => {
+    const input = { value: 'safe' }
+    input.self = input
+    const out = redactDeep(input)
+    assert.equal(out.value, 'safe')
+    assert.equal(out.self, '[REDACTED]')
+  })
+})
+
+
+describe('redactEventData', () => {
+  test('redacts direct-client browser fill values and repeated errors', () => {
+    const secret = 'CorrectHorseBatteryStaple!'
+    const out = redactEventData('browser', {
+      method: 'fill',
+      args: ['input:nth-of-type(2)', secret],
+      error: `could not submit value ${secret}`,
+      url: 'https://example.com/login?session=custom-secret',
+    })
+    assert.deepEqual(out.args, ['input:nth-of-type(2)', '[REDACTED(len=26)]'])
+    assert.ok(!out.error.includes(secret))
+    assert.equal(out.url, 'https://example.com/login')
+  })
+
+  test('redacts token and accumulated fields regardless of chunk shape', () => {
+    const out = redactEventData('llm_token', {
+      token: 'sk-',
+      accumulated: 'sk-AAAAAAAAAA',
+      token_chars: 3,
+      accumulated_chars: 13,
+    })
+    assert.equal(out.token, '[REDACTED]')
+    assert.equal(out.accumulated, '[REDACTED]')
+    assert.equal(out.token_chars, 3)
+    assert.equal(out.accumulated_chars, 13)
+  })
+
+  test('strips goto URL arguments', () => {
+    const out = redactEventData('browser', {
+      method: 'goto',
+      args: ['https://example.com/reset?token=custom-secret'],
+    })
+    assert.deepEqual(out.args, ['https://example.com/reset'])
   })
 })

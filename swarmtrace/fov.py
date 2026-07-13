@@ -18,7 +18,7 @@ What each patch captures
 ------------------------
 * playwright   — every page action (goto/click/fill/…) + continuous background
                  screen stream that never blocks browser actions
-* streams      — OpenAI/Anthropic stream tokens as they arrive
+* streams      — OpenAI/Anthropic stream progress (character counts; content is not persisted)
 * network      — requests / httpx HTTP calls (sync + async) with method, url, status, latency
 * filesystem   — file reads/writes in the watched directory (watchdog)
 
@@ -39,7 +39,6 @@ import json
 import logging
 import os
 import queue
-import re
 import threading
 import time
 import uuid
@@ -494,20 +493,6 @@ _VALUE_METHODS = {"fill", "type", "press", "select_option"}
 # codes, API keys, and reset tokens).
 _URL_METHODS = {"goto"}
 
-# Selectors that name a sensitive input. We match case-insensitively
-# anywhere in the selector string (covers #password, [name="password"],
-# input[name="user_token"], #apiKey, .auth-secret, etc.). The alternation
-# is deliberately broad — false positives (redacting a non-sensitive
-# field) are far cheaper than false negatives (leaking a credential).
-_SENSITIVE_SELECTOR_RE = re.compile(
-    r"(?i)(password|passwd|pwd|token|secret|api[_-]?key|apikey|"
-    r"auth(?:orization)?|cookie|session|credential|access[_-]?key|"
-    r"private[_-]?key|client[_-]?secret|otp|totp|mfa|2fa|"
-    r"ssn|social[_-]?security|credit[_-]?card|card[_-]?number|cvv|cvc|"
-    r"security[_-]?answer|security[_-]?question|pin|"
-    r"recovery[_-]?code|backup[_-]?code)"
-)
-
 _REDACTED = "[REDACTED]"
 
 
@@ -573,6 +558,52 @@ def _redact_browser_args(method: str, args: tuple) -> list:
     return out
 
 
+def _redact_browser_error(method: str, args: tuple, exc: Exception) -> str:
+    """Redact values known to the browser wrapper before storing an error.
+
+    Pattern matching alone cannot identify a generic password such as
+    ``CorrectHorseBatteryStaple!``.  Some browser errors include the value
+    that failed, so replace the original value argument contextually before
+    applying the regular pattern redactor.
+    """
+    text = str(exc)
+    if method in _VALUE_METHODS and len(args) > 1:
+        raw_value = str(args[1])
+        if raw_value:
+            text = text.replace(raw_value, f"[REDACTED(len={len(raw_value)})]")
+    if method in _URL_METHODS and args and isinstance(args[0], str):
+        raw_url = args[0]
+        if raw_url:
+            text = text.replace(raw_url, _redact_url(raw_url))
+    return _redact_text(text) or ""
+
+
+def _redact_network_error(exc: Exception, url: str) -> str:
+    """Remove a request URL's query/fragment if it appears in an error."""
+    raw_url = str(url)
+    text = str(exc)
+    if raw_url:
+        text = text.replace(raw_url, _redact_url(raw_url))
+    return _redact_text(text) or ""
+
+
+def _stream_event_data(token: str, accumulated: str) -> dict:
+    """Return non-content metadata for a streamed LLM chunk.
+
+    Redacting each chunk independently is unsafe: a key such as ``sk-...``
+    is commonly split across several tokens, and earlier events can be joined
+    to recover it even if the final accumulated string is redacted.  Raw token
+    content therefore never enters FOV storage.  Length metadata preserves
+    stream-progress observability without retaining model output.
+    """
+    return {
+        "token": _REDACTED,
+        "accumulated": _REDACTED,
+        "token_chars": len(token),
+        "accumulated_chars": len(accumulated),
+    }
+
+
 def _wrap_sync_method(name: str, original):
     @functools.wraps(original)
     def wrapper(self, *args, **kwargs):
@@ -604,7 +635,10 @@ def _wrap_sync_method(name: str, original):
                 _save_event(ev2)
             return result
         except Exception as exc:
-            ev3 = _mk_event("browser", "error", {"method": name, "error": _redact_text(str(exc)) or ""})
+            ev3 = _mk_event(
+                "browser", "error",
+                {"method": name, "error": _redact_browser_error(name, args, exc)},
+            )
             if ev3:
                 _save_event(ev3)
             raise
@@ -636,7 +670,10 @@ def _wrap_async_method(name: str, original):
                 _save_event(ev2)
             return result
         except Exception as exc:
-            ev3 = _mk_event("browser", "error", {"method": name, "error": _redact_text(str(exc)) or ""})
+            ev3 = _mk_event(
+                "browser", "error",
+                {"method": name, "error": _redact_browser_error(name, args, exc)},
+            )
             if ev3:
                 _save_event(ev3)
             raise
@@ -706,12 +743,7 @@ class _StreamWrapper:
                     "agent_name": self._agent_name,
                     "event_type": "llm_token",
                     "status": "streaming",
-                    "data": {
-                        # Redact tokens/accumulated for PII (API keys,
-                        # emails, JWTs may appear in LLM output).
-                        "token": _redact_text(token) or "",
-                        "accumulated": _redact_text(self._accum) or "",
-                    },
+                    "data": _stream_event_data(token, self._accum),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
             yield chunk
@@ -755,11 +787,7 @@ class _AsyncStreamWrapper:
                     "agent_name": self._agent_name,
                     "event_type": "llm_token",
                     "status": "streaming",
-                    "data": {
-                        # Redact tokens/accumulated for PII.
-                        "token": _redact_text(token) or "",
-                        "accumulated": _redact_text(self._accum) or "",
-                    },
+                    "data": _stream_event_data(token, self._accum),
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
             yield chunk
@@ -881,7 +909,11 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": method.upper(), "url": _redact_url(str(url))[:300], "error": _redact_text(str(exc)) or ""},
+                    "data": {
+                        "method": method.upper(),
+                        "url": _redact_url(str(url))[:300],
+                        "error": _redact_network_error(exc, str(url)),
+                    },
                     "timestamp": ts,
                 })
                 raise
@@ -924,7 +956,11 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": request.method, "url": _redact_url(url)[:300], "error": _redact_text(str(exc)) or ""},
+                    "data": {
+                        "method": request.method,
+                        "url": _redact_url(url)[:300],
+                        "error": _redact_network_error(exc, url),
+                    },
                     "timestamp": ts,
                 })
                 raise
@@ -967,7 +1003,11 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": request.method, "url": _redact_url(url)[:300], "error": _redact_text(str(exc)) or ""},
+                    "data": {
+                        "method": request.method,
+                        "url": _redact_url(url)[:300],
+                        "error": _redact_network_error(exc, url),
+                    },
                     "timestamp": ts,
                 })
                 raise
