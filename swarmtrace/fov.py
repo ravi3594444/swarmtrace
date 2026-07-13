@@ -39,6 +39,7 @@ import json
 import logging
 import os
 import queue
+import re
 import threading
 import time
 import uuid
@@ -47,6 +48,14 @@ from datetime import datetime, timezone
 
 # ── context from tracer ──────────────────────────────────────────────────────
 from swarmtrace.tracer import _current_agent, _remote_config
+# Redactor — used by tracer.py for span args/output, and now by FOV's
+# browser-event path too. See _redact_browser_args below for why FOV
+# needs field-aware redaction ON TOP of the pattern-based redact() (a
+# raw password like "CorrectHorseBatteryStaple!" matches none of the
+# pattern shapes, so pattern-only redaction would let it straight
+# through into local SQLite, the remote /api/events endpoint, and
+# Supabase).
+from swarmtrace.redact import redact as _redact_text
 
 _log = logging.getLogger("swarmtrace.fov")
 
@@ -431,7 +440,7 @@ def _screen_streamer_loop() -> None:
                         "status": "info",
                         "data": {
                             "screenshot": shot,
-                            "url": getattr(page, "url", ""),
+                            "url": _redact_url(getattr(page, "url", "")),
                         },
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
@@ -471,6 +480,99 @@ _PAGE_METHODS = [
 ]
 
 
+# Methods whose second positional arg is the VALUE being entered/selected
+# (the first arg is the selector). For these, we ALWAYS redact the value
+# and record only metadata (length) — not just when the selector matches
+# a keyword. Reviewer P1 fix: generic selectors like 'input:nth-of-type(2)'
+# or '#field-2' don't contain password/token/secret keywords, so keyword-
+# based detection leaks the value. The only safe default is to redact
+# every fill/type value.
+_VALUE_METHODS = {"fill", "type", "press", "select_option"}
+
+# Methods whose first positional arg is a URL. We apply _redact_url() to
+# strip query strings and fragments (which carry session tokens, OAuth
+# codes, API keys, and reset tokens).
+_URL_METHODS = {"goto"}
+
+# Selectors that name a sensitive input. We match case-insensitively
+# anywhere in the selector string (covers #password, [name="password"],
+# input[name="user_token"], #apiKey, .auth-secret, etc.). The alternation
+# is deliberately broad — false positives (redacting a non-sensitive
+# field) are far cheaper than false negatives (leaking a credential).
+_SENSITIVE_SELECTOR_RE = re.compile(
+    r"(?i)(password|passwd|pwd|token|secret|api[_-]?key|apikey|"
+    r"auth(?:orization)?|cookie|session|credential|access[_-]?key|"
+    r"private[_-]?key|client[_-]?secret|otp|totp|mfa|2fa|"
+    r"ssn|social[_-]?security|credit[_-]?card|card[_-]?number|cvv|cvc|"
+    r"security[_-]?answer|security[_-]?question|pin|"
+    r"recovery[_-]?code|backup[_-]?code)"
+)
+
+_REDACTED = "[REDACTED]"
+
+
+def _redact_url(url: str) -> str:
+    """Strip query strings and fragments from a captured URL.
+
+    URLs are recorded on every browser 'done' event and on every
+    screen_tick. Query strings routinely contain session tokens
+    (?session=...), OAuth codes (?code=...), API keys (?key=...),
+    and reset tokens (?token=...). Fragments can carry JWTs and
+    access tokens in SPA auth flows. We keep origin + path only.
+    """
+    if not url or not isinstance(url, str):
+        return url or ""
+    # Cut at the first '?' or '#' — whichever comes first.
+    cut = len(url)
+    for ch in ("?", "#"):
+        idx = url.find(ch)
+        if idx != -1 and idx < cut:
+            cut = idx
+    return url[:cut]
+
+
+def _redact_browser_args(method: str, args: tuple) -> list:
+    """Redact positional args captured for a Playwright method call.
+
+    Three layers:
+
+    1. **Value-method redaction** (the high-value layer): for fill/type/
+       press/select_option, the VALUE arg (position 1) is ALWAYS replaced
+       with [REDACTED(len=N)] — regardless of the selector. Reviewer P1
+       fix: generic selectors like 'input:nth-of-type(2)' or '#field-2'
+       don't contain password/token/secret keywords, so keyword-based
+       detection leaked the value. The only safe default is to redact
+       every fill/type value and record only the length for debugging.
+
+    2. **URL redaction**: for goto, the URL arg (position 0) is passed
+       through _redact_url() to strip query strings and fragments that
+       carry session tokens, OAuth codes, API keys, and reset tokens.
+
+    3. **Pattern-based** (defense-in-depth): run every remaining string
+       arg through redact() to catch API keys / JWTs / emails / card
+       numbers in any position.
+
+    Args are truncated to 200 chars after redaction, matching the
+    pre-existing behavior.
+    """
+    out = []
+    for i, a in enumerate(args):
+        # Layer 1: always redact the VALUE arg of fill/type/press/select_option.
+        if method in _VALUE_METHODS and i == 1:
+            val_len = len(str(a))
+            out.append(f"[REDACTED(len={val_len})]")
+            continue
+        # Layer 2: redact URLs in goto's first arg.
+        if method in _URL_METHODS and i == 0 and isinstance(a, str):
+            out.append(_redact_url(a)[:200])
+            continue
+        # Layer 3: pattern-based defense-in-depth on every remaining arg.
+        s = str(a)
+        s = _redact_text(s) or s
+        out.append(s[:200])
+    return out
+
+
 def _wrap_sync_method(name: str, original):
     @functools.wraps(original)
     def wrapper(self, *args, **kwargs):
@@ -480,9 +582,13 @@ def _wrap_sync_method(name: str, original):
         aid, aname = agent
         # Register this page for background screen streaming (idempotent)
         _register_page(self, aid, aname)
+        # Redact args ONCE here, reuse for both started/done events.
+        # _redact_browser_args field-aware-redacts sensitive fill/type/etc.
+        # values and pattern-redacts every arg as defense-in-depth.
+        redacted_args = _redact_browser_args(name, args)
         ev = _mk_event("browser", "started", {
             "method": name,
-            "args": [str(a)[:200] for a in args],
+            "args": redacted_args,
         })
         if ev:
             _save_event(ev)
@@ -491,14 +597,14 @@ def _wrap_sync_method(name: str, original):
             # No inline screenshot — background streamer handles it every SCREEN_INTERVAL s
             ev2 = _mk_event("browser", "done", {
                 "method": name,
-                "args": [str(a)[:200] for a in args],
-                "url": getattr(self, "url", ""),
+                "args": redacted_args,
+                "url": _redact_url(getattr(self, "url", "")),
             })
             if ev2:
                 _save_event(ev2)
             return result
         except Exception as exc:
-            ev3 = _mk_event("browser", "error", {"method": name, "error": str(exc)})
+            ev3 = _mk_event("browser", "error", {"method": name, "error": _redact_text(str(exc)) or ""})
             if ev3:
                 _save_event(ev3)
             raise
@@ -515,21 +621,22 @@ def _wrap_async_method(name: str, original):
         aid, aname = agent
         # Register page for background streaming (sync registry — safe from async)
         _register_page(self, aid, aname)
-        ev = _mk_event("browser", "started", {"method": name, "args": [str(a)[:200] for a in args]})
+        redacted_args = _redact_browser_args(name, args)
+        ev = _mk_event("browser", "started", {"method": name, "args": redacted_args})
         if ev:
             _save_event(ev)
         try:
             result = await original(self, *args, **kwargs)
             ev2 = _mk_event("browser", "done", {
                 "method": name,
-                "args": [str(a)[:200] for a in args],
-                "url": getattr(self, "url", ""),
+                "args": redacted_args,
+                "url": _redact_url(getattr(self, "url", "")),
             })
             if ev2:
                 _save_event(ev2)
             return result
         except Exception as exc:
-            ev3 = _mk_event("browser", "error", {"method": name, "error": str(exc)})
+            ev3 = _mk_event("browser", "error", {"method": name, "error": _redact_text(str(exc)) or ""})
             if ev3:
                 _save_event(ev3)
             raise
@@ -600,8 +707,10 @@ class _StreamWrapper:
                     "event_type": "llm_token",
                     "status": "streaming",
                     "data": {
-                        "token": token,
-                        "accumulated": self._accum,
+                        # Redact tokens/accumulated for PII (API keys,
+                        # emails, JWTs may appear in LLM output).
+                        "token": _redact_text(token) or "",
+                        "accumulated": _redact_text(self._accum) or "",
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
@@ -647,8 +756,9 @@ class _AsyncStreamWrapper:
                     "event_type": "llm_token",
                     "status": "streaming",
                     "data": {
-                        "token": token,
-                        "accumulated": self._accum,
+                        # Redact tokens/accumulated for PII.
+                        "token": _redact_text(token) or "",
+                        "accumulated": _redact_text(self._accum) or "",
                     },
                     "timestamp": datetime.now(timezone.utc).isoformat(),
                 })
@@ -759,7 +869,7 @@ def patch_network() -> bool:
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "done",
                     "data": {
-                        "method": method.upper(), "url": str(url)[:300],
+                        "method": method.upper(), "url": _redact_url(str(url))[:300],
                         "status_code": resp.status_code,
                         "latency_sec": round(time.perf_counter() - t0, 3),
                     },
@@ -771,7 +881,7 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": method.upper(), "url": str(url)[:300], "error": str(exc)},
+                    "data": {"method": method.upper(), "url": _redact_url(str(url))[:300], "error": _redact_text(str(exc)) or ""},
                     "timestamp": ts,
                 })
                 raise
@@ -802,7 +912,7 @@ def patch_network() -> bool:
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "done",
                     "data": {
-                        "method": request.method, "url": url[:300],
+                        "method": request.method, "url": _redact_url(url)[:300],
                         "status_code": resp.status_code,
                         "latency_sec": round(time.perf_counter() - t0, 3),
                     },
@@ -814,7 +924,7 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": request.method, "url": url[:300], "error": str(exc)},
+                    "data": {"method": request.method, "url": _redact_url(url)[:300], "error": _redact_text(str(exc)) or ""},
                     "timestamp": ts,
                 })
                 raise
@@ -845,7 +955,7 @@ def patch_network() -> bool:
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "done",
                     "data": {
-                        "method": request.method, "url": url[:300],
+                        "method": request.method, "url": _redact_url(url)[:300],
                         "status_code": resp.status_code,
                         "latency_sec": round(time.perf_counter() - t0, 3),
                     },
@@ -857,7 +967,7 @@ def patch_network() -> bool:
                     "id": uuid.uuid4().hex,
                     "agent_id": aid, "agent_name": aname,
                     "event_type": "http", "status": "error",
-                    "data": {"method": request.method, "url": url[:300], "error": str(exc)},
+                    "data": {"method": request.method, "url": _redact_url(url)[:300], "error": _redact_text(str(exc)) or ""},
                     "timestamp": ts,
                 })
                 raise

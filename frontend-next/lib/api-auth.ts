@@ -38,6 +38,17 @@
  * nothing (indexed point-lookups handle thousands/sec on Postgres;
  * 100 concurrent traced agents is only ~50 req/s). If it ever matters,
  * it'll surface as PostgREST connection pressure, not query latency.
+ *
+ * ── Per-IP rate limit (audit fix: rate-limit bypass) ─────────────────────
+ *
+ * The per-key limiter below is keyed by sha256(apiKey). An attacker can
+ * rotate random fake API keys, receiving a fresh bucket for each one
+ * while still forcing a Supabase key-validity lookup on every request.
+ * At 1000 fake keys/sec that's 1000 DB round-trips/sec and an arbitrary
+ * number of "legitimate-looking" 401s — a cheap DoS that bypasses the
+ * per-key limiter entirely. The fix: a per-IP rate limit that runs
+ * BEFORE the per-key limit, so key rotation doesn't help. See
+ * createIpRateLimiter() + getClientIp() below.
  */
 
 import { Redis } from '@upstash/redis'
@@ -49,6 +60,97 @@ export async function sha256Hex(input: string): Promise<string> {
   return Array.from(new Uint8Array(digest))
     .map(b => b.toString(16).padStart(2, '0'))
     .join('')
+}
+
+// ── Client IP extraction ───────────────────────────────────────────────────
+//
+// Reviewer P2 fix: the first implementation trusted x-forwarded-for,
+// x-vercel-forwarded-for, and x-real-ip unconditionally. On Vercel,
+// x-forwarded-for is overwritten by the platform to prevent spoofing, so
+// the production deployment is safe. But a self-hosted `next start`
+// deployment or an incorrectly configured proxy lets an attacker rotate
+// X-Forwarded-For values and obtain a new rate-limit bucket for every
+// request.
+//
+// New behavior:
+//   - On Vercel (VERCEL=1 or VERCEL_ENV set): trust x-forwarded-for and
+//     x-vercel-forwarded-for (Vercel overwrites them to prevent spoofing).
+//   - Off Vercel (self-hosted): do NOT trust client-supplied forwarded-for
+//     headers. Use x-real-ip only if the operator explicitly sets
+//     SWARMTRACE_TRUST_PROXY=1 (signaling they've configured their reverse
+//     proxy to set x-real-ip correctly). Otherwise return 'unknown'.
+//   - All extracted values are validated as IPv4 or IPv6. Invalid values
+//     map to 'unknown' (shared bucket) so an attacker can't pollute the
+//     rate-map with arbitrary strings.
+//
+// Returns 'unknown' when no valid IP can be extracted. 'unknown' shares
+// one bucket — the safe default (no IP = one shared cap, not a fresh
+// bucket per request).
+//
+// SELF-HOSTING NOTE: if you run `next start` behind a reverse proxy,
+// set SWARMTRACE_TRUST_PROXY=1 and configure your proxy to overwrite
+// x-real-ip with the client IP. Without this, all requests share one
+// 'unknown' IP bucket, which is safe but coarse. For production-grade
+// per-IP limiting on self-hosted deployments, enforce the limit at the
+// reverse proxy / WAF (nginx limit_req, Cloudflare rate limiting, etc.)
+// and also configure Upstash Redis for distributed limiting across
+// multiple Node.js instances.
+
+const _IS_VERCEL = !!(process.env.VERCEL || process.env.VERCEL_ENV)
+
+// Read SWARMTRACE_TRUST_PROXY at call time (not module-load time) so
+// tests can toggle it. In production it's set once and never changes.
+function _trustProxy(): boolean {
+  return process.env.SWARMTRACE_TRUST_PROXY === '1'
+}
+
+// IPv4: four dot-separated octets, 0-255 each.
+const _IPV4_RE = /^(?:(?:25[0-5]|2[0-4]\d|1?\d?\d)\.){3}(?:25[0-5]|2[0-4]\d|1?\d?\d)$/
+
+// IPv6: fairly permissive — covers standard compressed forms like
+// 2001:db8::1, ::1, fe80::1%eth0. Not RFC-5952-strict, but good enough
+// to reject arbitrary strings that would pollute the rate-map.
+const _IPV6_RE = /^(?:[0-9a-fA-F]{1,4}:){2,7}[0-9a-fA-F]{1,4}$|^(?:[0-9a-fA-F]{1,4}:)*:?(?::[0-9a-fA-F]{1,4})+$/
+
+function _isValidIp(ip: string): boolean {
+  if (!ip) return false
+  // Strip optional zone-id (fe80::1%eth0 → fe80::1).
+  const bare = ip.split('%')[0]
+  return _IPV4_RE.test(bare) || _IPV6_RE.test(bare)
+}
+
+export function getClientIp(req: Request): string {
+  const h = req.headers
+  const trustProxy = _IS_VERCEL || _trustProxy()
+
+  // On Vercel, x-forwarded-for is platform-managed (spoof-proof).
+  // Off Vercel, only trust it if the operator explicitly opted in.
+  if (trustProxy) {
+    const xff = h.get('x-forwarded-for')
+    if (xff) {
+      const first = xff.split(',')[0]?.trim()
+      if (first && _isValidIp(first)) return first
+    }
+    const vff = h.get('x-vercel-forwarded-for')
+    if (vff) {
+      const first = vff.split(',')[0]?.trim()
+      if (first && _isValidIp(first)) return first
+    }
+
+    // x-real-ip: trusted only under the same conditions.
+    const xrip = h.get('x-real-ip')
+    if (xrip) {
+      const trimmed = xrip.trim()
+      if (_isValidIp(trimmed)) return trimmed
+    }
+  }
+
+  return 'unknown'
+}
+
+/** Test-only: expose the Vercel detection flag for unit tests. */
+export function _isVercel(): boolean {
+  return _IS_VERCEL
 }
 
 // ── Rate limiter factory ───────────────────────────────────────────────────
@@ -153,4 +255,34 @@ export function createRateLimiter(opts: {
       return rateMap.size
     },
   }
+}
+
+// ── Per-IP rate limiter (audit fix: rate-limit bypass) ─────────────────────
+//
+// Same factory shape as createRateLimiter but with a distinct prefix so
+// IP buckets never collide with per-key buckets. Limits are deliberately
+// generous — high enough that no legitimate single-source workload (the
+// SDK's ~30 ingest/min per active traced process, or one developer
+// running tests) would ever hit them, low enough that an attacker
+// rotating 1000 fake keys/sec from one IP gets capped at the IP level
+// before the per-key limiter ever sees a bucket refill.
+//
+// Defaults: 600 req / 60s per IP. That's 10x the per-key ingest limit
+// (120) and ~17x a single active traced process's natural rate (~30/min).
+// A legitimate multi-tenant NAT (office network, CI runner pool) could
+// plausibly hit this if many traced agents share one egress IP — if that
+// becomes a real problem, raise the limit or add a per-IP+per-route
+// override. The number is a starting point, not a hard contract.
+export function createIpRateLimiter(opts?: Partial<{
+  limit: number
+  prefix: string
+  windowMs: number
+  sweepEvery: number
+}>): RateLimiter {
+  return createRateLimiter({
+    limit: opts?.limit ?? 600,
+    prefix: opts?.prefix ?? 'st_ip_rl',
+    windowMs: opts?.windowMs ?? 60_000,
+    sweepEvery: opts?.sweepEvery,
+  })
 }

@@ -176,3 +176,124 @@ def test_main_combines_format_and_output_flags(export_mod, tmp_path, monkeypatch
     with open(custom, newline="") as f:
         rows = list(csv.DictReader(f))
     assert len(rows) == 1
+
+
+# ---------------------------------------------------------------------------
+# CSV formula-injection regression tests
+#
+# Audit finding (medium): trace args/output/error/function are LLM-controlled
+# or tool-controlled strings. A malicious prompt or tool response can produce
+# a value starting with =, +, -, or @ — Excel/LibreOffice/Google Sheets will
+# parse the cell as a formula on open, enabling DDE command execution
+# (=cmd|'/c calc'!A1) and phishing (=HYPERLINK("http://evil","click")).
+#
+# The fix prefixes a single quote to such values — the spreadsheet-standard
+# "this cell is text" escape. Excel/Sheets display the value without the
+# quote but no longer parse it as a formula. OWASP-recommended mitigation.
+# ---------------------------------------------------------------------------
+
+def test_sanitize_csv_cell_neutralizes_equals_prefix(export_mod):
+    """=cmd|'/c calc'!A1 (DDE command injection) must be prefixed with '."""
+    out = export_mod._sanitize_csv_cell("=cmd|'/c calc'!A1")
+    assert out == "'=cmd|'/c calc'!A1"
+
+
+def test_sanitize_csv_cell_neutralizes_plus_prefix(export_mod):
+    out = export_mod._sanitize_csv_cell("+HYPERLINK(\"http://evil\")")
+    assert out.startswith("'+")
+
+
+def test_sanitize_csv_cell_neutralizes_minus_prefix(export_mod):
+    """Some spreadsheets treat leading - as a formula trigger."""
+    out = export_mod._sanitize_csv_cell("-1+1")
+    assert out == "'-1+1"
+
+
+def test_sanitize_csv_cell_neutralizes_at_prefix(export_mod):
+    """@SUM(...) is a Lotus-1-2-3-style formula trigger in Excel."""
+    out = export_mod._sanitize_csv_cell("@SUM(1+1)")
+    assert out == "'@SUM(1+1)"
+
+
+def test_sanitize_csv_cell_neutralizes_tab_and_cr_prefix(export_mod):
+    """Leading tab/CR can be formula triggers in some locales."""
+    assert export_mod._sanitize_csv_cell("\t=evil") == "'\t=evil"
+    assert export_mod._sanitize_csv_cell("\rcalc") == "'\rcalc"
+
+
+def test_sanitize_csv_cell_passes_through_safe_strings(export_mod):
+    """Strings that don't start with a dangerous char must be unchanged."""
+    assert export_mod._sanitize_csv_cell("normal output") == "normal output"
+    assert export_mod._sanitize_csv_cell("hello =world") == "hello =world"
+    assert export_mod._sanitize_csv_cell("[REDACTED]") == "[REDACTED]"
+
+
+def test_sanitize_csv_cell_passes_through_non_strings(export_mod):
+    """Numbers/None/bools can't be formula-injected — pass through unchanged."""
+    assert export_mod._sanitize_csv_cell(42) == 42
+    assert export_mod._sanitize_csv_cell(None) is None
+    assert export_mod._sanitize_csv_cell(0.001) == 0.001
+    assert export_mod._sanitize_csv_cell(True) is True
+
+
+def test_sanitize_csv_cell_handles_empty_string(export_mod):
+    assert export_mod._sanitize_csv_cell("") == ""
+
+
+def test_export_csv_neutralizes_formula_injection_in_output(export_mod, tmp_path):
+    """End-to-end: a trace whose output starts with '=' must be exported
+    with the leading-quote escape, so opening the CSV in Excel cannot
+    execute the formula."""
+    import swarmtrace.storage as storage
+    _save(storage, id_="evil", output="=cmd|'/c calc'!A1")
+
+    out = tmp_path / "evil.csv"
+    export_mod.export_csv(str(out))
+
+    with open(out, newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert len(rows) == 1
+    # The cell value must start with the escape quote.
+    assert rows[0]["output"] == "'=cmd|'/c calc'!A1", rows[0]["output"]
+
+
+def test_export_csv_neutralizes_formula_injection_in_args(export_mod, tmp_path):
+    """Same attack via the args column."""
+    import swarmtrace.storage as storage
+    _save(storage, id_="evil2", args='+HYPERLINK("http://evil","click")')
+
+    out = tmp_path / "evil2.csv"
+    export_mod.export_csv(str(out))
+
+    with open(out, newline="") as f:
+        rows = list(csv.DictReader(f))
+    # Cell must start with the escape quote, not the raw +.
+    assert rows[0]["args"].startswith("'+"), rows[0]["args"]
+    assert "+HYPERLINK" in rows[0]["args"]
+
+
+def test_export_csv_preserves_safe_output(export_mod, tmp_path):
+    """Regression guard: don't over-sanitize. A normal output string
+    must pass through unchanged so the export stays useful for debugging."""
+    import swarmtrace.storage as storage
+    _save(storage, id_="safe", output="the answer is 42")
+
+    out = tmp_path / "safe.csv"
+    export_mod.export_csv(str(out))
+
+    with open(out, newline="") as f:
+        rows = list(csv.DictReader(f))
+    assert rows[0]["output"] == "the answer is 42", rows[0]["output"]
+
+
+def test_export_json_does_not_apply_csv_sanitization(export_mod, tmp_path):
+    """JSON export must NOT be sanitized — JSON consumers don't interpret
+    =/+/-/@ as formulas. Sanitizing JSON would corrupt the data."""
+    import swarmtrace.storage as storage
+    _save(storage, id_="raw", output="=cmd|'/c calc'!A1")
+
+    out = tmp_path / "raw.json"
+    export_mod.export_json(str(out))
+
+    data = json.loads(out.read_text())
+    assert data[0]["output"] == "=cmd|'/c calc'!A1", data[0]["output"]

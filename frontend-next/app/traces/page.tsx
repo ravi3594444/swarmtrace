@@ -12,6 +12,7 @@ import { Waterfall } from '@/components/swarm/Waterfall'
 import { TraceTable } from '@/components/swarm/TraceTable'
 import type { Trace } from '@/lib/trace-types'
 import { buildSpanTree, countDescendants, hasTreeError, type SpanNode } from '@/lib/span-tree'
+import { tracesToCsv, downloadCsv, downloadJson } from '@/lib/csv-export'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
 import {
@@ -29,37 +30,18 @@ function exportJSON(traces: Trace[]) {
   // file containing just "[]" (no traces). The menu button is also
   // disabled when there's no data, but this is belt-and-suspenders.
   if (traces.length === 0) return
-  const blob = new Blob([JSON.stringify(traces, null, 2)], { type: 'application/json' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `swarmtrace-traces-${new Date().toISOString().slice(0, 10)}.json`
-  a.click()
-  URL.revokeObjectURL(url)
+  downloadJson(JSON.stringify(traces, null, 2), `swarmtrace-traces-${new Date().toISOString().slice(0, 10)}.json`)
 }
 
 function exportCSV(traces: Trace[]) {
   // Guard against empty data — without this, the user could download a
   // CSV containing only the header row (no data rows).
   if (traces.length === 0) return
-  const headers = ['id', 'parent_id', 'function', 'kind', 'agent_name', 'timestamp',
-    'latency_sec', 'input_tokens', 'output_tokens', 'cost_usd', 'error']
-  const escape = (v: unknown) => {
-    const s = v == null ? '' : String(v)
-    return s.includes(',') || s.includes('"') || s.includes('\n')
-      ? `"${s.replace(/"/g, '""')}"` : s
-  }
-  const rows = [
-    headers.join(','),
-    ...traces.map(t => headers.map(h => escape((t as Record<string, unknown>)[h])).join(',')),
-  ]
-  const blob = new Blob([rows.join('\n')], { type: 'text/csv' })
-  const url = URL.createObjectURL(blob)
-  const a = document.createElement('a')
-  a.href = url
-  a.download = `swarmtrace-traces-${new Date().toISOString().slice(0, 10)}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
+  // tracesToCsv() in lib/csv-export.ts sanitizes every cell against
+  // formula injection (=, +, -, @, tab, CR prefixes) — see the audit
+  // finding documented there.
+  const csv = tracesToCsv(traces)
+  downloadCsv(csv, `swarmtrace-traces-${new Date().toISOString().slice(0, 10)}.csv`)
 }
 
 function ExportMenu({ traces }: { traces: Trace[] }) {
