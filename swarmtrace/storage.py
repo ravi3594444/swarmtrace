@@ -69,42 +69,60 @@ _write_count: int = 0
 # ---------------------------------------------------------------------------
 
 def _secure_db_path(path: str) -> None:
-    """Tighten permissions on the DB file (0600) and its parent dir (0700).
+    """Tighten permissions on the DB file (0600) and, only for directories
+    we create ourselves, the parent dir (0700).
 
     Audit finding (medium): the default DB path is ~/.swarmtrace.db, which
-    SQLite creates with the process umask — typically 0644 on most systems.
+    SQLite creates with the process umask (typically 0644 on most systems).
     On a multi-user machine, any other local user can then read captured
     prompts, outputs, args, error messages, and (via FOV) browser-event
-    data including redacted-but-still-sensitive context. The 0600/0700
-    tightening is the standard mitigation.
+    data. The 0600 file-mode tightening is the standard mitigation.
 
-    Idempotent: safe to call on every _get_conn() — os.chmod is a no-op
-    if the mode is already correct. Also safe if the file doesn't exist
-    yet (we create the dir first, then sqlite creates the file with
-    whatever umask dictates, then we chmod it).
+    Reviewer fix (P1): the first implementation unconditionally chmod'd
+    the parent directory to 0700. That broke shared/system directories:
+      - Default path: chmods the user's entire home directory to 0700.
+      - SWARMTRACE_DB_PATH=/tmp/traces.db (running as root): chmods /tmp
+        from 1777 to 0700, breaking the system.
+      - Shared app directories: loses group access.
 
-    Failures are logged but non-fatal — a permission-tightening failure
-    must not prevent the agent being traced from running.
+    New behavior: we ONLY chmod a parent directory that we created
+    ourselves (i.e., it didn't exist when we arrived). Existing
+    directories are left alone. The DB file itself is always tightened
+    to 0600 regardless of where it lives.
+
+    To avoid the umask race (sqlite3.connect creates the file with the
+    process umask before we can chmod it), we pre-create the file with
+    os.open(..., 0o600) if it doesn't exist yet. That way the file never
+    exists in a world-readable state, even briefly.
+
+    Failures are logged but non-fatal.
     """
     try:
-        # 1. Parent dir: 0700 (owner-only). Create if missing.
         parent = os.path.dirname(os.path.abspath(path))
+
+        # 1. Parent dir: ONLY chmod if we created it ourselves. Never
+        #    chmod an existing directory (might be /tmp, home, a shared
+        #    app dir, etc.).
         if parent and not os.path.isdir(parent):
             os.makedirs(parent, mode=0o700, exist_ok=True)
-        try:
-            os.chmod(parent, 0o700)
-        except OSError as exc:
-            _log.debug("could not chmod dir %s to 0700: %s", parent, exc)
+            try:
+                os.chmod(parent, 0o700)
+            except OSError as exc:
+                _log.debug("could not chmod created dir %s to 0700: %s", parent, exc)
 
-        # 2. DB file: 0600 (owner-only read/write). Only if it exists.
-        if os.path.exists(path):
+        # 2. DB file: pre-create with 0600 to avoid the umask race.
+        if not os.path.exists(path):
+            try:
+                fd = os.open(path, os.O_CREAT | os.O_WRONLY, 0o600)
+                os.close(fd)
+            except OSError as exc:
+                _log.debug("could not pre-create db %s: %s", path, exc)
+        else:
             try:
                 os.chmod(path, 0o600)
             except OSError as exc:
                 _log.debug("could not chmod db %s to 0600: %s", path, exc)
     except Exception as exc:
-        # Broad catch: never let a security-hardening step crash the
-        # agent being traced. Log and move on.
         _log.warning("db path hardening skipped for %s: %s", path, exc)
 
 
