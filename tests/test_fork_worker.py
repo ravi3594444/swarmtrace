@@ -1,24 +1,23 @@
 """Regression tests for the os.fork() background-worker survival bug.
 
-Audit finding #4 ("_worker thread start failure — real silent-data-loss
-bug"): `_worker_started` is a plain module-level flag. `os.fork()` clones
-process memory (including this flag) but not other threads — only the
-calling thread survives into the child. Without an at-fork reset hook, a
-forked child (gunicorn/uWSGI preload workers, Celery prefork pool, plain
-os.fork(), etc.) inherits `_worker_started = True` from a parent that
-already has a live sender thread — even though that thread does not exist
-in the child. `_ensure_worker()`'s fast-path check (`if _worker_started:
-return`) then short-circuits FOREVER in that child: no sender thread is
-ever started there, so every trace enqueued via `_enqueue_remote()` in
-that process sits in `_send_queue` for the process's entire lifetime with
-nothing draining it. No exception is raised anywhere — it just silently
-never syncs. Unlike a transient `Thread.start()` failure (which leaves
-`_worker_started` False and self-heals on the next call), this is
-permanent for that process.
+Audit finding #4: the sender's ``_started`` flag is plain process memory.
+``os.fork()`` clones it (including ``_started = True``) but not other
+threads — only the calling thread survives into the child. Without an
+at-fork reset hook, a forked child inherits ``_started = True`` from a
+parent that already has a live sender thread, even though that thread does
+not exist in the child. ``start()``'s fast-path then short-circuits forever
+in that child: no sender thread is ever started, so every trace enqueued
+there sits in the queue for the process's lifetime with nothing draining
+it. No exception is raised; it just silently never syncs.
 
-These tests use a REAL os.fork() rather than mocking it — the whole bug
-is specifically about what fork() does to process/thread state, which a
-mock can't exercise.
+These tests use a REAL os.fork() rather than mocking it — the whole bug is
+specifically about what fork() does to process/thread state, which a mock
+can't exercise.
+
+Phase 1.B: the worker moved to ``swarmtrace.delivery.sender.Sender``; these
+tests now drive the module-level ``tracer._sender`` instead of removed
+``tracer._worker_started`` / ``tracer._send_queue`` / ``tracer._ensure_worker``
+globals.
 """
 
 from __future__ import annotations
@@ -40,9 +39,7 @@ def _run_in_child(fn) -> str:
     """Fork, run ``fn()`` in the child, report PASS/FAIL back via a pipe.
 
     Uses os._exit() in the child (never sys.exit / a bare return) so the
-    forked copy never runs pytest's normal teardown machinery — that's a
-    second sharp edge of forking inside a test process, unrelated to the
-    bug under test, and os._exit() sidesteps it entirely.
+    forked copy never runs pytest's normal teardown machinery.
     """
     read_fd, write_fd = os.pipe()
     pid = os.fork()
@@ -75,21 +72,19 @@ def _run_in_child(fn) -> str:
 
 
 @pytest.fixture(autouse=True)
-def _restore_worker_state():
-    """`_worker_started` / `_send_queue` are process-global module state —
-    save and restore around each test so tests don't leak into each other
-    or into other test files running in the same process."""
-    original_started = tracer._worker_started
-    original_queue = tracer._send_queue
+def _restore_sender_state():
+    """``_sender._started`` / ``_sender._queue`` are process-global state —
+    save and restore around each test so tests don't leak into each other."""
+    sender = tracer._sender
+    original_started = sender._started
+    original_queue = sender._queue
     yield
-    tracer._worker_started = original_started
-    tracer._send_queue = original_queue
+    sender._started = original_started
+    sender._queue = original_queue
 
 
 def test_at_fork_hook_is_registered():
-    """Sanity check the hook is actually wired up, guarding against the
-    ``if hasattr(os, "register_at_fork")`` guard silently no-op'ing on a
-    platform where it's expected to be present."""
+    """Sanity check the hook is actually wired up."""
     assert hasattr(os, "register_at_fork"), (
         "this test only runs where os.fork() exists, and on those "
         "platforms register_at_fork should too"
@@ -97,52 +92,49 @@ def test_at_fork_hook_is_registered():
 
 
 def test_worker_started_flag_resets_in_child():
-    """Core regression guard. Without the at-fork hook, this is exactly
-    the stuck state a forked child inherits — permanently."""
-    tracer._worker_started = True  # simulate: parent already has a live worker
+    """Core regression guard. Without the at-fork hook, this is exactly the
+    stuck state a forked child inherits — permanently."""
+    tracer._sender._started = True  # simulate: parent already has a live worker
 
     def _child_check():
-        assert tracer._worker_started is False, (
-            "audit finding #4 regression: _worker_started is still True "
-            "in the child — _ensure_worker() will never spawn a real "
-            "sender thread here, and every trace enqueued in this "
-            "process will silently never sync"
+        assert tracer._sender._started is False, (
+            "audit finding #4 regression: _started is still True in the "
+            "child — start() will never spawn a real sender thread here, "
+            "and every trace enqueued in this process will silently never sync"
         )
 
     assert _run_in_child(_child_check) == "PASS"
 
 
 def test_ensure_worker_spawns_a_real_thread_in_child():
-    """End-to-end: after fork, _ensure_worker() must actually start a
-    live 'swarmtrace-sender' thread in the child — not just flip a flag."""
-    tracer._worker_started = True  # simulate a parent with a live worker
+    """End-to-end: after fork, start() must actually start a live
+    'swarmtrace-sender' thread in the child — not just flip a flag."""
+    tracer._sender._started = True  # simulate a parent with a live worker
 
     def _child_check():
-        tracer._ensure_worker()
+        tracer._sender.start()
         time.sleep(0.05)  # let the new thread actually start
         names = [t.name for t in threading.enumerate()]
         assert "swarmtrace-sender" in names, (
-            f"no sender thread running in child after _ensure_worker(); "
+            f"no sender thread running in child after start(); "
             f"threads seen: {names}"
         )
-        assert tracer._worker_started is True
+        assert tracer._sender._started is True
 
     assert _run_in_child(_child_check) == "PASS"
 
 
 def test_inherited_queue_is_replaced_not_reused():
-    """The child gets a fresh `_send_queue`, not the parent's inherited
-    one — replaying into a Queue whose internal locks may be in an
-    inconsistent post-fork state is riskier than starting clean, and
-    anything already queued is already durable in SQLite via
-    save_trace() regardless."""
-    tracer._worker_started = True
-    parent_queue_id = id(tracer._send_queue)
+    """The child gets a fresh queue, not the parent's inherited one —
+    replaying into a Queue whose internal locks may be in an inconsistent
+    post-fork state is riskier than starting clean, and anything already
+    queued is already durable in SQLite via save_trace() regardless."""
+    tracer._sender._started = True
+    parent_queue_id = id(tracer._sender._queue)
 
     def _child_check():
-        assert id(tracer._send_queue) != parent_queue_id, (
-            "child inherited the parent's _send_queue object instead of "
-            "getting a fresh one"
+        assert id(tracer._sender._queue) != parent_queue_id, (
+            "child inherited the parent's queue instead of getting a fresh one"
         )
 
     assert _run_in_child(_child_check) == "PASS"

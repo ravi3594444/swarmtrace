@@ -4,8 +4,9 @@ import time
 import uuid
 from datetime import datetime, timezone
 
-from swarmtrace.storage import save_trace
-from swarmtrace.tracer import _current_agent
+from swarmtrace.runtime import get_runtime
+from swarmtrace.span_model import SpanRecord
+from swarmtrace.trace_context import current_agent
 
 _log = logging.getLogger("swarmtrace.tool_attention")
 
@@ -154,21 +155,23 @@ class ToolAttention:
         # call is currently in progress (if any), tagged as a tool call so
         # it rolls into that agent's stats instead of becoming its own
         # phantom "agent" on the dashboard.
-        agent_id, agent_name = _current_agent() or (None, None)
-        save_trace(
-            id_=str(uuid.uuid4().hex),   # full 32-char — short IDs collision-prone at scale
-            parent_id=None,
-            function="tool_attention.select",
+        agent_id, agent_name = current_agent() or (None, None)
+        span = SpanRecord(
+            span_id=str(uuid.uuid4().hex),  # full 32-char — short IDs collision-prone at scale
+            parent_span_id=None,
+            name="tool_attention.select",
+            kind="tool",
+            start_time=datetime.now(timezone.utc),
+            latency_sec=latency,
             args=query[:200],
             output=str([t["name"] for t in selected]),
-            latency_sec=latency,
-            error=None,
-            timestamp=datetime.now(timezone.utc).isoformat(),  # fixed: was deprecated utcnow()
             input_tokens=full_tokens,
             output_tokens=active_tokens,
             cost_usd=round((full_tokens - active_tokens) * 0.80 / 1_000_000, 8),
-            kind="tool", agent_id=agent_id, agent_name=agent_name,
+            agent_id=agent_id,
+            agent_name=agent_name,
         )
+        get_runtime().record(span)
 
         return selected
 

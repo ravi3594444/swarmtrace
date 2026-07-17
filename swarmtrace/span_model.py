@@ -1,0 +1,98 @@
+"""Canonical span/run data model for SwarmTrace.
+
+This module defines the neutral ``SpanRecord`` that the tracing core, adapters,
+and gateways all speak. It is deliberately free of I/O: it only describes what
+a span *is*, not how it is stored or transported.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from typing import Any, Dict, Optional
+
+
+@dataclass
+class SpanRecord:
+    """One row in the agent history.
+
+    A ``run()`` produces a span whose ``kind == "agent"``. A ``span()``
+    produces a child span. The model is intentionally close to the existing
+    ``traces`` SQLite table so the current repository can persist it without a
+    schema change, while also carrying future fields such as ``trace_id`` and
+    ``attributes``.
+    """
+
+    span_id: str
+    name: str
+    kind: str
+    start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
+    end_time: Optional[datetime] = None
+    status: str = "ok"
+    parent_span_id: Optional[str] = None
+    trace_id: Optional[str] = None
+    agent_id: Optional[str] = None
+    agent_name: Optional[str] = None
+    session_id: Optional[str] = None
+    args: Optional[str] = None
+    output: Optional[str] = None
+    error: Optional[str] = None
+    latency_sec: float = 0.0
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_usd: float = 0.0
+    attributes: Dict[str, Any] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if self.end_time is not None and self.latency_sec == 0.0:
+            self.latency_sec = round(
+                (self.end_time - self.start_time).total_seconds(), 3
+            )
+        if self.trace_id is None:
+            self.trace_id = self.span_id
+
+    def to_storage_dict(self) -> Dict[str, Any]:
+        """Return kwargs for the existing ``storage.save_trace`` function.
+
+        The ``attributes`` field is not persisted by the current table schema
+        and is dropped here; it will be stored once a metadata column is added
+        in Phase 5.
+        """
+        return {
+            "id_": self.span_id,
+            "parent_id": self.parent_span_id,
+            "function": self.name,
+            "args": self.args,
+            "output": self.output,
+            "latency_sec": self.latency_sec,
+            "error": self.error,
+            "timestamp": self.start_time.isoformat(),
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_usd": self.cost_usd,
+            "kind": self.kind,
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+            "session_id": self.session_id,
+        }
+
+    @classmethod
+    def from_storage_row(cls, row: Dict[str, Any]) -> "SpanRecord":
+        """Build a SpanRecord from a sqlite3.Row dict."""
+        return cls(
+            span_id=row["id"],
+            parent_span_id=row.get("parent_id"),
+            name=row["function"],
+            kind=row.get("kind", "agent"),
+            start_time=datetime.fromisoformat(row["timestamp"]),
+            latency_sec=row.get("latency_sec", 0.0),
+            args=row.get("args"),
+            output=row.get("output"),
+            error=row.get("error"),
+            input_tokens=row.get("input_tokens", 0) or 0,
+            output_tokens=row.get("output_tokens", 0) or 0,
+            cost_usd=row.get("cost_usd", 0.0) or 0.0,
+            agent_id=row.get("agent_id"),
+            agent_name=row.get("agent_name"),
+            session_id=row.get("session_id"),
+        )
