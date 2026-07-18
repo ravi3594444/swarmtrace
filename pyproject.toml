@@ -29,7 +29,8 @@ scraper    = ["scrapling"]
 tools      = ["sentence-transformers", "faiss-cpu", "numpy"]
 budget     = ["tiktoken"]
 fov        = ["playwright", "watchdog"]
-all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken", "playwright", "watchdog"]
+gateway    = ["mcp", "uvicorn"]
+all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken", "playwright", "watchdog", "mcp", "uvicorn"]
 
 [project.scripts]
 swarmtrace = "swarmtrace.cli:view"
@@ -37,6 +38,8 @@ swarmtrace-export = "swarmtrace.export:main"
 swarmtrace-replay = "swarmtrace.cli:main_replay"
 swarmtrace-alerts = "swarmtrace.cli:main_alerts"
 swarmtrace-resync = "swarmtrace.cli:main_resync"
+swarmtrace-gateway = "swarmtrace.gateway_cli:main"
+swarmtrace-otlp = "swarmtrace.otlp:main"
 
 [tool.setuptools]
 packages = ["swarmtrace"]

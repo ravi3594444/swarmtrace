@@ -63,8 +63,8 @@ function escapeAndSanitize(v: unknown): string {
 export function tracesToCsv(traces: Trace[]): string {
   if (traces.length === 0) return ''
   const headers = [
-    'id', 'parent_id', 'function', 'kind', 'agent_name', 'timestamp',
-    'latency_sec', 'input_tokens', 'output_tokens', 'cost_usd', 'error',
+    'id', 'parent_id', 'trace_id', 'function', 'kind', 'agent_name', 'session_id', 'timestamp',
+    'latency_sec', 'input_tokens', 'output_tokens', 'cost_usd', 'error', 'attributes',
   ]
   const rows = [
     headers.join(','),

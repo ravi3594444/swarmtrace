@@ -55,8 +55,9 @@ class FakeTransport:
 
     def send(self, spans: List[SpanRecord], key: str, url: str) -> None:
         """Implement ``SpanTransport.send`` by delegating to ``send_batch``."""
-        payloads = [
-            {
+        payloads = []
+        for s in spans:
+            payload = {
                 "id": s.span_id,
                 "parent_id": s.parent_span_id,
                 "function": s.name,
@@ -72,8 +73,11 @@ class FakeTransport:
                 "agent_id": s.agent_id,
                 "agent_name": s.agent_name,
             }
-            for s in spans
-        ]
+            if s.trace_id is not None and s.trace_id != s.span_id:
+                payload["trace_id"] = s.trace_id
+            if s.attributes:
+                payload["attributes"] = s.attributes
+            payloads.append(payload)
         self.send_batch(payloads, key, url)
 
     def send_batch(self, payloads: List[Dict[str, Any]], key: str, url: str) -> None:
