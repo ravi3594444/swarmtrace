@@ -23,6 +23,16 @@ import {
 
 type ViewMode = 'tree' | 'table' | 'waterfall'
 
+// ── Date helpers ────────────────────────────────────────────────────────────────
+
+// Local (not UTC) yyyy-mm-dd, matching what <input type="date"> expects and
+// what the fromMs/toMs parsing below assumes. Using toISOString() here would
+// shift the "today" boundary by the user's UTC offset near midnight.
+function todayLocalISODate(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
 // ── Export helpers ─────────────────────────────────────────────────────────────
 
 function exportJSON(traces: Trace[]) {
@@ -433,9 +443,11 @@ export default function TracesPage() {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OK' | 'ERROR'>('ALL')
   const [view, setView] = useState<ViewMode>('tree')
 
-  // Custom date range (inclusive, local time). Empty string = unbounded.
-  const [fromDate, setFromDate] = useState('')
-  const [toDate, setToDate] = useState('')
+  // Custom date range (inclusive, local time). Defaults to today so the
+  // dashboard opens scoped to current activity — clear the range (X button)
+  // or edit either field to browse historical spans. Empty string = unbounded.
+  const [fromDate, setFromDate] = useState(todayLocalISODate)
+  const [toDate, setToDate] = useState(todayLocalISODate)
   const fromMs = useMemo(() => (fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : NaN), [fromDate])
   const toMs = useMemo(() => (toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : NaN), [toDate])
 
