@@ -24,12 +24,15 @@ Production guarantees
 import functools
 import logging
 import time
+import uuid
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
 from swarmtrace.pricing import calculate_cost
 from swarmtrace.redact import redact
-import swarmtrace.tracer as _tracer
+from swarmtrace.runtime import get_runtime
+from swarmtrace.span_model import SpanRecord
+from swarmtrace.trace_context import current_agent, current_parent, current_session
 
 _log = logging.getLogger("swarmtrace")
 
@@ -251,38 +254,36 @@ def _record_async(
     """
     try:
         cost = calculate_cost(model or "", in_tok, out_tok)
-        trace_id = _tracer._build_trace_id()
+        trace_id = uuid.uuid4().hex
         agent_id, agent_name = agent or (trace_id, func_name)
-        timestamp = datetime.now(timezone.utc).isoformat()
+        timestamp = datetime.now(timezone.utc)
         latency = round(time.perf_counter() - start, 3)
         # Redact the error string — LLM auth errors (esp. older OpenAI
         # clients, some Anthropic error shapes) can echo the API key back
         # in the exception message. This is the exact PII leak that
-        # swarmtrace/redact.py was built to catch, but the original
-        # Task 1 commit missed this path because the args_str/output
-        # strings here are synthesized ("model=…") and don't carry user
-        # content. The error string DOES — it comes from the provider's
-        # exception, which we don't control.
+        # swarmtrace/redact.py was built to catch.
         error_str = redact(str(error)) if error else None
         output = None if error else f"model={model} tokens={in_tok}in/{out_tok}out"
         args_str = f"model={model}"
-        # save_trace writes to SQLite — fast local I/O, exception-safe.
-        # Using module reference so tests can monkeypatch tracer.save_trace.
-        session_id = _tracer._current_session()
-        _tracer.save_trace(
-            id_=trace_id, parent_id=parent_id, function=func_name,
-            args=args_str, output=output, latency_sec=latency, error=error_str,
-            timestamp=timestamp, input_tokens=in_tok, output_tokens=out_tok,
-            cost_usd=cost, kind="llm", agent_id=agent_id, agent_name=agent_name,
+        session_id = current_session()
+        span = SpanRecord(
+            span_id=trace_id,
+            parent_span_id=parent_id,
+            name=func_name,
+            kind="llm",
+            start_time=timestamp,
+            latency_sec=latency,
+            args=args_str,
+            output=output,
+            error=error_str,
+            input_tokens=in_tok,
+            output_tokens=out_tok,
+            cost_usd=cost,
+            agent_id=agent_id,
+            agent_name=agent_name,
             session_id=session_id,
         )
-        _tracer._enqueue_remote({
-            "id": trace_id, "parent_id": parent_id, "function": func_name,
-            "args": args_str, "output": output or "", "latency_sec": latency,
-            "error": error_str, "timestamp": timestamp,
-            "input_tokens": in_tok, "output_tokens": out_tok, "cost_usd": cost,
-            "kind": "llm", "agent_id": agent_id, "agent_name": agent_name,
-        })
+        get_runtime().record(span)
     except Exception as exc:
         _log.warning("auto-instrument record warning: %s", exc)
 
@@ -313,8 +314,8 @@ def patch_openai() -> bool:
         def patched_create(self, *args, **kwargs):
             start = time.perf_counter()
             model = kwargs.get("model", "")
-            agent = _tracer._current_agent()
-            parent_id = _tracer._current_parent()
+            agent = current_agent()
+            parent_id = current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
@@ -356,8 +357,8 @@ def patch_openai() -> bool:
         async def patched_acreate(self, *args, **kwargs):
             start = time.perf_counter()
             model = kwargs.get("model", "")
-            agent = _tracer._current_agent()
-            parent_id = _tracer._current_parent()
+            agent = current_agent()
+            parent_id = current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
@@ -405,8 +406,8 @@ def patch_anthropic() -> bool:
         def patched_create(self, *args, **kwargs):
             start = time.perf_counter()
             model = kwargs.get("model", "")
-            agent = _tracer._current_agent()
-            parent_id = _tracer._current_parent()
+            agent = current_agent()
+            parent_id = current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
@@ -441,8 +442,8 @@ def patch_anthropic() -> bool:
         async def patched_acreate(self, *args, **kwargs):
             start = time.perf_counter()
             model = kwargs.get("model", "")
-            agent = _tracer._current_agent()
-            parent_id = _tracer._current_parent()
+            agent = current_agent()
+            parent_id = current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
@@ -494,8 +495,8 @@ def patch_gemini() -> bool:
         def patched_generate(self, *args, **kwargs):
             start = time.perf_counter()
             model = _model_name(self)
-            agent = _tracer._current_agent()
-            parent_id = _tracer._current_parent()
+            agent = current_agent()
+            parent_id = current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
@@ -529,8 +530,8 @@ def patch_gemini() -> bool:
         async def patched_generate_async(self, *args, **kwargs):
             start = time.perf_counter()
             model = _model_name(self)
-            agent = _tracer._current_agent()
-            parent_id = _tracer._current_parent()
+            agent = current_agent()
+            parent_id = current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
@@ -577,8 +578,8 @@ def patch_litellm() -> bool:
         def patched_completion(*args, **kwargs):
             start = time.perf_counter()
             model = kwargs.get("model") or (args[0] if args else "")
-            agent = _tracer._current_agent()
-            parent_id = _tracer._current_parent()
+            agent = current_agent()
+            parent_id = current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
@@ -613,8 +614,8 @@ def patch_litellm() -> bool:
         async def patched_acompletion(*args, **kwargs):
             start = time.perf_counter()
             model = kwargs.get("model") or (args[0] if args else "")
-            agent = _tracer._current_agent()
-            parent_id = _tracer._current_parent()
+            agent = current_agent()
+            parent_id = current_parent()
             error: Optional[Exception] = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)

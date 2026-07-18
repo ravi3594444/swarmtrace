@@ -340,7 +340,7 @@ def main_resync():
       0  all attempted rows sent successfully (or nothing to send)
       1  one or more rows still failed (re-run to retry)
     """
-    from swarmtrace.tracer import resync as _resync
+    from swarmtrace.runtime import resync as _resync
 
     limit = 100
     args = sys.argv[1:]

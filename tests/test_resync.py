@@ -22,6 +22,10 @@ import pytest
 
 import swarmtrace.tracer as tracer
 import swarmtrace.storage as storage
+from swarmtrace import runtime as runtime_module
+from swarmtrace.adapters.sqlite_repository import SqliteRepository
+from swarmtrace.runtime import Runtime
+from tests._fakes import FakeTransport
 
 
 # --------------------------------------------------------------------------
@@ -32,14 +36,11 @@ import swarmtrace.storage as storage
 def fresh_storage(tmp_path, monkeypatch):
     """Reload storage against a temp DB so tests start with a clean table.
 
-    Also reloads tracer because it imports `save_trace` and `mark_synced`
-    from storage at module load time — without the reload, tracer would
-    still reference the old (production-DB) storage functions.
+    Also rebinds the names tracer imported from storage so they point at the
+    reloaded module's functions (which use the temp DB).
     """
     monkeypatch.setenv("SWARMTRACE_DB_PATH", str(tmp_path / "traces.db"))
     importlib.reload(storage)
-    # Re-bind the names tracer imported from storage so they point at the
-    # reloaded module's functions (which use the temp DB).
     tracer.save_trace = storage.save_trace
     tracer.mark_synced = storage.mark_synced
     yield storage
@@ -57,6 +58,21 @@ def remote_config(monkeypatch):
     # those first (set via init()) — env vars are the fallback.
     monkeypatch.setattr(tracer, "_api_key", None, raising=False)
     monkeypatch.setattr(tracer, "_endpoint", None, raising=False)
+
+
+@pytest.fixture()
+def resync_runtime(monkeypatch, fresh_storage, remote_config):
+    """A runtime wired to the temp-DB SqliteRepository + a FakeTransport.
+
+    Lets resync tests drive success/failure through the transport without
+    patching private tracer internals, while still reading the synced flag
+    back from the real SQLite outbox.
+    """
+    repo = SqliteRepository()
+    transport = FakeTransport()
+    rt = Runtime(repo, transport, tracer._remote_config)
+    monkeypatch.setattr(runtime_module, "_runtime", rt)
+    return rt
 
 
 def _save_trace(storage, trace_id="t1", synced=0):
@@ -142,77 +158,38 @@ class TestSyncedColumn:
 # --------------------------------------------------------------------------
 
 class TestWorkerMarksSynced:
-    """The background _worker marks a row synced=1 after a confirmed send,
-    and leaves it synced=0 when all 3 retries fail."""
+    """The background sender marks a row synced=1 after a confirmed send,
+    and leaves it synced=0 when all retries fail.
 
-    def test_successful_send_marks_synced(self, fresh_storage, remote_config):
-        _save_trace(fresh_storage, "t-success")
+    Phase 1: the worker lives in ``swarmtrace.delivery.sender.Sender``; these
+    tests drive it through the runtime seam with a FakeTransport instead of
+    patching private tracer internals.
+    """
 
-        # Simulate a single _worker iteration: dequeue one payload, send it
-        # successfully, and verify the row is marked synced.
-        payloads = []
-        def fake_enqueue(payload):
-            payloads.append(payload)
-        # Bypass the real queue — put payloads directly into a list, then
-        # process one through a stubbed _send_remote that succeeds.
-        original_enqueue = tracer._enqueue_remote
-        tracer._enqueue_remote = fake_enqueue
-        try:
-            # Trigger a flush via the decorator so the payload shape matches
-            # what _flush builds (including the "id" field the worker reads).
-            @tracer.observe
-            def agent():
-                return "ok"
-            agent()
-            assert len(payloads) == 1
-            # Now simulate the worker: send succeeds → mark_synced called.
-            with patch("swarmtrace.tracer._send_remote") as mock_send, \
-                 patch("swarmtrace.tracer.mark_synced") as mock_mark:
-                mock_send.return_value = None  # success (no raise)
-                # Manually run one worker iteration by calling _send_remote
-                # + mark_synced the way _worker does.
-                tracer._send_remote(payloads[0], "test-key", "https://example.test")
-                tracer.mark_synced(payloads[0]["id"])
-                mock_send.assert_called_once()
-                mock_mark.assert_called_once_with(payloads[0]["id"])
-        finally:
-            tracer._enqueue_remote = original_enqueue
+    def test_successful_send_marks_synced(self, resync_runtime):
+        _save_trace(storage, "t-success")
+        sender = resync_runtime.sender
 
-    def test_failed_send_leaves_unsynced(self, fresh_storage, remote_config):
-        _save_trace(fresh_storage, "t-fail")
+        # Simulate one worker iteration: send succeeds → mark_synced called.
+        payload = {"id": "t-success"}
+        assert sender._send_with_retries(
+            [payload], "test-key", "https://example.test"
+        ) is True
+        sender._repository.mark_synced("t-success")
+        assert storage.get_by_id("t-success")["synced"] == 1
 
-        payloads = []
-        tracer._enqueue_remote = lambda p: payloads.append(p)
-        try:
-            @tracer.observe
-            def agent():
-                return "ok"
-            agent()
-            payload = payloads[0]
+    def test_failed_send_leaves_unsynced(self, resync_runtime):
+        _save_trace(storage, "t-fail")
+        resync_runtime.transport.raise_on_batch = Exception("network down")
+        sender = resync_runtime.sender
 
-            # Simulate the worker: all 3 retries fail → mark_synced NOT called.
-            with patch("swarmtrace.tracer._send_remote",
-                       side_effect=Exception("network down")) as mock_send, \
-                 patch("swarmtrace.tracer.mark_synced") as mock_mark:
-                # Reproduce the worker's retry loop (skip the real sleeps so
-                # the test is fast).
-                sent_ok = False
-                for attempt in range(3):
-                    try:
-                        tracer._send_remote(payload, "test-key", "https://example.test")
-                        sent_ok = True
-                        break
-                    except Exception:
-                        if attempt < 2:
-                            pass  # would sleep in production
-                if sent_ok:
-                    tracer.mark_synced(payload["id"])
-                # All 3 attempts happened, none succeeded.
-                assert mock_send.call_count == 3
-                # mark_synced must NOT have been called — row stays unsynced.
-                mock_mark.assert_not_called()
-        finally:
-            pass  # _enqueue_remote stays patched; reload in next test
+        payload = {"id": "t-fail"}
+        # All 3 retries fail → _send_with_retries returns False.
+        assert sender._send_with_retries(
+            [payload], "test-key", "https://example.test"
+        ) is False
+        # mark_synced is NOT called by the worker on failure → row stays unsynced.
+        assert storage.get_by_id("t-fail")["synced"] == 0
 
 
 # --------------------------------------------------------------------------
@@ -236,74 +213,63 @@ class TestResyncFunction:
         result = tracer.resync(batch_size=10)
         assert result == (0, 0, 0)
 
-    def test_resync_sends_unsynced_rows_and_marks_synced(self, fresh_storage, remote_config):
-        _save_trace(fresh_storage, "t1")
-        _save_trace(fresh_storage, "t2")
-        # Both rows unsynced. Stub _send_remote to succeed.
-        with patch("swarmtrace.tracer._send_remote") as mock_send:
-            mock_send.return_value = None
-            attempted, succeeded, failed = tracer.resync(batch_size=10, retries=1)
+    def test_resync_sends_unsynced_rows_and_marks_synced(self, resync_runtime):
+        _save_trace(storage, "t1")
+        _save_trace(storage, "t2")
+        # Both rows unsynced. FakeTransport.send_single succeeds by default.
+        attempted, succeeded, failed = tracer.resync(batch_size=10, retries=1)
         assert attempted == 2
         assert succeeded == 2
         assert failed == 0
         # Both rows now marked synced=1 in the DB.
-        assert fresh_storage.get_by_id("t1")["synced"] == 1
-        assert fresh_storage.get_by_id("t2")["synced"] == 1
+        assert storage.get_by_id("t1")["synced"] == 1
+        assert storage.get_by_id("t2")["synced"] == 1
 
-    def test_resync_leaves_failed_rows_unsynced(self, fresh_storage, remote_config):
-        _save_trace(fresh_storage, "t-fail-1")
-        _save_trace(fresh_storage, "t-fail-2")
+    def test_resync_leaves_failed_rows_unsynced(self, resync_runtime):
+        _save_trace(storage, "t-fail-1")
+        _save_trace(storage, "t-fail-2")
         # All sends fail.
-        with patch("swarmtrace.tracer._send_remote",
-                   side_effect=Exception("endpoint down")):
-            attempted, succeeded, failed = tracer.resync(batch_size=10, retries=1)
+        resync_runtime.transport.raise_on_single = Exception("endpoint down")
+        attempted, succeeded, failed = tracer.resync(batch_size=10, retries=1)
         assert attempted == 2
         assert succeeded == 0
         assert failed == 2
         # Rows stay synced=0 — resync can retry them next run.
-        assert fresh_storage.get_by_id("t-fail-1")["synced"] == 0
-        assert fresh_storage.get_by_id("t-fail-2")["synced"] == 0
+        assert storage.get_by_id("t-fail-1")["synced"] == 0
+        assert storage.get_by_id("t-fail-2")["synced"] == 0
 
-    def test_resync_only_touches_unsynced_rows(self, fresh_storage, remote_config):
+    def test_resync_only_touches_unsynced_rows(self, resync_runtime):
         """The critical spec requirement: resync only re-sends rows where
         synced=0. Already-synced rows are NOT re-sent (no duplicate POSTs,
         no double-counting on the dashboard's daily_metrics)."""
         # 2 unsynced + 2 already-synced.
-        _save_trace(fresh_storage, "u1", synced=0)
-        _save_trace(fresh_storage, "u2", synced=0)
-        _save_trace(fresh_storage, "s1", synced=1)
-        _save_trace(fresh_storage, "s2", synced=1)
+        _save_trace(storage, "u1", synced=0)
+        _save_trace(storage, "u2", synced=0)
+        _save_trace(storage, "s1", synced=1)
+        _save_trace(storage, "s2", synced=1)
 
-        sent_ids = []
-        def fake_send(payload, key, url):
-            sent_ids.append(payload["id"])
-            return None
-        with patch("swarmtrace.tracer._send_remote", side_effect=fake_send):
-            attempted, succeeded, failed = tracer.resync(batch_size=10, retries=1)
+        attempted, succeeded, failed = tracer.resync(batch_size=10, retries=1)
 
         assert attempted == 2  # only the 2 unsynced rows
         assert succeeded == 2
         assert failed == 0
         # The already-synced rows were never re-sent.
-        assert set(sent_ids) == {"u1", "u2"}
-        assert "s1" not in sent_ids
-        assert "s2" not in sent_ids
+        sent_ids = {p["id"] for p in resync_runtime.transport.singles}
+        assert sent_ids == {"u1", "u2"}
         # After resync, all 4 rows are synced=1.
         for tid in ("u1", "u2", "s1", "s2"):
-            assert fresh_storage.get_by_id(tid)["synced"] == 1
+            assert storage.get_by_id(tid)["synced"] == 1
 
-    def test_resync_respects_batch_size_limit(self, fresh_storage, remote_config):
+    def test_resync_respects_batch_size_limit(self, resync_runtime):
         # 5 unsynced rows, batch_size=3 → only 3 attempted.
         for i in range(5):
-            _save_trace(fresh_storage, f"t{i}")
-        with patch("swarmtrace.tracer._send_remote") as mock_send:
-            mock_send.return_value = None
-            attempted, succeeded, failed = tracer.resync(batch_size=3, retries=1)
+            _save_trace(storage, f"t{i}")
+        attempted, succeeded, failed = tracer.resync(batch_size=3, retries=1)
         assert attempted == 3
         assert succeeded == 3
         assert failed == 0
         # The other 2 rows are still unsynced — a second resync run picks them up.
-        unsynced = fresh_storage.get_unsynced_traces(limit=10)
+        unsynced = storage.get_unsynced_traces(limit=10)
         assert len(unsynced) == 2
 
 
@@ -312,33 +278,30 @@ class TestResyncFunction:
 # --------------------------------------------------------------------------
 
 class TestResyncCLI:
-    def test_cli_reports_success(self, fresh_storage, remote_config, capsys):
-        _save_trace(fresh_storage, "t1")
-        _save_trace(fresh_storage, "t2")
-        with patch("swarmtrace.tracer._send_remote") as mock_send:
-            mock_send.return_value = None
-            from swarmtrace.cli import main_resync
-            try:
-                main_resync()
-            except SystemExit:
-                pass
+    def test_cli_reports_success(self, resync_runtime, capsys):
+        _save_trace(storage, "t1")
+        _save_trace(storage, "t2")
+        from swarmtrace.cli import main_resync
+        try:
+            main_resync()
+        except SystemExit:
+            pass
         out = capsys.readouterr().out
         assert "2/2" in out
         assert "successfully" in out
 
-    def test_cli_exits_1_when_failures_remain(self, fresh_storage, remote_config, capsys):
-        _save_trace(fresh_storage, "t1")
-        with patch("swarmtrace.tracer._send_remote",
-                   side_effect=Exception("down")):
-            from swarmtrace.cli import main_resync
-            with pytest.raises(SystemExit) as exc_info:
-                main_resync()
-            assert exc_info.value.code == 1
+    def test_cli_exits_1_when_failures_remain(self, resync_runtime, capsys):
+        _save_trace(storage, "t1")
+        resync_runtime.transport.raise_on_single = Exception("down")
+        from swarmtrace.cli import main_resync
+        with pytest.raises(SystemExit) as exc_info:
+            main_resync()
+        assert exc_info.value.code == 1
         out = capsys.readouterr().out
         assert "0/1" in out
         assert "failed" in out.lower()
 
-    def test_cli_nothing_to_send(self, fresh_storage, remote_config, capsys):
+    def test_cli_nothing_to_send(self, resync_runtime, capsys):
         # No unsynced rows — should print "No unsynced traces found" and exit 0.
         from swarmtrace.cli import main_resync
         try:

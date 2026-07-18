@@ -2,8 +2,14 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
-from swarmtrace.storage import save_trace
-from swarmtrace.tracer import _parent_ctx, _current_parent, _current_agent
+
+from swarmtrace.runtime import get_runtime
+from swarmtrace.span_model import SpanRecord
+from swarmtrace.trace_context import _parent_ctx, current_agent, current_parent
+
+# Compatibility aliases used by older tests that monkeypatch scraper internals.
+_current_parent = current_parent
+_current_agent = current_agent
 
 _log = logging.getLogger("swarmtrace.scraper")
 
@@ -57,14 +63,23 @@ def scrape(url: str, verbose=True, kind: str = "tool"):
                 "%s%s: scrape | %ss | %d bytes | $%s",
                 indent, status, latency, bytes_scraped, cost,
             )
-        save_trace(
-            id_=trace_id, parent_id=parent_id, function="scrape",
-            args=url, output=result[:200] if result else None,
-            latency_sec=latency, error=error,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-            input_tokens=len(url) // 4, output_tokens=output_tokens, cost_usd=cost,
-            kind=kind, agent_id=agent_id, agent_name=agent_name,
+        span = SpanRecord(
+            span_id=trace_id,
+            parent_span_id=parent_id,
+            name="scrape",
+            kind=kind,
+            start_time=datetime.now(timezone.utc),
+            latency_sec=latency,
+            args=url,
+            output=result[:200] if result else None,
+            error=error,
+            input_tokens=len(url) // 4,
+            output_tokens=output_tokens,
+            cost_usd=cost,
+            agent_id=agent_id,
+            agent_name=agent_name,
         )
+        get_runtime().record(span)
         _parent_ctx.reset(token)
 
     if _exc is not None:
