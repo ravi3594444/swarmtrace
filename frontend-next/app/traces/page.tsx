@@ -33,6 +33,111 @@ function todayLocalISODate(): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+function daysAgoLocalISODate(daysAgo: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() - daysAgo)
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// yyyy-mm-dd → dd-mm, for the compact button label.
+function formatShortDate(iso: string): string {
+  const [, m, d] = iso.split('-')
+  return `${d}-${m}`
+}
+
+type DatePreset = 'today' | '7d' | '30d' | 'all' | 'custom'
+
+const DATE_PRESETS: { key: DatePreset; label: string }[] = [
+  { key: 'today', label: 'Today' },
+  { key: '7d', label: 'Last 7 days' },
+  { key: '30d', label: 'Last 30 days' },
+  { key: 'all', label: 'All time' },
+]
+
+/**
+ * Plain-English date filter. Most people don't think in "from/to" date
+ * pickers — they think "today" or "last week" — so the two raw <input
+ * type="date"> fields now live inside a labeled dropdown behind clear
+ * preset buttons, with the custom range still available for anyone who
+ * wants a specific past window.
+ */
+function DateRangePicker({
+  preset, fromDate, toDate, onPreset, onFromDate, onToDate,
+}: {
+  preset: DatePreset
+  fromDate: string
+  toDate: string
+  onPreset: (p: DatePreset) => void
+  onFromDate: (v: string) => void
+  onToDate: (v: string) => void
+}) {
+  const [open, setOpen] = useState(false)
+
+  const label =
+    preset !== 'custom'
+      ? DATE_PRESETS.find(p => p.key === preset)?.label ?? 'Today'
+      : fromDate && toDate
+        ? `${formatShortDate(fromDate)} – ${formatShortDate(toDate)}`
+        : fromDate
+          ? `From ${formatShortDate(fromDate)}`
+          : toDate
+            ? `Until ${formatShortDate(toDate)}`
+            : 'All time'
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setOpen(v => !v)}
+        title="Filter by date range"
+        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm"
+      >
+        <Clock className="w-3.5 h-3.5" />
+        {label}
+        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <>
+          {/* Click-outside catcher so the panel closes without needing a dedicated button. */}
+          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
+          <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+            {DATE_PRESETS.map(({ key, label: presetLabel }) => (
+              <button
+                key={key}
+                onClick={() => { onPreset(key); setOpen(false) }}
+                className={`flex items-center justify-between w-full px-3 py-2.5 text-xs transition-colors hover:bg-muted/60
+                  ${preset === key ? 'text-primary font-medium' : 'text-foreground'}`}
+              >
+                {presetLabel}
+                {preset === key && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
+              </button>
+            ))}
+            <div className="border-t border-border px-3 py-2.5">
+              <div className={`text-[11px] mb-1.5 ${preset === 'custom' ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+                Custom range
+              </div>
+              <div className="flex items-center gap-1.5">
+                <input
+                  type="date" value={fromDate} max={toDate || undefined}
+                  onChange={(e) => onFromDate(e.target.value)}
+                  aria-label="From date"
+                  className="min-w-0 flex-1 bg-muted/40 rounded-md px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+                <span className="text-muted-foreground/60 text-xs">–</span>
+                <input
+                  type="date" value={toDate} min={fromDate || undefined}
+                  onChange={(e) => onToDate(e.target.value)}
+                  aria-label="To date"
+                  className="min-w-0 flex-1 bg-muted/40 rounded-md px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+                />
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </div>
+  )
+}
+
 // ── Export helpers ─────────────────────────────────────────────────────────────
 
 function exportJSON(traces: Trace[]) {
@@ -443,13 +548,38 @@ export default function TracesPage() {
   const [statusFilter, setStatusFilter] = useState<'ALL' | 'OK' | 'ERROR'>('ALL')
   const [view, setView] = useState<ViewMode>('tree')
 
-  // Custom date range (inclusive, local time). Defaults to today so the
-  // dashboard opens scoped to current activity — clear the range (X button)
-  // or edit either field to browse historical spans. Empty string = unbounded.
+  // Date range (inclusive, local time). Defaults to the "today" preset so
+  // the dashboard opens scoped to current activity. Empty string = unbounded.
+  const [datePreset, setDatePreset] = useState<DatePreset>('today')
   const [fromDate, setFromDate] = useState(todayLocalISODate)
   const [toDate, setToDate] = useState(todayLocalISODate)
   const fromMs = useMemo(() => (fromDate ? new Date(`${fromDate}T00:00:00`).getTime() : NaN), [fromDate])
   const toMs = useMemo(() => (toDate ? new Date(`${toDate}T23:59:59.999`).getTime() : NaN), [toDate])
+
+  function applyDatePreset(preset: DatePreset) {
+    setDatePreset(preset)
+    if (preset === 'today') {
+      const t = todayLocalISODate()
+      setFromDate(t); setToDate(t)
+    } else if (preset === '7d') {
+      setFromDate(daysAgoLocalISODate(6)); setToDate(todayLocalISODate())
+    } else if (preset === '30d') {
+      setFromDate(daysAgoLocalISODate(29)); setToDate(todayLocalISODate())
+    } else if (preset === 'all') {
+      setFromDate(''); setToDate('')
+    }
+    // 'custom' is set implicitly by editing a date field directly, below.
+  }
+
+  function setCustomFromDate(v: string) {
+    setDatePreset('custom')
+    setFromDate(v)
+  }
+
+  function setCustomToDate(v: string) {
+    setDatePreset('custom')
+    setToDate(v)
+  }
 
   // ── Tag-based filtering ──────────────────────────────────────────────────────
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
@@ -529,30 +659,14 @@ export default function TracesPage() {
                 className="h-8 rounded-lg border border-border bg-card pl-8 pr-3 text-xs text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring shadow-sm w-44"
               />
             </div>
-            <div className="flex items-center gap-1 h-8 rounded-lg border border-border bg-card px-2 text-xs text-muted-foreground shadow-sm" title="Filter by date range">
-              <input
-                type="date" value={fromDate} max={toDate || undefined}
-                onChange={(e) => setFromDate(e.target.value)}
-                aria-label="From date"
-                className="bg-transparent text-xs text-foreground focus:outline-none w-[7.5rem]"
-              />
-              <span className="text-muted-foreground/60">–</span>
-              <input
-                type="date" value={toDate} min={fromDate || undefined}
-                onChange={(e) => setToDate(e.target.value)}
-                aria-label="To date"
-                className="bg-transparent text-xs text-foreground focus:outline-none w-[7.5rem]"
-              />
-              {(fromDate || toDate) && (
-                <button
-                  onClick={() => { setFromDate(''); setToDate('') }}
-                  aria-label="Clear date range"
-                  className="text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  <X className="w-3 h-3" />
-                </button>
-              )}
-            </div>
+            <DateRangePicker
+              preset={datePreset}
+              fromDate={fromDate}
+              toDate={toDate}
+              onPreset={applyDatePreset}
+              onFromDate={setCustomFromDate}
+              onToDate={setCustomToDate}
+            />
             {(['ALL', 'OK', 'ERROR'] as const).map((f) => (
               <button key={f} onClick={() => setStatusFilter(f)}
                 className={`h-8 rounded-lg px-3 text-xs font-medium shadow-sm transition-all ${statusFilter === f ? 'bg-primary text-primary-foreground' : 'border border-border bg-card text-muted-foreground hover:text-foreground'}`}>
