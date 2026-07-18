@@ -30,6 +30,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from swarmtrace.gateway_config import GatewayConfig, UpstreamServer
+from swarmtrace.redact import redact
 from swarmtrace.runtime import get_runtime
 from swarmtrace.span_model import SpanRecord
 from swarmtrace.trace_context import TraceContext
@@ -371,9 +372,9 @@ class SwarmTraceMcpGateway:
                 end_time=datetime.now(timezone.utc),
                 status="error" if error else "ok",
                 latency_sec=latency,
-                args=str(arguments)[:4000],
-                output=output if error is None else None,
-                error=error,
+                args=(redact(str(arguments)) or "")[:4000] if arguments else None,
+                output=(redact(output) or "")[:4000] if (error is None and output) else None,
+                error=(redact(error) or "")[:4000] if error else None,
                 agent_id=trace_ctx.agent_id,
                 agent_name=trace_ctx.agent_name,
                 session_id=trace_ctx.session_id,
@@ -481,6 +482,13 @@ class SwarmTraceMcpGateway:
                 "SSE transport requires 'uvicorn'. "
                 "Install the gateway extra: pip install swarmtrace[gateway]"
             ) from exc
+        if self._config.host not in ("127.0.0.1", "localhost", "::1"):
+            _log.warning(
+                "MCP gateway SSE listening on non-loopback host %s; "
+                "anyone who can reach this address can invoke proxied tools. "
+                "Use a reverse proxy with authentication or bind to 127.0.0.1.",
+                self._config.host,
+            )
         async with self._sse_transport() as app:
             config = uvicorn.Config(
                 app,

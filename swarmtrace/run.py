@@ -141,9 +141,14 @@ def span(
 
 @contextmanager
 def current_span_attributes(**attrs: Any):
-    """No-op placeholder for context attribute enrichment."""
+    """Emit a span annotation event with the caller-supplied attributes.
+
+    Subscribers can record these attributes against the current span. The
+    context manager itself does not mutate the span directly; it only emits
+    the event so that enrichment can be handled consistently by listeners.
+    """
     from swarmtrace.events import emit
-    emit("span.annotate", attrs)
+    emit("span.annotate", **attrs)
     try:
         yield
     finally:
