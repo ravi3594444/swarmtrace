@@ -14,6 +14,7 @@ import time
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from swarmtrace.delivery.sender import Sender
+from swarmtrace.events import emit
 from swarmtrace.ports import SpanRepository, SpanTransport
 from swarmtrace.span_model import SpanRecord
 
@@ -42,6 +43,10 @@ def _span_to_payload(span: SpanRecord) -> Dict[str, Any]:
     }
     if span.session_id is not None:
         payload["session_id"] = span.session_id
+    if span.trace_id is not None and span.trace_id != span.span_id:
+        payload["trace_id"] = span.trace_id
+    if span.attributes:
+        payload["attributes"] = span.attributes
     return payload
 
 
@@ -81,6 +86,7 @@ class Runtime:
     def record(self, span: SpanRecord) -> None:
         """Persist ``span`` locally and enqueue it for remote ingest."""
         self._repository.save(span)
+        emit("span.recorded", span=span)
         self.enqueue_remote(span)
 
     def enqueue_remote(self, span: SpanRecord) -> None:

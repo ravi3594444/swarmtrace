@@ -114,16 +114,16 @@ def init(
         _alerts_start(interval_seconds=alert_interval_seconds)
 
 
-def _remote_config() -> tuple[str, str]:
-    key = _api_key if _api_key is not None else os.environ.get("SWARMTRACE_API_KEY", "")
-    raw_url = _endpoint if _endpoint is not None else os.environ.get("SWARMTRACE_ENDPOINT", "")
-
     # Scheme enforcement (audit finding #5): refuse to send the API key
     # over plaintext HTTP to non-localhost hosts. Returns "" for the URL
     # when invalid, which causes the worker to skip sending — matching
     # the "no endpoint configured" path. The warning is logged every call
     # (the worker only calls this every ~2s on batch flush, so it's not
     # log-spam); the user fixes their config to silence it.
+
+def _remote_config() -> tuple[str, str]:
+    key = _api_key if _api_key is not None else os.environ.get("SWARMTRACE_API_KEY", "")
+    raw_url = _endpoint if _endpoint is not None else os.environ.get("SWARMTRACE_ENDPOINT", "")
     ok, reason = _validate_endpoint_scheme(raw_url)
     if not ok:
         _log.warning("SWARMTRACE_ENDPOINT insecure — refusing to send traces: %s", reason)

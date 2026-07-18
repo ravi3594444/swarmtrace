@@ -37,7 +37,9 @@ import { decodeGzipBody } from './decode-body'
 // the largest legitimate batch (50 traces × ~8 KB of text fields).
 export const MAX_DECOMPRESSED_BYTES = 1024 * 1024
 
-export const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function'])
+export const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function', 'retrieval'])
+
+export const MAX_ATTRIBUTES_SIZE = 64 * 1024
 
 /**
  * Decode the raw /api/ingest request body bytes into a JSON string,
@@ -59,6 +61,7 @@ export async function decodeIngestBody(
 export interface TraceRow {
   id:            string
   parent_id:     string | null
+  trace_id:      string | null
   function:      string
   args:          string
   output:        string
@@ -72,6 +75,7 @@ export interface TraceRow {
   agent_id:      string
   agent_name:    string
   session_id:    string | null
+  attributes:    Record<string, unknown> | null
 }
 
 export interface ValidationError {
@@ -119,6 +123,28 @@ export function validateTrace(payload: unknown): { row?: TraceRow; error?: strin
       ? p.session_id.slice(0, 64)
       : null
 
+  // trace_id (Phase 5) is the distributed root run id. Optional — older SDKs omit it,
+  // so it defaults to the span id.
+  const traceId =
+    typeof p.trace_id === 'string' && p.trace_id.length > 0
+      ? p.trace_id.slice(0, 64)
+      : p.id
+
+  // attributes (Phase 5) is generic JSON metadata. Optional, bounded in size, and
+  // must be a plain object (not an array or primitive) to keep Supabase JSONB
+  // expectations predictable.
+  let attributes: Record<string, unknown> | null = null
+  if (p.attributes !== undefined && p.attributes !== null) {
+    if (typeof p.attributes !== 'object' || Array.isArray(p.attributes)) {
+      return { error: 'attributes must be a JSON object' }
+    }
+    const attrString = JSON.stringify(p.attributes)
+    if (attrString.length > MAX_ATTRIBUTES_SIZE) {
+      return { error: `attributes JSON exceeds ${MAX_ATTRIBUTES_SIZE} bytes` }
+    }
+    attributes = p.attributes as Record<string, unknown>
+  }
+
   // PII redaction — defense-in-depth at the ingest boundary. The SDK already
   // redacts (swarmtrace/redact.py) before sending, but any client posting
   // directly (curl, MCP, a third-party SDK port) bypasses the SDK. Redacting
@@ -149,6 +175,8 @@ export function validateTrace(payload: unknown): { row?: TraceRow; error?: strin
       agent_id:      agentId,
       agent_name:    agentName,
       session_id:    sessionId,
+      trace_id:      traceId,
+      attributes:    attributes,
     },
   }
 }

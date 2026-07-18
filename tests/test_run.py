@@ -215,3 +215,26 @@ def test_nested_async_span_under_run(records):
     run_row = _find_row(records, "research-agent")
     span_row = _find_row(records, "fetch-data")
     assert _row_parent_id(span_row) == _row_id(run_row)
+
+
+def test_current_span_attributes_emits_event():
+    """current_span_attributes must emit an event without crashing.
+
+    Regression: earlier code passed attrs as a positional arg to emit(),
+    which only accepts keyword arguments.
+    """
+    from swarmtrace import events
+
+    captured = {}
+
+    def _handler(**kwargs):
+        captured.update(kwargs)
+
+    events.on("span.annotate", _handler)
+    try:
+        with swarmtrace.current_span_attributes(retriever="tavily", query="test"):
+            pass
+    finally:
+        events.off("span.annotate", _handler)
+
+    assert captured == {"retriever": "tavily", "query": "test"}
