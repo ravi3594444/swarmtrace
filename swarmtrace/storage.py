@@ -226,17 +226,18 @@ def _purge_old_rows(conn: sqlite3.Connection) -> None:
 def _purge_by_age(conn: sqlite3.Connection) -> None:
     """Evict synced rows older than RETENTION_DAYS.
 
-    Set SWARMTRACE_RETENTION_DAYS=0 to disable time-based retention. As with
+    Set SWARMTRACE_RETENTION_DAYS=0 to disable time-based purging. As with
     count-based eviction, unsynced rows are never deleted automatically so
     the resync CLI can still replay them.
     """
     if RETENTION_DAYS <= 0:
         return
-    cutoff = f"datetime('now', '-{RETENTION_DAYS} days')"
     conn.execute(
-        f"DELETE FROM traces WHERE id IN "
-        f"(SELECT id FROM traces WHERE synced = 1 AND timestamp < {cutoff})"
+        "DELETE FROM traces WHERE id IN "
+        "(SELECT id FROM traces WHERE synced = 1 AND timestamp < datetime('now', '-' || ? || ' days'))",
+        (RETENTION_DAYS,),
     )
+
 
 
 def _purge(conn: sqlite3.Connection) -> None:

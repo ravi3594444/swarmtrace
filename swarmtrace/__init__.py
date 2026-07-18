@@ -6,7 +6,7 @@ from swarmtrace.tool_attention import ToolAttention
 from swarmtrace.pricing import set_model_pricing
 from swarmtrace.auto_instrument import patch_all
 from swarmtrace.fov import get_events
-from swarmtrace.run import run, span
+from swarmtrace.run import run, span, current_span_attributes
 from swarmtrace import fov
 from swarmtrace import alerts
 
@@ -20,7 +20,7 @@ __all__ = [
     'set_model_pricing',
     'patch_all',
     'get_events',
-    'run', 'span',
+    'run', 'span', 'current_span_attributes',
     'fov',
     'alerts',
 ]
