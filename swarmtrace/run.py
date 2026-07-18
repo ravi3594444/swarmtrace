@@ -1,25 +1,13 @@
-"""Generic root-run and child-span APIs for SwarmTrace.
-
-This module implements the new public entry points:
-
-    with swarmtrace.run("research-agent"):
-        agent.run(task)
-
-    with swarmtrace.span("fetch-data", kind="tool"):
-        fetch(...)
-
-Both are thin wrappers over the existing tracer flush path. They prove the new
-``TraceContext`` / ``SpanRecord`` model end-to-end without waiting for the full
-Phase 1 runtime seam refactor.
-"""
+"""Generic root-run and child-span APIs for SwarmTrace."""
 
 from __future__ import annotations
 
 import hashlib
 import time
 import uuid
+from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Optional, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 from swarmtrace.runtime import get_runtime
 from swarmtrace.span_model import SpanRecord
@@ -34,16 +22,15 @@ from swarmtrace.trace_context import (
 
 
 def _stable_agent_id(name: str) -> str:
-    """Deterministic agent_id for a root ``run()``."""
     return hashlib.sha256(name.encode("utf-8")).hexdigest()
 
 
-class _SpanContext:
-    """Context manager that records a span and propagates trace context.
+def _now() -> Tuple[float, datetime]:
+    return time.perf_counter(), datetime.now(timezone.utc)
 
-    Implements both sync and async context-manager protocols so the same
-    ``run()`` / ``span()`` functions work in both sync and async code.
-    """
+
+class _SpanContext:
+    """Context manager that records a span and propagates trace context."""
 
     def __init__(
         self,
@@ -52,18 +39,18 @@ class _SpanContext:
         session_id: Optional[str] = None,
         *,
         is_run: bool = False,
+        attributes: Optional[Dict[str, Any]] = None,
     ):
         self.name = name
         self.kind = kind
         self.session_id = session_id
         self.is_run = is_run
+        self.attributes = attributes or {}
         self.span_id = uuid.uuid4().hex
         self._start: float = 0.0
         self._start_time: Optional[datetime] = None
         self._error: Optional[str] = None
         self._ctx_manager: Optional[object] = None
-
-        # Resolved after context entry.
         self.parent_id: Optional[str] = None
         self.trace_id: Optional[str] = None
         self.agent_id: Optional[str] = None
@@ -73,19 +60,15 @@ class _SpanContext:
         parent = current_parent()
         trace_id = current_trace()
         enclosing_agent = current_agent()
-
         self.parent_id = parent
         self.trace_id = trace_id or self.span_id
-
         if self.is_run and self.kind == "agent":
             self.agent_id = _stable_agent_id(self.name)
             self.agent_name = self.name
         else:
             self.agent_id, self.agent_name = enclosing_agent or (None, None)
-
         session_id = self.session_id if self.session_id is not None else current_session()
         self.session_id = session_id
-
         return TraceContext(
             span_id=self.span_id,
             parent_span_id=self.parent_id,
@@ -98,25 +81,27 @@ class _SpanContext:
     def _record(self, exc: Optional[BaseException]) -> None:
         self._error = str(exc) if exc is not None else None
         latency = round(time.perf_counter() - self._start, 3)
-
+        end_time = datetime.now(timezone.utc)
         span = SpanRecord(
             span_id=self.span_id,
             parent_span_id=self.parent_id,
             trace_id=self.trace_id,
             name=self.name,
             kind=self.kind,
-            start_time=self._start_time or datetime.now(timezone.utc),
+            start_time=self._start_time or end_time,
+            end_time=end_time,
+            status="error" if exc is not None else "ok",
             latency_sec=latency,
             error=self._error,
             agent_id=self.agent_id,
             agent_name=self.agent_name,
             session_id=self.session_id,
+            attributes=self.attributes,
         )
         get_runtime().record(span)
 
     def __enter__(self) -> "_SpanContext":
-        self._start = time.perf_counter()
-        self._start_time = datetime.now(timezone.utc)
+        self._start, self._start_time = _now()
         self._ctx_manager = using(self._build_trace_context())
         self._ctx_manager.__enter__()
         return self
@@ -127,7 +112,6 @@ class _SpanContext:
         finally:
             if self._ctx_manager is not None:
                 self._ctx_manager.__exit__(exc_type, exc, tb)
-        return None
 
     async def __aenter__(self) -> "_SpanContext":
         return self.__enter__()
@@ -141,32 +125,29 @@ def run(
     *,
     session_id: Optional[str] = None,
     kind: str = "agent",
+    attributes: Optional[Dict[str, Any]] = None,
 ) -> _SpanContext:
-    """Start a root agent run.
-
-    Usage (sync or async) ::
-
-        with swarmtrace.run("research-agent"):
-            client.chat.completions.create(...)
-
-    The ``kind`` defaults to ``"agent"`` so the run appears as a card on the
-    dashboard. Nested auto-instrumented LLM/tool calls are linked as children.
-    """
-    return _SpanContext(name, kind=kind, session_id=session_id, is_run=True)
+    return _SpanContext(name, kind=kind, session_id=session_id, is_run=True, attributes=attributes)
 
 
 def span(
     name: str,
     *,
     kind: str = "function",
+    attributes: Optional[Dict[str, Any]] = None,
 ) -> _SpanContext:
-    """Create a child span under the current run.
+    return _SpanContext(name, kind=kind, is_run=False, attributes=attributes)
 
-    Usage ::
 
-        with swarmtrace.span("fetch-data", kind="tool"):
-            fetch(...)
+@contextmanager
+def current_span_attributes(**attrs: Any):
+    """No-op placeholder for context attribute enrichment."""
+    from swarmtrace.events import emit
+    emit("span.annotate", attrs)
+    try:
+        yield
+    finally:
+        pass
 
-    The span inherits the enclosing agent and session context.
-    """
-    return _SpanContext(name, kind=kind, is_run=False)
+
+__all__ = ["run", "span", "current_span_attributes"]

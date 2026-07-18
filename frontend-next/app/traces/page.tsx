@@ -238,6 +238,7 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
           <div className="rounded-xl border border-border bg-muted/20 overflow-hidden">
             {([
               ['Span ID', trace.id],
+              ['Trace ID', trace.trace_id ?? '(root span)'],
               ['Parent ID', trace.parent_id ?? '(root span)'],
               ['Timestamp', new Date(trace.timestamp).toLocaleString()],
               ['Input tokens', (trace.input_tokens ?? 0).toLocaleString()],
@@ -250,6 +251,12 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
                 <span className="text-xs font-mono text-foreground text-right break-all">{v}</span>
               </div>
             ))}
+            {trace.attributes && Object.keys(trace.attributes).length > 0 && (
+              <div className="px-3 py-2 border-b border-border/40 last:border-0">
+                <div className="text-xs text-muted-foreground mb-1.5">Attributes</div>
+                <SmartJson raw={JSON.stringify(trace.attributes)} maxHeight="160px" />
+              </div>
+            )}
           </div>
         </div>
       </div>

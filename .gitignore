@@ -12,3 +12,4 @@ swarmtrace_export.*
 *.zip
 upload/
 .next/
+.venv/

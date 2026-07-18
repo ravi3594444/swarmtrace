@@ -36,6 +36,10 @@ def _span_to_payload(span: SpanRecord) -> Dict[str, Any]:
     }
     if span.session_id is not None:
         payload["session_id"] = span.session_id
+    if span.trace_id is not None and span.trace_id != span.span_id:
+        payload["trace_id"] = span.trace_id
+    if span.attributes:
+        payload["attributes"] = span.attributes
     return payload
 
 
