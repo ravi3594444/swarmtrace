@@ -46,7 +46,11 @@ import weakref
 from datetime import datetime, timezone
 
 # ── context from tracer ──────────────────────────────────────────────────────
-from swarmtrace.tracer import _current_agent, _remote_config
+from swarmtrace.tracer import _remote_config
+from swarmtrace.trace_context import current_agent
+
+# Compatibility alias used by older tests that monkeypatch fov._current_agent.
+_current_agent = current_agent
 # Redactor — used by tracer.py for span args/output, and now by FOV's
 # browser-event path too. See _redact_browser_args below for why FOV
 # needs field-aware redaction ON TOP of the pattern-based redact() (a

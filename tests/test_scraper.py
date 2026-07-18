@@ -78,14 +78,30 @@ def fake_scrapling_failing():
 
 
 @pytest.fixture()
-def records(monkeypatch):
-    """Capture save_trace calls instead of writing to the real SQLite DB."""
+def records(monkeypatch, fake_runtime):
+    """Capture spans through the Phase 1 runtime seam, exposed with the same
+    storage.save_trace kwarg keys the existing assertions read."""
     saved = []
 
-    def _capture(**kwargs):
-        saved.append(kwargs)
+    def _capture(span):
+        fake_runtime.repository.spans.append(span)
+        saved.append({
+            "id_": span.span_id,
+            "parent_id": span.parent_span_id,
+            "function": span.name,
+            "args": span.args,
+            "output": span.output,
+            "latency_sec": span.latency_sec,
+            "error": span.error,
+            "input_tokens": span.input_tokens,
+            "output_tokens": span.output_tokens,
+            "cost_usd": span.cost_usd,
+            "kind": span.kind,
+            "agent_id": span.agent_id,
+            "agent_name": span.agent_name,
+        })
 
-    monkeypatch.setattr(scraper, "save_trace", _capture)
+    monkeypatch.setattr(fake_runtime.repository, "save", _capture)
     return saved
 
 

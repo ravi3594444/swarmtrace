@@ -34,15 +34,10 @@ of the Agents page entirely rather than appearing as a phantom agent.
 """
 
 import asyncio
-import contextvars
 import functools
-import gzip
 import hashlib
-import json
 import logging
 import os
-import queue
-import threading
 import time
 import uuid
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
@@ -50,11 +45,27 @@ from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator, List, Optional, Tuple
 from urllib.parse import urlparse
-from urllib.request import Request, urlopen
 
-from swarmtrace.storage import save_trace, mark_synced
+from swarmtrace.adapters.http_transport import HttpTransport
+from swarmtrace.adapters.sqlite_repository import SqliteRepository
+from swarmtrace.delivery.sender import Sender
+from swarmtrace.runtime import Runtime, get_runtime, set_runtime
+from swarmtrace.storage import save_trace
 from swarmtrace.pricing import calculate_cost
 from swarmtrace.redact import redact
+from swarmtrace.span_model import SpanRecord
+from swarmtrace.trace_context import (
+    TraceContext,
+    _agent_ctx,
+    _parent_ctx,
+    _session_ctx,
+    _trace_ctx,
+    current_agent as _current_agent,
+    current_parent as _current_parent,
+    current_session as _current_session,
+    current_trace as _current_trace,
+    using,
+)
 
 _log = logging.getLogger("swarmtrace")
 
@@ -200,8 +211,8 @@ def _normalize_base_url(url: str) -> str:
         as the suffix at all (plain ``str.endswith`` is case-sensitive),
         so the stray ``/API`` segment survived and calling code would
         build a doubled, wrong path like ``.../API/api/ingest``. Matched
-        case-insensitively now, while the RETAINED portion of the URL
-        keeps its original casing (only the recognized ``/api`` suffix
+        case-insensitively nowing (o, while the RETAINED portion of the URL
+        keeps its original casnly the recognized ``/api`` suffix
         itself is stripped, not lowercased-and-compared-then-reinserted).
       - Leading/trailing whitespace (e.g. a trailing newline or space from
         an env var set via a shell heredoc or `.env` file) is now trimmed.
@@ -235,28 +246,28 @@ def _normalize_base_url(url: str) -> str:
 # trace payloads (args/output are often repetitive text).
 # ---------------------------------------------------------------------------
 
-_QUEUE_MAX = 1000
-_BATCH_MAX_ITEMS = 20
-_BATCH_FLUSH_TIMEOUT = 2.0   # seconds — flush even if batch isn't full
-_send_queue: "queue.Queue[dict]" = queue.Queue(maxsize=_QUEUE_MAX)
-_worker_lock = threading.Lock()
-_worker_started = False
+# HTTP transport adapter. tracer.py keeps thin shims (_send_remote /
+# _send_batch_remote) so existing internal callers and tests that patch
+# those names keep working; the actual urllib/gzip work lives in the adapter.
+# Phase 1: the repository, transport, and sender are wired together in the
+# canonical Runtime, and tracer.py aliases them for backward compatibility.
+_transport = HttpTransport()
+_repository = SqliteRepository()
+_sender = Sender(_transport, _repository, _remote_config)
+_runtime = Runtime(_repository, _transport, _remote_config, _sender)
+set_runtime(_runtime)
+
+if hasattr(os, "register_at_fork"):
+    os.register_at_fork(after_in_child=_sender.reset_after_fork)
 
 
 def _send_remote(payload: dict, key: str, url: str) -> None:
     """Send a SINGLE trace payload (legacy single-object shape).
 
     Used by the resync CLI, which replays one row at a time. The live
-    background worker uses _send_batch_remote instead — see _worker.
+    background worker uses _send_batch_remote instead.
     """
-    body = json.dumps(payload).encode()
-    req = Request(
-        f"{url}/api/ingest",
-        data=body,
-        headers={"Content-Type": "application/json", "X-API-Key": key},
-        method="POST",
-    )
-    urlopen(req, timeout=5)
+    _transport.send_single(payload, key, url)
 
 
 def _send_batch_remote(payloads: List[dict], key: str, url: str) -> None:
@@ -266,173 +277,13 @@ def _send_batch_remote(payloads: List[dict], key: str, url: str) -> None:
     /api/ingest since swarmtrace 0.6.0). gzip-compressed — trace payloads
     are highly compressible (args/output are repetitive text), so this
     typically shrinks wire bytes 5-10x.
-
-    Raises on any HTTP error (the caller retries). The endpoint returns
-    204 on success (no body) — we don't read it.
     """
-    body = json.dumps({"traces": payloads}).encode()
-    compressed = gzip.compress(body)
-    req = Request(
-        f"{url}/api/ingest",
-        data=compressed,
-        headers={
-            "Content-Type": "application/json",
-            "Content-Encoding": "gzip",
-            "X-API-Key": key,
-        },
-        method="POST",
-    )
-    urlopen(req, timeout=10)  # batches take longer than single traces
-
-
-def _drain_batch(max_items: int, timeout: float) -> List[dict]:
-    """Drain up to ``max_items`` payloads from the queue.
-
-    Blocks until at least one item is available (so the worker doesn't
-    spin), then drains any immediately-available items up to the cap.
-    The ``timeout`` only applies to the FIRST item — once we have one,
-    we drain non-blocking. This gives us the "20 items or 2 seconds,
-    whichever first" behavior: the first item starts the clock, and we
-    flush as soon as either the batch fills or there are no more items
-    immediately available.
-    """
-    batch: List[dict] = []
-    # Block up to `timeout` for the first item.
-    try:
-        first = _send_queue.get(timeout=timeout)
-        batch.append(first)
-    except queue.Empty:
-        return batch
-    # Drain any immediately-available items up to the cap.
-    while len(batch) < max_items:
-        try:
-            batch.append(_send_queue.get_nowait())
-        except queue.Empty:
-            break
-    return batch
-
-
-def _worker() -> None:
-    """Background sender thread (batched + gzip'd).
-
-    Error boundary: any unexpected exception (e.g. a bug in _remote_config,
-    a corrupt payload, or an OS-level error) is caught at the outer loop so
-    the thread never dies silently. task_done() is called per item in a
-    finally block so the queue's join() never deadlocks.
-
-    Sync flag: on a confirmed-successful batch send, EVERY trace in the
-    batch is marked synced=1. On failure (3 retries exhausted), all rows
-    in the batch stay synced=0 so the resync CLI can pick them up later.
-    Batch-level atomicity matches the backend's behavior — the backend
-    validates the whole batch and 400s if any trace is bad, so partial
-    success isn't possible.
-    """
-    while True:
-        batch: List[dict] = []
-        try:
-            batch = _drain_batch(_BATCH_MAX_ITEMS, _BATCH_FLUSH_TIMEOUT)
-            if not batch:
-                continue   # timed out waiting — loop and try again
-            key, url = _remote_config()
-            if key and url:
-                sent_ok = False
-                # Retry with exponential backoff (3 attempts)
-                for attempt in range(3):
-                    try:
-                        _send_batch_remote(batch, key, url)
-                        sent_ok = True
-                        break
-                    except Exception as exc:
-                        if attempt < 2:
-                            time.sleep(2 ** attempt)   # 1 s then 2 s
-                        else:
-                            _log.error("remote ingest failed after 3 attempts: %s", exc)
-                # Mark every trace in the batch synced on confirmed success.
-                # Failed batches stay synced=0 as a unit — resync replays them.
-                if sent_ok:
-                    for payload in batch:
-                        mark_synced(payload.get("id", ""))
-        except Exception as exc:
-            # Outer error boundary — log and keep the thread alive.
-            _log.error("worker error (thread continues): %s", exc)
-        finally:
-            # Always mark every drained item done so queue.join() never
-            # deadlocks — even if the batch send raised.
-            for _ in batch:
-                try:
-                    _send_queue.task_done()
-                except Exception:
-                    pass
-
-
-def _ensure_worker() -> None:
-    global _worker_started
-    if _worker_started:
-        return
-    with _worker_lock:
-        if not _worker_started:
-            threading.Thread(target=_worker, daemon=True, name="swarmtrace-sender").start()
-            _worker_started = True
-
-
-def _reset_worker_state_after_fork() -> None:
-    """Runs in the CHILD immediately after os.fork(). Audit finding #4.
-
-    fork() clones process memory -- including the `_worker_started = True`
-    flag -- but NOT other threads; only the calling thread survives into
-    the child. Without this hook, a child process (gunicorn/uWSGI preload
-    workers, Celery prefork pool, os.fork() directly, etc.) inherits
-    `_worker_started = True` from the parent even though its background
-    sender thread does not exist there. `_ensure_worker()`'s fast-path
-    check (`if _worker_started: return`) then short-circuits forever in
-    that child -- no sender thread is ever started, so every trace
-    enqueued via `_enqueue_remote` in that process sits in `_send_queue`
-    for the lifetime of the worker with nothing ever draining it. No
-    exception is raised anywhere; it just silently never syncs. This is
-    permanent for that process, unlike a transient `Thread.start()`
-    failure (which leaves `_worker_started` False and self-heals on the
-    next call) -- hence "real" data loss, not just a retryable blip.
-
-    Traces are NOT lost outright: `save_trace()` (SQLite) runs before
-    `_enqueue_remote()` in `_flush()`, so every trace is still on disk
-    with synced=0 and `swarmtrace resync` can ship it later -- but remote
-    ingest silently stops working in every forked child until this fires.
-
-    Fix: reset the flag so the next `_enqueue_remote()` call in the child
-    spawns a real sender thread of its own. Also replace `_send_queue`
-    with a fresh one -- any payloads already sitting in the inherited
-    queue belonged to a sender thread that only exists in the parent, and
-    replaying into a Queue whose internal locks may be in an inconsistent
-    post-fork state is riskier than just starting clean (those payloads
-    are already durable in SQLite, so nothing is lost by dropping them
-    from the in-memory queue).
-
-    Same gotcha, same fix pattern used by other telemetry SDKs with
-    background sender threads (e.g. Sentry, PostHog) for this exact
-    reason. POSIX-only -- os.fork() doesn't exist on Windows, guarded by
-    the hasattr check at registration below.
-    """
-    global _worker_started, _send_queue
-    _worker_started = False
-    _send_queue = queue.Queue(maxsize=_QUEUE_MAX)
-
-
-if hasattr(os, "register_at_fork"):
-    os.register_at_fork(after_in_child=_reset_worker_state_after_fork)
+    _transport.send_batch(payloads, key, url)
 
 
 def _enqueue_remote(payload: dict) -> None:
-    key, url = _remote_config()
-    if not (key and url):
-        return
-    _ensure_worker()
-    try:
-        _send_queue.put_nowait(payload)
-    except queue.Full:
-        # FIX #6: don't do racy get_nowait()+put_nowait() — just log and drop.
-        # The old approach had a race where two threads both popped an item then
-        # both tried to push, losing 2 traces instead of 1.
-        _log.error("ingest queue full — trace dropped")
+    """Enqueue a payload for the background sender (shim over _sender.enqueue)."""
+    _sender.enqueue(payload)
 
 
 # ---------------------------------------------------------------------------
@@ -443,104 +294,21 @@ def _enqueue_remote(payload: dict) -> None:
 # and exit code. Returns (attempted, succeeded, failed) counts.
 # ---------------------------------------------------------------------------
 
-def _row_to_payload(row: dict) -> dict:
-    """Convert a traces table row (dict, keyed by column name — see
-    storage.py:TraceRow) into the /api/ingest payload shape."""
-    payload = {
-        "id": row["id"], "parent_id": row["parent_id"], "function": row["function"],
-        "args": row["args"] or "", "output": row["output"] or "",
-        "latency_sec": row["latency_sec"],
-        "error": row["error"], "timestamp": row["timestamp"],
-        "input_tokens": row["input_tokens"] or 0,
-        "output_tokens": row["output_tokens"] or 0,
-        "cost_usd": row["cost_usd"] or 0.0,
-        "kind": row["kind"], "agent_id": row["agent_id"], "agent_name": row["agent_name"],
-    }
-    if row.get("session_id") is not None:
-        payload["session_id"] = row["session_id"]
-    return payload
-
-
 def resync(batch_size: int = 100, retries: int = 3) -> tuple[int, int, int]:
     """Re-send unsynced traces to the remote endpoint.
 
-    Reads up to ``batch_size`` unsynced rows from the local DB and POSTs
-    each to ``/api/ingest``. On success, marks the row ``synced=1``. On
-    failure (after ``retries`` attempts with backoff), leaves the row
-    ``synced=0`` so the next resync run retries it.
-
-    Returns ``(attempted, succeeded, failed)``. If the remote endpoint
-    isn't configured (no API key / endpoint), returns ``(0, 0, 0)`` — the
-    caller (CLI) reports this as "remote not configured" rather than
-    treating it as an error.
+    Delegates to the canonical Runtime so the resync logic lives in one
+    place. Returns ``(attempted, succeeded, failed)``. If the remote endpoint
+    isn't configured, returns ``(0, 0, 0)``.
     """
-    from swarmtrace.storage import get_unsynced_traces
-
-    key, url = _remote_config()
-    if not (key and url):
-        return (0, 0, 0)
-
-    rows = get_unsynced_traces(limit=batch_size)
-    if not rows:
-        return (0, 0, 0)
-
-    attempted = len(rows)
-    succeeded = 0
-    failed = 0
-    for row in rows:
-        payload = _row_to_payload(row)
-        trace_id = payload["id"]
-        sent_ok = False
-        for attempt in range(retries):
-            try:
-                _send_remote(payload, key, url)
-                sent_ok = True
-                break
-            except Exception as exc:
-                if attempt < retries - 1:
-                    time.sleep(2 ** attempt)
-                else:
-                    _log.error("resync: failed to send trace %s after %d attempts: %s",
-                               trace_id, retries, exc)
-        if sent_ok:
-            mark_synced(trace_id, 1)
-            succeeded += 1
-        else:
-            failed += 1
-    return (attempted, succeeded, failed)
+    return get_runtime().resync(batch_size=batch_size, retries=retries)
 
 
-# Thread-safe & async-safe parent tracking
-_parent_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "parent_ctx", default=None
-)
-
-
-def _current_parent() -> Optional[str]:
-    return _parent_ctx.get()
-
-
-_agent_ctx: contextvars.ContextVar[Optional[Tuple[str, str]]] = contextvars.ContextVar(
-    "agent_ctx", default=None
-)
-
-
-def _current_agent() -> Optional[Tuple[str, str]]:
-    """Return ``(agent_id, agent_name)`` of the nearest enclosing agent span, if any."""
-    return _agent_ctx.get()
-
-
-# Session/conversation grouping — the id of the enclosing conversation, if any.
-# Set either by ``@observe(session_id=...)`` or the ``session()`` context
-# manager, and inherited by every nested traced call so a whole multi-turn
-# conversation stitches together as one thread on the dashboard.
-_session_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
-    "session_ctx", default=None
-)
-
-
-def _current_session() -> Optional[str]:
-    return _session_ctx.get()
+# Thread-safe & async-safe parent tracking.
+# Context variables are owned by trace_context.py; tracer.py re-exports them
+# under the old private names for backwards compatibility.
+# _parent_ctx, _agent_ctx, _session_ctx, _current_parent, _current_agent,
+# _current_session are imported from swarmtrace.trace_context.
 
 
 @contextmanager
@@ -703,6 +471,7 @@ def _flush(
     agent_id: str,
     agent_name: str,
     session_id: Optional[str] = None,
+    distributed_trace_id: Optional[str] = None,
 ) -> None:
     # Cap args_repr at the same 4000-char limit _safe_str applies to output.
     # Without this, a single large argument (big string, dataframe repr, etc.)
@@ -726,24 +495,26 @@ def _flush(
     args_repr = redact(args_repr)
     output = redact(output)
     error = redact(error)
-    save_trace(
-        id_=trace_id, parent_id=parent_id, function=func_name,
-        args=args_repr, output=output, latency_sec=latency, error=error,
-        timestamp=timestamp, input_tokens=in_tok, output_tokens=out_tok,
-        cost_usd=cost, kind=kind, agent_id=agent_id, agent_name=agent_name,
+
+    span = SpanRecord(
+        span_id=trace_id,
+        parent_span_id=parent_id,
+        trace_id=distributed_trace_id,
+        name=func_name,
+        kind=kind,
+        start_time=datetime.fromisoformat(timestamp),
+        latency_sec=latency,
+        args=args_repr,
+        output=output,
+        error=error,
+        input_tokens=in_tok,
+        output_tokens=out_tok,
+        cost_usd=cost,
+        agent_id=agent_id,
+        agent_name=agent_name,
         session_id=session_id,
     )
-
-    payload = {
-        "id": trace_id, "parent_id": parent_id, "function": func_name,
-        "args": args_repr, "output": output or "", "latency_sec": latency,
-        "error": error, "timestamp": timestamp,
-        "input_tokens": in_tok, "output_tokens": out_tok, "cost_usd": cost,
-        "kind": kind, "agent_id": agent_id, "agent_name": agent_name,
-    }
-    if session_id is not None:
-        payload["session_id"] = session_id
-    _enqueue_remote(payload)
+    get_runtime().record(span)
 
 
 def _safe_flush(*flush_args) -> None:
@@ -789,8 +560,10 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None,
             trace_id = _build_trace_id()
             parent_id = _current_parent()
             enclosing_agent = _current_agent()
+            distributed_trace_id = _current_trace() or trace_id
             timestamp = datetime.now(timezone.utc).isoformat()
             parent_token = _parent_ctx.set(trace_id)
+            trace_token = _trace_ctx.set(distributed_trace_id)
 
             if session_id is not None:
                 session_token = _session_ctx.set(session_id)
@@ -839,8 +612,10 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None,
                     round(time.perf_counter() - start, 3),
                     error, timestamp, in_tok, out_tok, cost,
                     resolved_kind, agent_id, agent_name, resolved_session,
+                    distributed_trace_id,
                 )
                 _parent_ctx.reset(parent_token)
+                _trace_ctx.reset(trace_token)
                 if agent_token is not None:
                     _agent_ctx.reset(agent_token)
                 if session_token is not None:
@@ -853,8 +628,10 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None,
         trace_id = _build_trace_id()
         parent_id = _current_parent()
         enclosing_agent = _current_agent()
+        distributed_trace_id = _current_trace() or trace_id
         timestamp = datetime.now(timezone.utc).isoformat()
         parent_token = _parent_ctx.set(trace_id)
+        trace_token = _trace_ctx.set(distributed_trace_id)
 
         if session_id is not None:
             session_token = _session_ctx.set(session_id)
@@ -903,8 +680,10 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None,
                 round(time.perf_counter() - start, 3),
                 error, timestamp, in_tok, out_tok, cost,
                 resolved_kind, agent_id, agent_name, resolved_session,
+                distributed_trace_id,
             )
             _parent_ctx.reset(parent_token)
+            _trace_ctx.reset(trace_token)
             if agent_token is not None:
                 _agent_ctx.reset(agent_token)
             if session_token is not None:

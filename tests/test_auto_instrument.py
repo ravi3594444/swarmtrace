@@ -26,21 +26,23 @@ _SAVE_TRACE_FIELD_ORDER = (
 
 
 @pytest.fixture()
-def records(monkeypatch):
-    """Capture save_trace calls instead of writing to the real SQLite DB.
-
-    save_trace is keyword-only now (storage.py Phase 2 refactor), so this
-    reconstructs the old positional tuple shape from the captured kwargs.
-    Every row[N] / row[-N] assertion below keeps working unchanged.
+def records(monkeypatch, fake_runtime):
+    """Capture spans through the Phase 1 runtime seam instead of patching
+    tracer.save_trace. The tuple shape is preserved so every existing
+    row[N] / row[-N] assertion keeps working unchanged.
     """
     saved = []
 
-    def _capture(**kwargs):
-        saved.append(tuple(kwargs.get(key) for key in _SAVE_TRACE_FIELD_ORDER))
+    def _capture(span):
+        fake_runtime.repository.spans.append(span)
+        saved.append((
+            span.span_id, span.parent_span_id, span.name, span.args, span.output,
+            span.latency_sec, span.error, span.start_time.isoformat(),
+            span.input_tokens, span.output_tokens, span.cost_usd,
+            span.kind, span.agent_id, span.agent_name, span.session_id,
+        ))
 
-    monkeypatch.setattr(tracer, "save_trace", _capture)
-    monkeypatch.delenv("SWARMTRACE_API_KEY", raising=False)
-    monkeypatch.delenv("SWARMTRACE_ENDPOINT", raising=False)
+    monkeypatch.setattr(fake_runtime.repository, "save", _capture)
     return saved
 
 
