@@ -92,6 +92,8 @@ def test_purge_only_evicts_synced_rows(storage, monkeypatch):
     monkeypatch.setattr(storage, "MAX_ROWS", 5)
     # Lower PURGE_EVERY so _purge_old_rows runs on the next save.
     monkeypatch.setattr(storage, "PURGE_EVERY", 1)
+    # Disable time-based retention so test rows (2026-01) are not age-purged.
+    monkeypatch.setattr(storage, "RETENTION_DAYS", 0)
 
     # Insert 3 synced rows (oldest) + 3 unsynced rows (newest).
     # Total = 6 > MAX_ROWS=5, so purge should evict 1 synced row.
@@ -175,6 +177,8 @@ def test_purge_evicts_oldest_synced_first(storage, monkeypatch):
     the WHERE synced=1 filter is new."""
     monkeypatch.setattr(storage, "MAX_ROWS", 3)
     monkeypatch.setattr(storage, "PURGE_EVERY", 1)
+    # Disable time-based retention so test rows (2026-01) are not age-purged.
+    monkeypatch.setattr(storage, "RETENTION_DAYS", 0)
 
     # 4 synced rows with ascending timestamps.
     for i in range(4):

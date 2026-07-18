@@ -23,8 +23,14 @@ _log = logging.getLogger("swarmtrace")
 
 DB_PATH = os.environ.get("SWARMTRACE_DB_PATH", os.path.expanduser("~/.swarmtrace.db"))
 
-MAX_ROWS: int = 10_000
+# Maximum number of rows kept locally. Older (already synced) rows are evicted
+# when the count exceeds this threshold. Configurable via env for ops tuning.
+MAX_ROWS: int = int(os.environ.get("SWARMTRACE_MAX_ROWS", "10000"))
 PURGE_EVERY: int = 100      # Only COUNT(*) every N writes
+
+# Time-based retention: synced rows older than this many days are evicted.
+# Set SWARMTRACE_RETENTION_DAYS=0 to disable time-based purging.
+RETENTION_DAYS: int = int(os.environ.get("SWARMTRACE_RETENTION_DAYS", "30"))
 
 # Checkpoint WAL periodically so the WAL file doesn't grow unboundedly.
 # Without this, a 24/7 process can accumulate hundreds of MB in the WAL file.
@@ -59,6 +65,9 @@ _ADDED_COLUMNS: List[Tuple[str, str]] = [
     # to 0 (NOT NULL DEFAULT 0) so existing INSERT statements that predate
     # this column still produce unsynced rows that resync can pick up.
     ("synced",     "INTEGER NOT NULL DEFAULT 0"),
+    # Phase 5: generic metadata / trace context.
+    ("trace_id",   "TEXT"),
+    ("attributes", "TEXT"),
 ]
 
 _lock = threading.Lock()
@@ -184,7 +193,7 @@ def _migrate_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE traces ADD COLUMN {name} {decl}")
 
 def _purge_old_rows(conn: sqlite3.Connection) -> None:
-    """Evict oldest rows when the DB exceeds MAX_ROWS.
+    """Evict oldest synced rows when the DB exceeds MAX_ROWS.
 
     Only purges rows that have already been synced to the remote endpoint
     (synced=1). Unsynced rows (synced=0) are preserved so the resync CLI
@@ -213,6 +222,39 @@ def _purge_old_rows(conn: sqlite3.Connection) -> None:
         (excess,),
     )
 
+
+def _purge_by_age(conn: sqlite3.Connection) -> None:
+    """Evict synced rows older than RETENTION_DAYS.
+
+    Set SWARMTRACE_RETENTION_DAYS=0 to disable time-based retention. As with
+    count-based eviction, unsynced rows are never deleted automatically so
+    the resync CLI can still replay them.
+    """
+    if RETENTION_DAYS <= 0:
+        return
+    cutoff = f"datetime('now', '-{RETENTION_DAYS} days')"
+    conn.execute(
+        f"DELETE FROM traces WHERE id IN "
+        f"(SELECT id FROM traces WHERE synced = 1 AND timestamp < {cutoff})"
+    )
+
+
+def _purge(conn: sqlite3.Connection) -> None:
+    """Run all retention policies: age-based first, then count-based."""
+    _purge_by_age(conn)
+    _purge_old_rows(conn)
+
+
+def purge_now() -> None:
+    """Public hook for manual retention cleanup (used by tests and the CLI)."""
+    try:
+        with _lock:
+            conn = _get_conn()
+            _purge(conn)
+            conn.commit()
+    except Exception as exc:
+        _log.warning("purge_now warning: %s", exc)
+
 # ---------------------------------------------------------------------------
 # Public API
 # ---------------------------------------------------------------------------
@@ -220,12 +262,13 @@ def _purge_old_rows(conn: sqlite3.Connection) -> None:
 def save_trace(
     *,
     id_: str,
-    parent_id: Optional[str],
+    parent_id: Optional[str] = None,
+    trace_id: Optional[str] = None,
     function: str,
-    args: str,
-    output: Optional[str],
-    latency_sec: float,
-    error: Optional[str],
+    args: Optional[str] = None,
+    output: Optional[str] = None,
+    latency_sec: float = 0.0,
+    error: Optional[str] = None,
     timestamp: str,
     input_tokens: int = 0,
     output_tokens: int = 0,
@@ -234,6 +277,7 @@ def save_trace(
     agent_id: Optional[str] = None,
     agent_name: Optional[str] = None,
     session_id: Optional[str] = None,
+    attributes: Optional[str] = None,
 ) -> None:
     global _write_count
     agent_id = agent_id or id_
@@ -243,18 +287,18 @@ def save_trace(
             conn = _get_conn()
             conn.execute(
                 "INSERT OR REPLACE INTO traces "
-                "(id, parent_id, function, args, output, latency_sec, error, "
+                "(id, parent_id, trace_id, function, args, output, latency_sec, error, "
                 "timestamp, input_tokens, output_tokens, cost_usd, "
-                "kind, agent_id, agent_name, session_id) "
-                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                (id_, parent_id, function, args, output,
+                "kind, agent_id, agent_name, session_id, attributes) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                (id_, parent_id, trace_id, function, args, output,
                  latency_sec, error, timestamp,
                  input_tokens, output_tokens, cost_usd,
-                 kind, agent_id, agent_name, session_id),
+                 kind, agent_id, agent_name, session_id, attributes),
             )
             _write_count += 1
             if _write_count % PURGE_EVERY == 0:
-                _purge_old_rows(conn)
+                _purge(conn)
             # Periodic WAL checkpoint — keeps WAL file from growing to hundreds of MB
             if _write_count % CHECKPOINT_EVERY == 0:
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")

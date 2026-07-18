@@ -7,6 +7,7 @@ a span *is*, not how it is stored or transported.
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -52,15 +53,17 @@ class SpanRecord:
             self.trace_id = self.span_id
 
     def to_storage_dict(self) -> Dict[str, Any]:
-        """Return kwargs for the existing ``storage.save_trace`` function.
+        """Return kwargs for the ``storage.save_trace`` function.
 
-        The ``attributes`` field is not persisted by the current table schema
-        and is dropped here; it will be stored once a metadata column is added
-        in Phase 5.
+        ``trace_id`` and ``attributes`` are included so the SQLite repository
+        can store them once the Phase 5 migration adds the corresponding
+        columns. Older callers that do not accept these keys can ignore them.
         """
+        attrs = self.attributes
         return {
             "id_": self.span_id,
             "parent_id": self.parent_span_id,
+            "trace_id": self.trace_id,
             "function": self.name,
             "args": self.args,
             "output": self.output,
@@ -74,14 +77,26 @@ class SpanRecord:
             "agent_id": self.agent_id,
             "agent_name": self.agent_name,
             "session_id": self.session_id,
+            "attributes": json.dumps(attrs) if attrs else None,
         }
 
     @classmethod
     def from_storage_row(cls, row: Dict[str, Any]) -> "SpanRecord":
         """Build a SpanRecord from a sqlite3.Row dict."""
+        raw_attrs = row.get("attributes")
+        attributes: Dict[str, Any] = {}
+        if isinstance(raw_attrs, str):
+            try:
+                attributes = json.loads(raw_attrs)
+            except Exception:
+                attributes = {}
+        elif isinstance(raw_attrs, dict):
+            attributes = dict(raw_attrs)
+
         return cls(
             span_id=row["id"],
             parent_span_id=row.get("parent_id"),
+            trace_id=row.get("trace_id"),
             name=row["function"],
             kind=row.get("kind", "agent"),
             start_time=datetime.fromisoformat(row["timestamp"]),
@@ -95,4 +110,5 @@ class SpanRecord:
             agent_id=row.get("agent_id"),
             agent_name=row.get("agent_name"),
             session_id=row.get("session_id"),
+            attributes=attributes,
         )

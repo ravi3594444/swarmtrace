@@ -196,6 +196,7 @@ export async function POST(req: Request) {
         p_id:            row.id,
         p_user_id:       user_id,
         p_parent_id:     row.parent_id ?? null,
+        p_trace_id:      row.trace_id ?? row.id,
         p_function:      row.function,
         p_args:          row.args,
         p_output:        row.output,
@@ -209,6 +210,7 @@ export async function POST(req: Request) {
         p_agent_id:      row.agent_id,
         p_agent_name:    row.agent_name,
         p_session_id:    row.session_id ?? null,
+        p_attributes:    row.attributes ?? null,
       })
     }
 

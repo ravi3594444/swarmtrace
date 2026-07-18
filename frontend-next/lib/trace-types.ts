@@ -1,6 +1,7 @@
 export type Trace = {
   id: string
   parent_id: string | null
+  trace_id?: string | null
   function: string
   args: string
   output: string
@@ -11,11 +12,13 @@ export type Trace = {
   output_tokens: number
   cost_usd: number
   // added in swarmtrace 0.3.0
-  kind?: 'agent' | 'tool' | 'llm' | 'function'
+  kind?: 'agent' | 'tool' | 'llm' | 'function' | 'retrieval'
   agent_id?: string
   agent_name?: string
   // added in swarmtrace 0.5.0 — groups multi-turn runs into one conversation
   session_id?: string | null
+  // added in Phase 5 — generic JSON metadata for each span
+  attributes?: Record<string, unknown> | null
 }
 
 export type Agent = {

@@ -129,6 +129,12 @@ function buildMcpServer(userId: string): McpServer {
       session_id:    z.string().max(64).optional().describe(
         'Conversation/session id to group multi-turn runs into one thread. Optional.'
       ),
+      trace_id:      z.string().max(64).optional().describe(
+        'Distributed root run id. Optional; defaults to the span id.'
+      ),
+      attributes:    z.record(z.any()).optional().describe(
+        'Generic JSON metadata for the span (e.g. tool name, provider). Optional.'
+      ),
     },
     async (params) => {
       try {
@@ -161,6 +167,7 @@ function buildMcpServer(userId: string): McpServer {
           p_id:            params.id,
           p_user_id:       userId,
           p_parent_id:     params.parent_id ?? null,
+          p_trace_id:      params.trace_id ?? params.id,
           p_function:      params.function,
           p_args:          params.args    ?? '',
           p_output:        params.output  ?? '',
@@ -174,6 +181,7 @@ function buildMcpServer(userId: string): McpServer {
           p_agent_id:      agentId,
           p_agent_name:    agentName,
           p_session_id:    params.session_id ?? null,
+          p_attributes:    params.attributes ?? null,
         })
 
         return {
