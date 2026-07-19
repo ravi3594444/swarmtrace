@@ -11,9 +11,26 @@ import "@/lib/health-check"  // startup env-var validation (logs warnings, never
 import "./globals.css"
 
 
+const SITE_URL = "https://swarmtrace.vercel.app"
+
 export const metadata: Metadata = {
-  title: "SwarmTrace - AI Agent Monitoring",
-  description: "Real-time observability platform for LLM swarms and AI agents",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: "SwarmTrace - Open-Source Observability for AI Agents",
+    template: "%s | SwarmTrace",
+  },
+  description:
+    "Trace, debug, and monitor AI agents and LLM swarms with 2 lines of code. Free, open-source, works with any LLM provider or framework — live cost tracking, regression detection, and token budgets included.",
+  keywords: [
+    "AI agent observability",
+    "LLM tracing",
+    "AI agent monitoring",
+    "LangSmith alternative",
+    "open source LLM observability",
+    "LLM cost tracking",
+    "AI agent debugging",
+  ],
+  authors: [{ name: "SwarmTrace" }],
   verification: {
     google: "FKuXzQR0mShmnAc_vV98diBhBW7OlVRes_lnm2HbbgM",
   },
@@ -24,6 +41,44 @@ export const metadata: Metadata = {
       { url: "/icon-512.png", sizes: "512x512", type: "image/png" },
     ],
     apple: "/apple-icon.png",
+  },
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "SwarmTrace",
+    title: "SwarmTrace - Open-Source Observability for AI Agents",
+    description:
+      "Trace, debug, and monitor AI agents and LLM swarms with 2 lines of code. Free, open-source, works with any LLM provider or framework.",
+    images: [{ url: "/icon-512.png", width: 512, height: 512, alt: "SwarmTrace" }],
+  },
+  twitter: {
+    card: "summary",
+    title: "SwarmTrace - Open-Source Observability for AI Agents",
+    description:
+      "Trace, debug, and monitor AI agents and LLM swarms with 2 lines of code. Free, open-source, works with any LLM provider or framework.",
+    images: ["/icon-512.png"],
+  },
+}
+
+// Structured data (schema.org) so AI answer engines and search generative
+// experiences can parse what SwarmTrace is, what it costs, and where to get
+// it without having to infer it from prose.
+const jsonLd = {
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  name: "SwarmTrace",
+  applicationCategory: "DeveloperApplication",
+  operatingSystem: "Cross-platform",
+  description:
+    "Open-source observability platform for AI agents and LLM swarms. Add one decorator to any Python function to get traces, latency, token counts, and live cost — works with any LLM provider or framework.",
+  url: SITE_URL,
+  downloadUrl: "https://pypi.org/project/swarmtrace/",
+  codeRepository: "https://github.com/ravi3594444/swarmtrace",
+  license: "https://opensource.org/licenses/MIT",
+  offers: {
+    "@type": "Offer",
+    price: "0",
+    priceCurrency: "USD",
   },
 }
 
@@ -57,6 +112,13 @@ export default function RootLayout({
           <link
             rel="stylesheet"
             href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css"
+          />
+          {/* schema.org structured data — lets AI answer engines (ChatGPT,
+              Perplexity, Google AI Overviews, etc.) reliably parse what
+              SwarmTrace is, its price, license, and where to get it. */}
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
           />
         </head>
         <body className="font-sans antialiased">

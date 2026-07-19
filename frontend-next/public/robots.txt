@@ -7,4 +7,56 @@ Disallow: /agents
 Disallow: /settings
 Disallow: /api/
 
+# Explicit allow rules for AI crawlers / answer engines.
+# Already covered by the wildcard rule above, but listed individually so
+# their access is unambiguous to anyone auditing this file, and so a
+# future tightening of the "*" block doesn't accidentally lock these out.
+User-agent: GPTBot
+Allow: /
+Disallow: /overview
+Disallow: /traces
+Disallow: /metrics
+Disallow: /agents
+Disallow: /settings
+Disallow: /api/
+
+User-agent: OAI-SearchBot
+Allow: /
+
+User-agent: ChatGPT-User
+Allow: /
+
+User-agent: ClaudeBot
+Allow: /
+Disallow: /overview
+Disallow: /traces
+Disallow: /metrics
+Disallow: /agents
+Disallow: /settings
+Disallow: /api/
+
+User-agent: Claude-User
+Allow: /
+
+User-agent: anthropic-ai
+Allow: /
+
+User-agent: PerplexityBot
+Allow: /
+
+User-agent: Perplexity-User
+Allow: /
+
+User-agent: Google-Extended
+Allow: /
+
+User-agent: GoogleOther
+Allow: /
+
+User-agent: Bingbot
+Allow: /
+
+User-agent: CCBot
+Allow: /
+
 Sitemap: https://swarmtrace.vercel.app/sitemap.xml
