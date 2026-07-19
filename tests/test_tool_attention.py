@@ -117,14 +117,21 @@ def sample_tools():
 
 
 @pytest.fixture()
-def records(monkeypatch):
-    """Capture save_trace calls instead of writing to the real SQLite DB."""
+def records(monkeypatch, fake_runtime):
+    """Capture spans through the Phase 1 runtime seam (get_runtime().record())
+    instead of patching the removed ta.save_trace. tool_attention.py was
+    migrated to SpanRecord + get_runtime().record() (PRD Phase 1); this
+    fixture patches fake_runtime.repository.save (the pattern already used
+    in tests/test_run.py) and stores each span via to_storage_dict() so the
+    existing row["kind"] / row["function"] assertions keep working unchanged.
+    """
     saved = []
 
-    def _capture(**kwargs):
-        saved.append(kwargs)
+    def _capture(span):
+        fake_runtime.repository.spans.append(span)
+        saved.append(span.to_storage_dict())
 
-    monkeypatch.setattr(ta, "save_trace", _capture)
+    monkeypatch.setattr(fake_runtime.repository, "save", _capture)
     return saved
 
 

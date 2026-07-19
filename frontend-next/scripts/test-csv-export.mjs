@@ -102,9 +102,12 @@ describe('tracesToCsv — end-to-end formula-injection guard', () => {
   test('header row is the standard column set', () => {
     const csv = tracesToCsv([mkTrace()])
     const lines = csv.split('\n')
+    // Phase 5 added trace_id, session_id, and attributes to SpanRecord;
+    // csv-export.ts surfaces all three, so the header grew from 11 to 14
+    // columns.
     assert.equal(
       lines[0],
-      'id,parent_id,function,kind,agent_name,timestamp,latency_sec,input_tokens,output_tokens,cost_usd,error'
+      'id,parent_id,trace_id,function,kind,agent_name,session_id,timestamp,latency_sec,input_tokens,output_tokens,cost_usd,error,attributes'
     )
   })
 
@@ -113,20 +116,24 @@ describe('tracesToCsv — end-to-end formula-injection guard', () => {
     // in the CSV at all. Test via the function column instead.
     const csv = tracesToCsv([mkTrace({ id: 'evil', function: "=cmd|'/c calc'!A1" })])
     const line = csv.split('\n')[1]
-    // The function column is the 3rd field. It should start with the escape
+    // Phase 5 inserted trace_id before function, so function is now the
+    // 4th field (index 3), not the 3rd. It should start with the escape
     // quote.
-    const funcField = line.split(',')[2]
+    const funcField = line.split(',')[3]
     assert.equal(funcField, "'=cmd|'/c calc'!A1", `got: ${funcField}`)
   })
 
   test('trace with +-prefixed error gets sanitized', () => {
     const csv = tracesToCsv([mkTrace({ id: 'e', error: '+HYPERLINK("http://evil")' })])
     const line = csv.split('\n')[1]
-    // error is the last field. CSV escaping wraps it in quotes (because
-    // it contains quotes) and doubles the inner quotes per CSV standard.
-    // The leading ' (sanitization escape) must be the first content char.
+    // error used to be the last field; Phase 5 appended attributes after
+    // it, so check the escaped/sanitized error segment appears in the
+    // line rather than asserting it's the suffix. CSV escaping wraps it
+    // in quotes (because it contains quotes) and doubles the inner quotes
+    // per CSV standard. The leading ' (sanitization escape) must be the
+    // first content char.
     assert.ok(
-      line.endsWith(`"'+HYPERLINK(""http://evil"")"`),
+      line.includes(`"'+HYPERLINK(""http://evil"")"`),
       `got: ${line}`
     )
   })
@@ -136,7 +143,7 @@ describe('tracesToCsv — end-to-end formula-injection guard', () => {
     const line = csv.split('\n')[1]
     const fields = line.split(',')
     assert.equal(fields[0], 'safe')
-    assert.equal(fields[2], 'my_agent')
+    assert.equal(fields[3], 'my_agent')
   })
 
   test('CSV-escaping (commas, quotes, newlines) still works alongside sanitization', () => {
