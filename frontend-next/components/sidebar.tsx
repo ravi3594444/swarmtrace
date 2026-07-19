@@ -25,7 +25,7 @@ function TakeTourButton({ collapsed }: { collapsed: boolean }) {
       }`}
     >
       <Compass
-        className={`shrink-0 text-muted-foreground group-hover:text-foreground ${collapsed ? 'w-5 h-5' : 'w-[19px] h-[19px]'}`}
+        className={`shrink-0 text-muted-foreground group-hover:text-foreground ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'}`}
         strokeWidth={1.7}
       />
       {!collapsed && <span className="truncate">Take a tour</span>}
@@ -87,7 +87,7 @@ function NavItem({
         style={isActive ? { background: 'color-mix(in oklch, var(--primary) 8%, transparent)', borderRadius: 8 } : {}}
       >
         <Icon
-          className={`shrink-0 transition-colors ${collapsed ? 'w-5 h-5' : 'w-[19px] h-[19px]'} ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`}
+          className={`shrink-0 transition-colors ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'} ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`}
           strokeWidth={isActive ? 2.2 : 1.7}
         />
         {!collapsed && <span className="truncate">{label}</span>}
