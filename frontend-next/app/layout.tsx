@@ -32,7 +32,7 @@ export const metadata: Metadata = {
   ],
   authors: [{ name: "SwarmTrace" }],
   verification: {
-    google: "FKuXzQR0mShmnAc_vV98diBhBW7OlVRes_lnm2HbbgM",
+    google: "rN8_3jIp7lwP69cLZpn6q9NU8a_LI3lUeKD5lPRAU1Q",
   },
   icons: {
     icon: [
