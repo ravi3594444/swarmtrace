@@ -2,7 +2,7 @@
 
 # SwarmTrace
 
-**Observability for AI agents — trace, debug, and monitor with 2 lines of code**
+**Observability for AI agents — trace, debug, and monitor with 2 lines of code **
 
 [![PyPI](https://img.shields.io/pypi/v/swarmtrace?style=flat-square&color=black)](https://pypi.org/project/swarmtrace/)
 [![Python](https://img.shields.io/badge/python-3.10%2B-black?style=flat-square)](https://pypi.org/project/swarmtrace/)
