@@ -27,7 +27,7 @@ export class DashboardErrorBoundary extends React.Component<
 
     return (
       <div className="flex flex-col items-center justify-center h-full min-h-[60vh] gap-4 p-8 text-center">
-        <div className="w-12 h-12 rounded-full border border-red-200 bg-red-50 flex items-center justify-center">
+        <div className="w-12 h-12 rounded-full border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 flex items-center justify-center">
           <AlertTriangle className="w-5 h-5 text-red-500" />
         </div>
         <div>

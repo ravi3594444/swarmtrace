@@ -283,8 +283,8 @@ def my_agent(prompt: str) -> str:
 {`import os
 from swarmtrace import observe
 
-os.environ[`}<span className="text-primary">{`"SWARMTRACE_API_KEY"`}</span>{`]  = `}<span className="text-green-600 dark:text-green-400">{`"${keyDisplay}"`}</span>{`
-os.environ[`}<span className="text-primary">{`"SWARMTRACE_ENDPOINT"`}</span>{`] = `}<span className="text-green-600 dark:text-green-400">{`"${endpoint}"`}</span>{`
+os.environ[`}<span className="text-primary">{`"SWARMTRACE_API_KEY"`}</span>{`]  = `}<span className="text-green-600 dark:text-green-400 dark:text-green-400">{`"${keyDisplay}"`}</span>{`
+os.environ[`}<span className="text-primary">{`"SWARMTRACE_ENDPOINT"`}</span>{`] = `}<span className="text-green-600 dark:text-green-400 dark:text-green-400">{`"${endpoint}"`}</span>{`
 
 `}<span className="text-primary">{`@observe`}</span>{`
 def my_agent(prompt: str) -> str:
@@ -718,13 +718,13 @@ export default function SettingsPage() {
 
                 <div className="flex justify-end gap-3 flex-wrap">
                   {saveError && (
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 text-red-600 border border-red-500/30 text-sm font-medium">
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/30 text-sm font-medium">
                       <AlertCircle className="w-4 h-4" />
                       {saveError}
                     </div>
                   )}
                   {saved && (
-                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-600 border border-green-500/30 text-sm font-medium">
+                    <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-green-500/20 text-green-600 dark:text-green-400 border border-green-500/30 text-sm font-medium">
                       <Check className="w-4 h-4" />
                       Saved
                     </div>
@@ -761,7 +761,7 @@ export default function SettingsPage() {
                 {/* Created key reveal */}
                 {createdKey && (
                   <div className="bg-green-500/10 border border-green-500/30 rounded-xl p-6">
-                    <p className="text-sm text-green-600 font-semibold mb-3">✓ API Key Created Successfully</p>
+                    <p className="text-sm text-green-600 dark:text-green-400 font-semibold mb-3">✓ API Key Created Successfully</p>
                     <div className="flex items-center gap-2 mb-3">
                       <code className="flex-1 px-3 py-2 bg-card border border-border rounded-xl text-foreground text-xs break-all font-mono">
                         {createdKey.key}
@@ -769,7 +769,7 @@ export default function SettingsPage() {
                       <button
                         onClick={handleCopyKey}
                         title={copiedKeyErr ? 'Copy failed — select the key text and press Ctrl+C' : 'Copy to clipboard'}
-                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/20 border border-green-500/30 text-green-600 hover:bg-green-500/30 transition-colors text-xs font-medium"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-green-500/20 border border-green-500/30 text-green-600 dark:text-green-400 hover:bg-green-500/30 transition-colors text-xs font-medium"
                       >
                         {copiedKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
                         {copiedKey ? 'Copied!' : copiedKeyErr ? 'Copy failed' : 'Copy'}
@@ -861,12 +861,12 @@ export default function SettingsPage() {
             {activeTab === 'integrations' && (
               <div className="space-y-6">
                 {integrationError && (
-                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-red-200 bg-red-50 text-red-700 text-sm">
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 text-sm">
                     <AlertCircle className="w-4 h-4 shrink-0" />
                     <span>{integrationError}</span>
                     <button
                       onClick={() => setIntegrationError(null)}
-                      className="ml-auto text-red-500 hover:text-red-700 shrink-0"
+                      className="ml-auto text-red-500 hover:text-red-700 dark:text-red-400 shrink-0"
                       aria-label="Dismiss"
                     >
                       ×

@@ -138,7 +138,7 @@ export default function ComparePage() {
                     />
                   </div>
                   <span className="text-2xl font-bold tabular-nums text-foreground">{pct}%</span>
-                  <span className={`rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${regressed ? 'bg-red-50 border border-red-200 text-red-700' : 'bg-emerald-50 border border-emerald-200 text-emerald-700'}`}>
+                  <span className={`rounded-md px-2.5 py-1 text-[11px] font-bold uppercase tracking-wide ${regressed ? 'bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 text-red-700 dark:text-red-400' : 'bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900/60 text-emerald-700 dark:text-emerald-400'}`}>
                     {regressed ? 'Regression' : 'OK'}
                   </span>
                 </div>
@@ -166,9 +166,9 @@ export default function ComparePage() {
                       key={i}
                       className={`px-2 py-0.5 whitespace-pre-wrap break-words ${
                         line.type === 'added'
-                          ? 'bg-emerald-50 text-emerald-800'
+                          ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-800 dark:text-emerald-400'
                           : line.type === 'removed'
-                          ? 'bg-red-50 text-red-800'
+                          ? 'bg-red-50 dark:bg-red-950/30 text-red-800 dark:text-red-400'
                           : 'text-foreground/80'
                       }`}
                     >

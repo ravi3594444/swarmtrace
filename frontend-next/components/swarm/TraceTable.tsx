@@ -107,15 +107,15 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
                     <td className="px-4 py-3 text-xs tabular-nums text-foreground font-semibold">${t.cost_usd.toFixed(4)}</td>
                     <td className="px-4 py-3 text-center">
                       <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase border ${
-                        ok ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"
+                        ok ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60" : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60"
                       }`}>{ok ? "OK" : "FAIL"}</span>
                     </td>
                     <td className="px-4 py-3 text-[11px] text-muted-foreground">{formatTime(t.timestamp)}</td>
                   </tr>
                   {showErrors && t.error && (
-                    <tr className="bg-red-50/50">
+                    <tr className="bg-red-50/50 dark:bg-red-950/20">
                       <td colSpan={8} className="px-4 pb-3 pt-0">
-                        <div className="rounded-lg border-l-2 border-red-400 bg-red-50 px-3 py-2 text-xs text-red-700">{t.error}</div>
+                        <div className="rounded-lg border-l-2 border-red-400 bg-red-50 dark:bg-red-950/30 px-3 py-2 text-xs text-red-700 dark:text-red-400">{t.error}</div>
                       </td>
                     </tr>
                   )}
