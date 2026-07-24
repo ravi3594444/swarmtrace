@@ -51,7 +51,7 @@ export default function FailuresPage() {
       />
 
       <div className="p-6 space-y-6">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: 'Total Errors', value: String(failed.length), sub: `of ${filteredTraces.length} spans`, icon: AlertTriangle },
             { label: 'Error Rate', value: `${errorRate}%`, sub: 'of all executed spans', icon: TrendingDown },
@@ -70,7 +70,7 @@ export default function FailuresPage() {
 
         {clusters.length === 0 ? (
           <div className="rounded-xl border border-border bg-card py-20 text-center shadow-sm">
-            <div className="w-12 h-12 rounded-full border border-emerald-200 bg-emerald-50 flex items-center justify-center mx-auto mb-4">
+            <div className="w-12 h-12 rounded-full border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 flex items-center justify-center mx-auto mb-4">
               <span className="text-2xl">✓</span>
             </div>
             <div className="text-sm font-semibold text-foreground">No failures detected</div>
@@ -87,7 +87,7 @@ export default function FailuresPage() {
                     className="w-full flex items-center gap-3 px-4 py-3.5 text-left hover:bg-muted/30 transition-colors"
                   >
                     <ChevronRight className={`w-4 h-4 text-muted-foreground shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
-                    <span className="shrink-0 rounded-md bg-red-50 border border-red-200 px-2 py-0.5 text-[11px] font-semibold text-red-700 font-mono">{c.type}</span>
+                    <span className="shrink-0 rounded-md bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900/60 px-2 py-0.5 text-[11px] font-semibold text-red-700 dark:text-red-400 font-mono">{c.type}</span>
                     <span className="flex-1 text-xs text-foreground/90 truncate font-mono">{c.sample}</span>
                     <span className="shrink-0 text-[11px] text-muted-foreground hidden sm:inline">{c.functions.slice(0, 2).join(', ')}{c.functions.length > 2 ? ` +${c.functions.length - 2}` : ''}</span>
                     <div className="w-24 h-1.5 bg-muted rounded-full overflow-hidden shrink-0 hidden md:block">
@@ -113,7 +113,7 @@ export default function FailuresPage() {
                             <tr key={t.id} onClick={() => setSelected(t)} className="cursor-pointer hover:bg-muted/30 transition-colors">
                               <td className="px-4 py-3 font-mono text-xs text-muted-foreground">{t.id.slice(0, 10)}</td>
                               <td className="px-4 py-3 text-sm font-medium text-foreground">{t.function}</td>
-                              <td className="px-4 py-3 text-xs text-red-600 max-w-xs truncate">{t.error}</td>
+                              <td className="px-4 py-3 text-xs text-red-600 dark:text-red-400 max-w-xs truncate">{t.error}</td>
                               <td className="px-4 py-3 text-xs font-mono tabular-nums text-right">{(t.latency_sec ?? 0).toFixed(2)}s</td>
                               <td className="px-4 py-3 text-xs text-muted-foreground">{formatTime(t.timestamp)}</td>
                             </tr>

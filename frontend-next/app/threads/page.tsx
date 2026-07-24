@@ -49,9 +49,9 @@ function ThreadCard({
         </span>
         <span className="flex-1 text-xs text-foreground/90 truncate font-mono">{thread.sessionId}</span>
         {thread.hasError ? (
-          <span className="shrink-0 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-700">Error</span>
+          <span className="shrink-0 rounded-full border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 text-[10px] font-bold uppercase text-red-700 dark:text-red-400">Error</span>
         ) : (
-          <span className="shrink-0 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700">OK</span>
+          <span className="shrink-0 rounded-full border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400">OK</span>
         )}
         <span className="shrink-0 text-[11px] text-muted-foreground hidden sm:inline">{formatTime(thread.firstSeen)} → {formatTime(thread.lastSeen)}</span>
         <span className="shrink-0 w-12 text-right text-sm font-bold text-foreground tabular-nums">{thread.turnCount}×</span>
@@ -103,9 +103,9 @@ function ThreadCard({
                   <td className="px-4 py-3 text-xs font-mono tabular-nums text-right">${trace.cost_usd.toFixed(4)}</td>
                   <td className="px-4 py-3">
                     {trace.error ? (
-                      <span className="inline-flex rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold uppercase text-red-700">Error</span>
+                      <span className="inline-flex rounded-full border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 text-[10px] font-bold uppercase text-red-700 dark:text-red-400">Error</span>
                     ) : (
-                      <span className="inline-flex rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700">OK</span>
+                      <span className="inline-flex rounded-full border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[10px] font-bold uppercase text-emerald-700 dark:text-emerald-400">OK</span>
                     )}
                   </td>
                 </tr>
@@ -157,7 +157,7 @@ export default function ThreadsPage() {
       />
 
       <div className="p-6 space-y-6">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: 'Threads', value: String(threads.length), sub: 'distinct sessions', icon: MessagesSquare },
             { label: 'Turns', value: String(totalTurns), sub: 'trace entries with session ids', icon: Hash },

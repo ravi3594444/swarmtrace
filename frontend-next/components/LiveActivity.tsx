@@ -29,7 +29,7 @@ const ICONS: Record<string, string> = {
 // invisible on a light background (the dashboard default).
 const STATUS_COLOR: Record<string, string> = {
   started:   'text-blue-500 dark:text-blue-400',
-  done:      'text-green-600 dark:text-green-400',
+  done:      'text-green-600 dark:text-green-400 dark:text-green-400',
   error:     'text-red-500 dark:text-red-400',
   streaming: 'text-purple-500 dark:text-purple-400',
   info:      'text-muted-foreground',
