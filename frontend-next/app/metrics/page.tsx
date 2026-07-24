@@ -45,7 +45,7 @@ function RegressionMonitorPanel({ data }: { data: MetricsData | null }) {
         </span>
       </div>
       <div className="p-5 space-y-4">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { label: 'Traces analysed', value: data?.all_time?.traces?.toLocaleString() ?? '0' },
             { label: 'Regressions detected', value: '0' },
