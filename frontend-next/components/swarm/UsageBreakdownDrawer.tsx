@@ -44,7 +44,7 @@ function PeriodBlock({
         {tokens.toLocaleString()}
         <span className="ml-1.5 text-sm font-medium text-muted-foreground">tokens</span>
       </div>
-      <div className="mt-3 grid grid-cols-4 gap-2">
+      <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
         <SubStat label="Input"  value={data.tokens_in.toLocaleString()} />
         <SubStat label="Output" value={data.tokens_out.toLocaleString()} />
         <SubStat label="Cost"   value={`$${data.cost.toFixed(3)}`} />
@@ -69,7 +69,7 @@ function PeriodSkeleton() {
     <div className="rounded-xl border border-border bg-card p-4">
       <div className="h-3 w-20 bg-muted rounded mb-3 animate-pulse" />
       <div className="h-7 w-32 bg-muted rounded animate-pulse" />
-      <div className="mt-3 grid grid-cols-4 gap-2">
+      <div className="mt-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
         {[0, 1, 2, 3].map((i) => (
           <div key={i}>
             <div className="h-2.5 w-10 bg-muted rounded mb-1 animate-pulse" />

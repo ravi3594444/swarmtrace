@@ -53,12 +53,12 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
 
         <div className="flex-1 overflow-y-auto p-5 space-y-5">
           {!ok && (
-            <div className="rounded-xl border border-red-200 bg-red-50 p-4 space-y-3">
+            <div className="rounded-xl border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 p-4 space-y-3">
               <div className="flex items-center gap-2">
-                <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                <span className="text-sm font-semibold text-red-700">Failure Analysis</span>
+                <AlertTriangle className="w-4 h-4 text-red-600 dark:text-red-400 shrink-0" />
+                <span className="text-sm font-semibold text-red-700 dark:text-red-400">Failure Analysis</span>
               </div>
-              <pre className="overflow-x-auto rounded-lg border border-red-200 bg-white p-3 text-xs text-red-700">
+              <pre className="overflow-x-auto rounded-lg border border-red-200 dark:border-red-900/60 bg-white p-3 text-xs text-red-700 dark:text-red-400">
                 {trace.error}
               </pre>
               <div>
@@ -77,7 +77,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
                           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${sOk ? "bg-emerald-500" : "bg-red-400"}`} />
                           <span className="flex-1 truncate text-xs text-foreground">{s.function}</span>
                           <span className="text-[11px] text-muted-foreground">{s.id}</span>
-                          <span className={`rounded-full px-1.5 py-0.5 border text-[10px] font-bold uppercase ${sOk ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"}`}>
+                          <span className={`rounded-full px-1.5 py-0.5 border text-[10px] font-bold uppercase ${sOk ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60" : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60"}`}>
                             {sOk ? "OK" : "ERR"}
                           </span>
                         </button>
@@ -89,7 +89,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { label: "Latency", value: `${trace.latency_sec.toFixed(2)}s`, icon: Clock    },
               { label: "Tokens",  value: `${trace.input_tokens}/${trace.output_tokens}`,    icon: Activity },
@@ -105,7 +105,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
 
           <Field label="Status">
             <span className={`inline-block rounded-full px-2.5 py-1 text-xs font-bold uppercase border ${
-              ok ? "bg-emerald-50 text-emerald-700 border-emerald-200" : "bg-red-50 text-red-700 border-red-200"
+              ok ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60" : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60"
             }`}>{ok ? "SUCCESS" : "ERROR"}</span>
           </Field>
 

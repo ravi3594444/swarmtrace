@@ -14,12 +14,12 @@ import { Activity, Clock, CheckCircle2, XCircle, Pause, RefreshCw, Search } from
 
 function StatusBadge({ status }: { status: Agent['status'] }) {
   if (status === 'RUNNING') return (
-    <span className="flex items-center gap-1.5 rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+    <span className="flex items-center gap-1.5 rounded-full border border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30 px-2 py-0.5 text-[10px] font-bold text-emerald-700 dark:text-emerald-400">
       <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 swarm-pulse" />RUNNING
     </span>
   )
   if (status === 'ERROR') return (
-    <span className="flex items-center gap-1.5 rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-bold text-red-700">
+    <span className="flex items-center gap-1.5 rounded-full border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 px-2 py-0.5 text-[10px] font-bold text-red-700 dark:text-red-400">
       <XCircle className="w-2.5 h-2.5" />ERROR
     </span>
   )
@@ -37,7 +37,7 @@ function AgentCard({ agent, delayMs = 0 }: { agent: Agent; delayMs?: number }) {
 
   return (
     <div className={`rounded-xl border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color,box-shadow] duration-200 hover:shadow-md animate-slide-in-up ${
-      isError ? 'border-red-200' : 'border-border'
+      isError ? 'border-red-200 dark:border-red-900/60' : 'border-border'
     }`} style={{ animationDelay: `${Math.min(delayMs, 300)}ms` }}>
       <div className={`h-1 ${isRunning ? 'bg-primary' : isError ? 'bg-red-400' : 'bg-border'}`} />
       <div className="p-5">
@@ -54,12 +54,12 @@ function AgentCard({ agent, delayMs = 0 }: { agent: Agent; delayMs?: number }) {
           </div>
         </div>
 
-        <div className={`rounded-lg border px-3 py-2 mb-4 ${isError ? 'border-red-200 bg-red-50' : 'border-border bg-muted/30'}`}>
+        <div className={`rounded-lg border px-3 py-2 mb-4 ${isError ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30' : 'border-border bg-muted/30'}`}>
           <div className="text-[10px] font-medium text-muted-foreground mb-0.5">Current Task</div>
           <p className="text-xs truncate font-medium text-foreground">{agent.current_task}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             { label: 'Tasks', value: String(agent.tasks), icon: Activity },
             { label: 'Success', value: agent.success_rate, icon: CheckCircle2 },
@@ -149,7 +149,7 @@ export default function AgentsPage() {
       {truncated && <TruncationBanner range="the selected range" />}
 
       <div className="p-6 space-y-6">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { label: 'Total', value: agents.length },
             { label: 'Running', value: counts.RUNNING },

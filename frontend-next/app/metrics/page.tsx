@@ -40,12 +40,12 @@ function RegressionMonitorPanel({ data }: { data: MetricsData | null }) {
       <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <TrendingDown className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Regression Monitor</h3>
-        <span className="ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 border border-green-500/20">
+        <span className="ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500" />ACTIVE
         </span>
       </div>
       <div className="p-5 space-y-4">
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {[
             { label: 'Traces analysed', value: data?.all_time?.traces?.toLocaleString() ?? '0' },
             { label: 'Regressions detected', value: '0' },
