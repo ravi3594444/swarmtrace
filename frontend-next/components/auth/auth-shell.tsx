@@ -54,11 +54,11 @@ export function AuthShell({ eyebrow, headline, subline, children }: AuthShellPro
       */}
       <div
         aria-hidden
-        className="absolute inset-0 -z-10 bg-gradient-to-b from-slate-950/55 via-slate-900/30 to-slate-900/60"
+        className="absolute inset-0 -z-10 bg-gradient-to-b from-sky-200/40 via-sky-100/30 to-white/70"
       />
       <div
         aria-hidden
-        className="absolute inset-0 -z-10 lg:bg-gradient-to-r lg:from-slate-950/60 lg:via-slate-950/10 lg:to-transparent"
+        className="absolute inset-0 -z-10 lg:bg-gradient-to-r lg:from-sky-100/40 lg:via-transparent lg:to-transparent"
       />
 
       {/* Back to site */}
