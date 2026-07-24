@@ -89,7 +89,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
             </div>
           )}
 
-          <div className="grid grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {[
               { label: "Latency", value: `${trace.latency_sec.toFixed(2)}s`, icon: Clock    },
               { label: "Tokens",  value: `${trace.input_tokens}/${trace.output_tokens}`,    icon: Activity },

@@ -59,7 +59,7 @@ function AgentCard({ agent, delayMs = 0 }: { agent: Agent; delayMs?: number }) {
           <p className="text-xs truncate font-medium text-foreground">{agent.current_task}</p>
         </div>
 
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             { label: 'Tasks', value: String(agent.tasks), icon: Activity },
             { label: 'Success', value: agent.success_rate, icon: CheckCircle2 },
@@ -149,7 +149,7 @@ export default function AgentsPage() {
       {truncated && <TruncationBanner range="the selected range" />}
 
       <div className="p-6 space-y-6">
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           {[
             { label: 'Total', value: agents.length },
             { label: 'Running', value: counts.RUNNING },

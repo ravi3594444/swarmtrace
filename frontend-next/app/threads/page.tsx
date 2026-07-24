@@ -157,7 +157,7 @@ export default function ThreadsPage() {
       />
 
       <div className="p-6 space-y-6">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: 'Threads', value: String(threads.length), sub: 'distinct sessions', icon: MessagesSquare },
             { label: 'Turns', value: String(totalTurns), sub: 'trace entries with session ids', icon: Hash },

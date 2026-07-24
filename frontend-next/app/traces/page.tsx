@@ -293,7 +293,7 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
           {[
             { label: 'Latency', value: `${(trace.latency_sec ?? 0).toFixed(3)}s`, icon: Clock },
             { label: 'Tokens', value: ((trace.input_tokens ?? 0) + (trace.output_tokens ?? 0)).toLocaleString(), icon: Activity },

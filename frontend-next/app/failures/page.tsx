@@ -51,7 +51,7 @@ export default function FailuresPage() {
       />
 
       <div className="p-6 space-y-6">
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
             { label: 'Total Errors', value: String(failed.length), sub: `of ${filteredTraces.length} spans`, icon: AlertTriangle },
             { label: 'Error Rate', value: `${errorRate}%`, sub: 'of all executed spans', icon: TrendingDown },
