@@ -54,7 +54,7 @@ export function AuthShell({ eyebrow, headline, subline, children }: AuthShellPro
       */}
       <div
         aria-hidden
-        className="absolute inset-0 -z-10 bg-gradient-to-b from-sky-200/40 via-sky-100/30 to-white/70"
+        className="absolute inset-0 -z-10 bg-gradient-to-b from-white/20 via-transparent to-white/30"
       />
       <div
         aria-hidden
