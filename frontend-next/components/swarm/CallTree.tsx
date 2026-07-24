@@ -30,7 +30,7 @@ function CopyId({ id }: { id: string }) {
       className="shrink-0 flex items-center gap-1 rounded px-1 py-0.5 -mx-1 text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
     >
       <span className="font-mono text-[10px]">{truncateId(id)}</span>
-      {copied ? <Check className="w-2.5 h-2.5 text-emerald-600" /> : <Copy className="w-2.5 h-2.5" />}
+      {copied ? <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
     </button>
   );
 }
@@ -75,8 +75,8 @@ function TreeNode({
           {node.latency_sec.toFixed(2)}s
         </span>
         <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${
-          ok ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
-             : "bg-red-50 text-destructive border border-red-200"
+          ok ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/60"
+             : "bg-red-50 dark:bg-red-950/30 text-destructive border border-red-200 dark:border-red-900/60"
         }`}>
           {ok ? "OK" : "ERR"}
         </span>
