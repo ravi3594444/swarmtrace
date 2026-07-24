@@ -86,7 +86,16 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
                 <Fragment key={t.id}>
                   <tr
                     onClick={() => onSelect(t)}
-                    className={`cursor-pointer transition-colors ${
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" || e.key === " ") {
+                        e.preventDefault();
+                        onSelect(t);
+                      }
+                    }}
+                    role="button"
+                    tabIndex={0}
+                    aria-selected={selected?.id === t.id}
+                    className={`cursor-pointer transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2 ${
                       selected?.id === t.id ? "bg-muted/60 border-l-2 border-l-primary" : "hover:bg-muted/30"
                     } ${newIds?.has(t.id) ? "swarm-row-new" : ""}`}
                   >
