@@ -4,48 +4,50 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* Charcoal & Ivory monochrome dashboard system */
-  --background: #0a0a0a;
-  --foreground: #e5e2e1;
-  --surface: #131313;
-  --surface-container: #201f1f;
-  --surface-container-high: #2a2a2a;
-  --surface-container-low: #1c1b1b;
-  --on-surface: #e5e2e1;
-  --on-surface-variant: #c4c7c8;
-  --outline: #8e9192;
-  --outline-variant: #444748;
-  --card: #121212;
-  --card-foreground: #e5e2e1;
-  --popover: #1a1a1a;
-  --popover-foreground: #e5e2e1;
-  --primary: #ffffff;
-  --primary-foreground: #0a0a0a;
-  --secondary: #2a2a2a;
-  --secondary-foreground: #e5e2e1;
-  --muted: #201f1f;
-  --muted-foreground: #8e9192;
-  --accent: #ffffff;
-  --accent-foreground: #0a0a0a;
-  --destructive: #ffb4ab;
-  --destructive-foreground: #690005;
-  --border: #333333;
-  --input: #333333;
-  --ring: #ffffff;
-  --chart-1: #ffffff;
-  --chart-2: #c6c6c7;
-  --chart-3: #8e9192;
-  --chart-4: #777777;
-  --chart-5: #444748;
+  /* SwarmTrace AI Monitoring - Light theme (#F4F4F4 neutral canvas, white cards) */
+  --background: oklch(0.9672 0 0); /* #F4F4F4 */
+  --foreground: oklch(0.18 0 0);
+
+  /* Material Design surface tokens — light mode */
+  --surface: oklch(1 0 0);
+  --surface-container: oklch(1 0 0);
+  --surface-container-high: oklch(0.93 0 0);
+  --surface-container-low: oklch(0.9672 0 0);
+  --on-surface: oklch(0.18 0 0);
+  --on-surface-variant: oklch(0.4386 0 0);
+  --outline: oklch(0.88 0 0);
+  --outline-variant: oklch(0.91 0 0);
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.25 0 0);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.25 0 0);
+  --primary: oklch(0.2178 0 0); /* #1A1A1A charcoal — was brand green */
+  --primary-foreground: oklch(0.98 0 0);
+  --secondary: oklch(0.95 0 0);
+  --secondary-foreground: oklch(0.25 0 0);
+  --muted: oklch(0.95 0 0);
+  --muted-foreground: oklch(0.4386 0 0); /* darkened from 0.55 — was failing WCAG AA (~3.4:1); now ~7.8:1 on white */
+  --accent: oklch(0.37 0 0); /* charcoal-gray secondary accent — was brand green */
+  --accent-foreground: oklch(0.98 0 0);
+  --destructive: oklch(0.5054 0.1905 27.5); /* softened from 0.577/0.245 — less neon, ~6.5:1 on white */
+  --destructive-foreground: oklch(0.98 0.01 0);
+  --border: oklch(0.90 0 0);
+  --input: oklch(0.90 0 0);
+  --ring: oklch(0.2178 0 0);
+  --chart-1: oklch(0.22 0 0);
+  --chart-2: oklch(0.37 0 0);
+  --chart-3: oklch(0.50 0 0);
+  --chart-4: oklch(0.65 0 0);
+  --chart-5: oklch(0.80 0 0);
   --radius: 1rem;
-  --sidebar: #0e0e0e;
-  --sidebar-foreground: #e5e2e1;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #0a0a0a;
-  --sidebar-accent: #201f1f;
-  --sidebar-accent-foreground: #e5e2e1;
-  --sidebar-border: #333333;
-  --sidebar-ring: #ffffff;
+  --sidebar: oklch(1 0 0);
+  --sidebar-foreground: oklch(0.25 0 0);
+  --sidebar-primary: oklch(0.2178 0 0);
+  --sidebar-primary-foreground: oklch(0.98 0 0);
+  --sidebar-accent: oklch(0.95 0 0);
+  --sidebar-accent-foreground: oklch(0.25 0 0);
+  --sidebar-border: oklch(0.90 0 0);
+  --sidebar-ring: oklch(0.2178 0 0);
   /* Font stacks — Geist is loaded from the geist npm package (local font files,
      no Google Fonts network fetch needed at build time). The --font-geist-sans and
      --font-geist-mono variables are injected by the geist package via className on <html>. */
@@ -56,7 +58,7 @@
   --font-jetbrains: var(--font-geist-mono), 'Fira Code', 'Courier New', monospace;
   --font-sans: var(--font-geist-sans), system-ui, sans-serif;
   --font-mono: var(--font-geist-mono), monospace;
-  --font-display: var(--font-geist-mono), 'Fira Code', monospace;
+  --font-display: var(--font-instrument-serif), 'Instrument Serif', Georgia, serif;
 }
 
 /* Themed thin scrollbar — used on horizontally/vertically scrollable panels
@@ -82,48 +84,49 @@
 }
 
 .dark {
-  /* Charcoal & Ivory monochrome dashboard system */
-  --background: #0a0a0a;
-  --foreground: #e5e2e1;
-  --surface: #131313;
-  --surface-container: #201f1f;
-  --surface-container-high: #2a2a2a;
-  --surface-container-low: #1c1b1b;
-  --on-surface: #e5e2e1;
-  --on-surface-variant: #c4c7c8;
-  --outline: #8e9192;
-  --outline-variant: #444748;
-  --card: #121212;
-  --card-foreground: #e5e2e1;
-  --popover: #1a1a1a;
-  --popover-foreground: #e5e2e1;
-  --primary: #ffffff;
-  --primary-foreground: #0a0a0a;
-  --secondary: #2a2a2a;
-  --secondary-foreground: #e5e2e1;
-  --muted: #201f1f;
-  --muted-foreground: #8e9192;
-  --accent: #ffffff;
-  --accent-foreground: #0a0a0a;
-  --destructive: #ffb4ab;
-  --destructive-foreground: #690005;
-  --border: #333333;
-  --input: #333333;
-  --ring: #ffffff;
-  --chart-1: #ffffff;
-  --chart-2: #c6c6c7;
-  --chart-3: #8e9192;
-  --chart-4: #777777;
-  --chart-5: #444748;
-  --radius: 1rem;
-  --sidebar: #0e0e0e;
-  --sidebar-foreground: #e5e2e1;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #0a0a0a;
-  --sidebar-accent: #201f1f;
-  --sidebar-accent-foreground: #e5e2e1;
-  --sidebar-border: #333333;
-  --sidebar-ring: #ffffff;
+  /* SwarmTrace AI Monitoring - Dark theme */
+  --background: oklch(0.12 0.01 155);
+  --foreground: oklch(0.98 0.005 155);
+
+  /* Material Design surface tokens — dark mode */
+  --surface: oklch(0.15 0.01 155);
+  --surface-container: oklch(0.15 0.01 155);
+  --surface-container-high: oklch(0.20 0.015 155);
+  --surface-container-low: oklch(0.13 0.01 155);
+  --on-surface: oklch(0.95 0.005 155);
+  --on-surface-variant: oklch(0.65 0.02 155);
+  --outline: oklch(0.28 0.02 155);
+  --outline-variant: oklch(0.22 0.015 155);
+  --card: oklch(0.15 0.01 155);
+  --card-foreground: oklch(0.98 0.005 155);
+  --popover: oklch(0.15 0.01 155);
+  --popover-foreground: oklch(0.98 0.005 155);
+  --primary: oklch(0.55 0.18 155);
+  --primary-foreground: oklch(0.98 0.01 155);
+  --secondary: oklch(0.2 0.02 155);
+  --secondary-foreground: oklch(0.98 0.005 155);
+  --muted: oklch(0.2 0.02 155);
+  --muted-foreground: oklch(0.65 0.02 155);
+  --accent: oklch(0.55 0.18 155);
+  --accent-foreground: oklch(0.98 0.01 155);
+  --destructive: oklch(0.5 0.2 25);
+  --destructive-foreground: oklch(0.98 0.01 0);
+  --border: oklch(0.25 0.02 155);
+  --input: oklch(0.25 0.02 155);
+  --ring: oklch(0.55 0.18 155);
+  --chart-1: oklch(0.42 0.15 155);
+  --chart-2: oklch(0.55 0.18 155);
+  --chart-3: oklch(0.65 0.12 155);
+  --chart-4: oklch(0.75 0.08 155);
+  --chart-5: oklch(0.85 0.04 155);
+  --sidebar: oklch(0.15 0.01 155);
+  --sidebar-foreground: oklch(0.98 0.005 155);
+  --sidebar-primary: oklch(0.55 0.18 155);
+  --sidebar-primary-foreground: oklch(0.98 0.01 155);
+  --sidebar-accent: oklch(0.2 0.02 155);
+  --sidebar-accent-foreground: oklch(0.98 0.005 155);
+  --sidebar-border: oklch(0.25 0.02 155);
+  --sidebar-ring: oklch(0.55 0.18 155);
 }
 
 @theme inline {
