@@ -254,7 +254,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
       >
         <GitCompare className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Trace Diff</h3>
-        <span className="ml-1.5 text-[10px] text-muted-foreground">regression.compare() in UI</span>
+        <span className="ml-1.5 text-[10px] text-muted-foreground">Compare two spans for regressions</span>
         <ChevronDown className={`w-3.5 h-3.5 ml-auto text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
