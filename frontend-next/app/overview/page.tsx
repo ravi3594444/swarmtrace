@@ -12,7 +12,7 @@ import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { FirstRunEmptyState, isFirstRun, markHasTraces } from '@/components/first-run-empty-state'
 import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
-import { filterTracesByRange } from '@/lib/trace-utils'
+import { filterTracesByRange, rangeStartMs } from '@/lib/trace-utils'
 import { tracesToCsv, downloadCsv, downloadJson } from '@/lib/csv-export'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { fetchOverview } from '@/lib/api'
@@ -26,6 +26,8 @@ import { useIntegrations } from '@/contexts/IntegrationsContext'
 import { chartTooltip } from '@/lib/chart-tooltip'
 
 type OverviewEvent = { timestamp: string; type: string; message: string }
+
+const RECENT_ACTIVITY_MS = 5 * 60 * 1000
 
 function EventRow({ type, message }: { type: string; message: string }) {
   const [expanded, setExpanded] = useState(false)
@@ -498,6 +500,7 @@ export default function OverviewPage() {
   const [events, setEvents] = useState<OverviewEvent[]>([])
   const [lastUpdated, setLastUpdated] = useState<Date | null>(null)
   const [truncated, setTruncated] = useState(false)
+  const [nowMs, setNowMs] = useState(() => Date.now())
 
   // Single source of truth for the time-windowed view: filter the polled
   // traces once by the selected range, then hand the filtered array to every
@@ -507,6 +510,15 @@ export default function OverviewPage() {
     () => filterTracesByRange(traces, range),
     [traces, range],
   )
+
+  const filteredEvents = useMemo(() => {
+    const start = rangeStartMs(range)
+    if (start == null) return events
+    return events.filter((e) => {
+      const ms = new Date(e.timestamp).getTime()
+      return Number.isFinite(ms) && ms >= start
+    })
+  }, [events, range])
 
   // Fetch overview data (activity chart + events feed). Tracks lastUpdated
   // for the PageHeader timestamp + manual refresh.
@@ -525,16 +537,27 @@ export default function OverviewPage() {
     return () => clearInterval(id)
   }, [])
 
-  // Derive unique agents from traces that have agent_id
+  // Keep relative "live"/"idle" status current even if no new trace
+  // arrives. This mirrors the polling cadence and avoids leaving an old
+  // activity badge marked LIVE forever.
+  useEffect(() => {
+    const id = setInterval(() => setNowMs(Date.now()), 30_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // Derive unique agents from the currently selected time range. Stats and
+  // charts already use filteredTraces; using all traces here made an old
+  // agent appear in the "Today" Live Activity card even when Today had
+  // zero traces.
   const activeAgents = useMemo(() => {
     const seen = new Map<string, string>()
-    traces.forEach((t) => {
+    filteredTraces.forEach((t) => {
       if (t.agent_id && !seen.has(t.agent_id)) {
         seen.set(t.agent_id, t.agent_name ?? t.agent_id)
       }
     })
     return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
-  }, [traces])
+  }, [filteredTraces])
 
   const [pickedAgent, setPickedAgent] = useState<string>('')
 
@@ -548,6 +571,26 @@ export default function OverviewPage() {
       : activeAgents[0]?.id ?? ''
 
   const hasRealtime = activeAgents.length > 0 && !!effectiveAgent
+
+  const latestFilteredTraceMs = useMemo(() => {
+    let latest: number | null = null
+    for (const t of filteredTraces) {
+      const ms = new Date(t.timestamp).getTime()
+      if (!Number.isFinite(ms)) continue
+      latest = latest == null ? ms : Math.max(latest, ms)
+    }
+    return latest
+  }, [filteredTraces])
+  const hasRecentActivity =
+    latestFilteredTraceMs != null && nowMs - latestFilteredTraceMs <= RECENT_ACTIVITY_MS
+  const overviewLiveStatus = hasRecentActivity
+    ? 'live'
+    : filteredTraces.length > 0 ? 'paused' : 'offline'
+  const activityBadge = hasRecentActivity
+    ? { label: 'LIVE', dot: 'bg-emerald-500 swarm-pulse' }
+    : filteredTraces.length > 0
+      ? { label: 'IDLE', dot: 'bg-amber-400' }
+      : { label: 'NO ACTIVITY', dot: 'bg-muted-foreground/50' }
 
   // First-run detection: if the user has never had traces (per localStorage),
   // show a rich onboarding empty state instead of the minimal "no traces" text.
@@ -594,7 +637,7 @@ export default function OverviewPage() {
       <PageHeader
         title="Overview"
         description="Live swarm health and execution summary"
-        liveStatus={isLive ? 'live' : 'paused'}
+        liveStatus={isLive ? overviewLiveStatus : 'paused'}
         lastUpdated={lastUpdated}
         onRefresh={loadOverview}
         actions={
@@ -654,14 +697,16 @@ export default function OverviewPage() {
               <div className="flex items-center gap-2">
                 <Info className="w-4 h-4 text-muted-foreground" />
                 <h3 className="text-sm font-semibold text-foreground">
-                  {hasRealtime ? 'Live Activity' : 'Live Events'}
+                  {hasRealtime
+                    ? hasRecentActivity ? 'Live Activity' : 'Agent Activity'
+                    : hasRecentActivity ? 'Live Events' : 'Events'}
                 </h3>
               </div>
               {hasRealtime && activeAgents.length > 1 ? (
                 <AgentPicker agents={activeAgents} selected={effectiveAgent} onSelect={setPickedAgent} />
               ) : (
                 <span className="text-[11px] text-muted-foreground flex items-center gap-1.5">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 swarm-pulse" />LIVE
+                  <span className={`w-1.5 h-1.5 rounded-full ${activityBadge.dot}`} />{activityBadge.label}
                 </span>
               )}
             </div>
@@ -675,15 +720,15 @@ export default function OverviewPage() {
               </div>
             ) : (
               <div className="divide-y divide-border/50 overflow-y-auto max-h-60">
-                {(events.length ? events : filteredTraces.slice(0, 6).map((t) => ({
+                {(filteredEvents.length ? filteredEvents : filteredTraces.slice(0, 6).map((t) => ({
                   timestamp: t.timestamp,
                   type: t.error ? 'ERROR' : 'INFO',
                   message: t.error ? `${t.function}: ${t.error}` : `${t.function} completed in ${(t.latency_sec ?? 0).toFixed(2)}s`,
                 }))).slice(0, 8).map((e, i) => (
                   <EventRow key={`${e.timestamp}-${i}`} type={e.type} message={e.message} />
                 ))}
-                {events.length === 0 && filteredTraces.length === 0 && (
-                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">No events yet</div>
+                {filteredEvents.length === 0 && filteredTraces.length === 0 && (
+                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">No events in this time range</div>
                 )}
               </div>
             )}

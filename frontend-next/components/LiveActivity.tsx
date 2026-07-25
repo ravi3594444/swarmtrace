@@ -215,7 +215,7 @@ export default function LiveActivity({ agentId, agentName }: Props) {
             {agentName ?? agentId}
           </span>
           <span className="text-xs text-muted-foreground">
-            {connected ? 'live' : 'connecting…'}
+            {connected ? 'listening' : 'connecting…'}
           </span>
         </div>
         <span className="text-xs text-muted-foreground">{events.length} events</span>
