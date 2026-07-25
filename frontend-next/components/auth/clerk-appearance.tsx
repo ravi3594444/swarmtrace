@@ -24,6 +24,11 @@ export const clerkAuthAppearance = {
     termsPageUrl: '/terms',
   },
   variables: {
+    // Card is always forced light (see AuthShell), so pin Clerk's own
+    // colorScheme too. Without this, Clerk auto-adapts to the OS/browser
+    // dark-mode preference and silently overrides our text colors below
+    // with its dark-theme whites — invisible on this light card.
+    colorScheme: 'light',
     colorPrimary: '#1a1a1a',
     colorText: '#1a1a1a',
     colorTextSecondary: '#5c5c5c',
