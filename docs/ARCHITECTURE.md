@@ -186,7 +186,7 @@ OTel-capable app/framework
   -> existing ingest path
 ```
 
-### 6.6 Dashboard architecture view
+### 6.6 Dashboard architecture and network views
 
 The Traces page has an **Architecture** view that turns the current filtered
 trace set into product-level architecture layers:
@@ -195,10 +195,21 @@ trace set into product-level architecture layers:
 Agents -> LLM -> Tools -> Retrieval -> Functions
 ```
 
-It is computed entirely from canonical fields (`kind`, `parent_id`, tokens,
-cost, latency, and error state), so it works for SDK, MCP, and OTLP spans
-without a provider-specific dashboard schema. Selecting a component opens the
-same trace detail panel used by the tree/table/waterfall views.
+The dashboard also exposes `/network`, a black desktop **Node Network Map** that
+uses `/api/graph` to render individual agent nodes and collaboration edges:
+
+```text
+agent node
+├── collaborationMode: solo | orchestrator | sub_agent | peer
+├── RAG badge from retrieval-like spans
+├── heatmap from tokens/cost/errors/retrieval usage
+└── connections from parent agent spans and shared trace/session context
+```
+
+Both views are computed entirely from canonical fields (`kind`, `agent_id`,
+`parent_id`, `trace_id`, `session_id`, tokens, cost, latency, and error state),
+so they work for SDK, MCP, and OTLP spans without a provider-specific dashboard
+schema.
 
 ## 7. Configuration ownership
 

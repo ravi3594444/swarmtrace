@@ -43,6 +43,18 @@ export async function fetchTraces() {
   }
 }
 
+export async function fetchGraph(since?: number | null) {
+  try {
+    const url = since != null ? `/api/graph?since=${since}` : '/api/graph'
+    const res = await fetch(url, { cache: 'no-store' })
+    if (!res.ok) { reportFetchError('agent graph', () => { fetchGraph(since) }); return null }
+    return res.json()
+  } catch {
+    reportFetchError('agent graph', () => { fetchGraph(since) })
+    return null
+  }
+}
+
 export async function fetchMetrics() {
   try {
     // cache: 'no-store' — always fresh. Staleness is managed by the

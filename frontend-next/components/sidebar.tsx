@@ -6,7 +6,7 @@ import { useState, useEffect } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
-  MessagesSquare, GitCompareArrows, Compass,
+  MessagesSquare, GitCompareArrows, Compass, GitBranch,
 } from 'lucide-react'
 import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 import { useOnboardingTour } from './onboarding/OnboardingTour'
@@ -39,6 +39,7 @@ const navGroups = [
     items: [
       { href: '/overview', label: 'Overview', icon: LayoutGrid },
       { href: '/agents',   label: 'Agents',   icon: Users },
+      { href: '/network',  label: 'Network',  icon: GitBranch },
       { href: '/traces',   label: 'Traces',   icon: ActivitySquare },
       { href: '/threads',  label: 'Threads',  icon: MessagesSquare },
     ],
