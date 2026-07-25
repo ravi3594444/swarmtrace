@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import type { Trace } from "@/lib/trace-types";
-import { Activity, Clock, Coins, Hash, Menu } from "lucide-react";
+import { Activity, Clock, Coins, Hash } from "lucide-react";
 import { UsageBreakdownDrawer } from "./UsageBreakdownDrawer";
 
 function StatCard({ label, value, unit, icon: Icon, trend, onMenuClick, menuLabel }: {
@@ -14,25 +14,24 @@ function StatCard({ label, value, unit, icon: Icon, trend, onMenuClick, menuLabe
   onMenuClick?: () => void;
   menuLabel?: string;
 }) {
+  // One icon badge per card, always. When a breakdown drawer is available
+  // the badge itself becomes the trigger (ring + hover state signal it's
+  // interactive) instead of bolting a second, unrelated menu icon next to it.
+  const badgeClass = `w-10 h-10 rounded-lg border border-border bg-muted/60 flex items-center justify-center shrink-0 transition-colors ${
+    onMenuClick ? "hover:bg-muted hover:border-zinc-300 cursor-pointer focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring" : ""
+  }`;
+  const iconEl = <Icon className="w-[18px] h-[18px] text-muted-foreground" />;
   return (
     <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md transition-[background-color,border-color,color,box-shadow] duration-200">
       <div className="flex items-start justify-between mb-4">
         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</div>
-        <div className="flex items-center gap-1.5">
-          {onMenuClick && (
-            <button
-              onClick={onMenuClick}
-              title={menuLabel}
-              aria-label={menuLabel}
-              className="w-8 h-8 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground hover:border-zinc-300 transition-colors"
-            >
-              <Menu className="w-4 h-4" />
-            </button>
-          )}
-          <div className="w-10 h-10 rounded-lg border border-border bg-muted/60 flex items-center justify-center shrink-0">
-            <Icon className="w-[18px] h-[18px] text-muted-foreground" />
-          </div>
-        </div>
+        {onMenuClick ? (
+          <button onClick={onMenuClick} title={menuLabel} aria-label={menuLabel} className={badgeClass}>
+            {iconEl}
+          </button>
+        ) : (
+          <div className={badgeClass}>{iconEl}</div>
+        )}
       </div>
       <div className="text-4xl font-bold tabular-nums text-foreground leading-none tracking-tight">
         {value}

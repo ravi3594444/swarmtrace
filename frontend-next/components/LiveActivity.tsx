@@ -222,7 +222,7 @@ export default function LiveActivity({ agentId, agentName }: Props) {
       </div>
 
       {/* Filter bar */}
-      <div className="flex gap-1 px-3 py-2 border-b border-border/50 shrink-0 overflow-x-auto">
+      <div className="flex gap-1 px-3 py-2 border-b border-border/50 shrink-0 overflow-x-auto scrollbar-thin">
         {(['all', 'browser', 'llm_token', 'http', 'file', 'screen_tick'] as const).map(f => (
           <button
             key={f}
@@ -240,7 +240,7 @@ export default function LiveActivity({ agentId, agentName }: Props) {
       </div>
 
       {/* Event list */}
-      <div className="flex-1 overflow-y-auto py-1">
+      <div className="flex-1 overflow-y-auto py-1 scrollbar-thin">
         {error ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <p className="text-sm text-red-500 dark:text-red-400 font-medium">Couldn&apos;t load agent activity</p>
@@ -248,7 +248,7 @@ export default function LiveActivity({ agentId, agentName }: Props) {
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-            {connected ? 'Waiting for agent activity…' : 'Connecting to Supabase Realtime…'}
+            {connected ? 'Waiting for agent activity…' : 'Connecting to live feed…'}
           </div>
         ) : (
           filtered.map(ev => <EventRow key={ev.id} ev={ev} onScreenshotClick={openLightbox} />)
