@@ -10,6 +10,7 @@ import { CallChainCrumbs } from '@/components/swarm/CallChainCrumbs'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { Waterfall } from '@/components/swarm/Waterfall'
 import { TraceTable } from '@/components/swarm/TraceTable'
+import { ExecutionArchitecture } from '@/components/swarm/ExecutionArchitecture'
 import type { Trace } from '@/lib/trace-types'
 import { buildSpanTree, countDescendants, hasTreeError, type SpanNode } from '@/lib/span-tree'
 import { tracesToCsv, downloadCsv, downloadJson } from '@/lib/csv-export'
@@ -21,7 +22,7 @@ import {
   Tag, Download, FileJson, FileText,
 } from 'lucide-react'
 
-type ViewMode = 'tree' | 'table' | 'waterfall'
+type ViewMode = 'tree' | 'architecture' | 'table' | 'waterfall'
 
 // ── Date helpers ────────────────────────────────────────────────────────────────
 
@@ -469,9 +470,10 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
 }
 
 const VIEW_BUTTONS: { mode: ViewMode; icon: typeof GitBranch; label: string }[] = [
-  { mode: 'tree',      icon: GitBranch, label: 'Tree' },
-  { mode: 'table',     icon: Table2,    label: 'Table' },
-  { mode: 'waterfall', icon: BarChart2, label: 'Waterfall' },
+  { mode: 'tree',         icon: GitBranch, label: 'Tree' },
+  { mode: 'architecture', icon: Activity,  label: 'Architecture' },
+  { mode: 'table',        icon: Table2,    label: 'Table' },
+  { mode: 'waterfall',    icon: BarChart2, label: 'Waterfall' },
 ]
 
 // ── Integration Panels ────────────────────────────────────────────────────────
@@ -708,6 +710,18 @@ export default function TracesPage() {
         <div className="px-6 pt-6">
           {isEnabled('scrapling') && scrapingCount > 0 && <ScrapingBanner count={scrapingCount} />}
           {isEnabled('tool-attention') && <ToolAttentionPanel traces={traces} />}
+        </div>
+      )}
+
+      {/* Architecture — full width, selectable components */}
+      {view === 'architecture' && (
+        <div className="p-6">
+          <ExecutionArchitecture traces={filtered} selected={selected} onSelect={setSelected} />
+          {selected && (
+            <div className="mt-4 rounded-xl border border-border bg-card overflow-hidden shadow-sm max-h-[50vh] overflow-y-auto">
+              <TraceDetail trace={selected} allTraces={traces} onClose={() => setSelected(null)} onJump={setSelected} />
+            </div>
+          )}
         </div>
       )}
 

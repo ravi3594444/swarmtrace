@@ -44,8 +44,13 @@ from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeou
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from typing import Iterator, List, Optional, Tuple
-from urllib.parse import urlparse
 
+from swarmtrace.config import (
+    configure_remote,
+    normalize_base_url,
+    resolve_remote_config,
+    validate_endpoint_scheme,
+)
 from swarmtrace.adapters.http_transport import HttpTransport
 from swarmtrace.adapters.sqlite_repository import SqliteRepository
 from swarmtrace.delivery.sender import Sender
@@ -72,6 +77,9 @@ _log = logging.getLogger("swarmtrace")
 # ---------------------------------------------------------------------------
 # Remote ingest configuration (lazy — env vars are read at call time)
 # ---------------------------------------------------------------------------
+# ``swarmtrace.config`` owns the actual config/validation rules. These private
+# aliases stay in tracer.py for backwards compatibility with older tests and
+# integrations that monkeypatch ``swarmtrace.tracer._api_key`` / ``_endpoint``.
 
 _api_key: Optional[str] = None
 _endpoint: Optional[str] = None
@@ -91,6 +99,7 @@ def init(
         _api_key = api_key
     if endpoint is not None:
         _endpoint = endpoint
+    configure_remote(api_key=api_key, endpoint=endpoint)
     if auto_instrument:
         from swarmtrace.auto_instrument import patch_all
         patch_all()
@@ -114,122 +123,28 @@ def init(
         _alerts_start(interval_seconds=alert_interval_seconds)
 
 
-    # Scheme enforcement (audit finding #5): refuse to send the API key
-    # over plaintext HTTP to non-localhost hosts. Returns "" for the URL
-    # when invalid, which causes the worker to skip sending — matching
-    # the "no endpoint configured" path. The warning is logged every call
-    # (the worker only calls this every ~2s on batch flush, so it's not
-    # log-spam); the user fixes their config to silence it.
-
 def _remote_config() -> tuple[str, str]:
+    """Compatibility wrapper around :func:`swarmtrace.config.remote_config`.
+
+    The actual config rules live in ``config.py`` so the runtime and optional
+    modules do not need to import private tracer internals. ``tracer.py`` still
+    exposes this private helper because older tests and integrations patch it.
+    """
+    if _api_key is None and _endpoint is None:
+        return resolve_remote_config()
     key = _api_key if _api_key is not None else os.environ.get("SWARMTRACE_API_KEY", "")
-    raw_url = _endpoint if _endpoint is not None else os.environ.get("SWARMTRACE_ENDPOINT", "")
-    ok, reason = _validate_endpoint_scheme(raw_url)
-    if not ok:
-        _log.warning("SWARMTRACE_ENDPOINT insecure — refusing to send traces: %s", reason)
-        return key, ""
-    return key, _normalize_base_url(raw_url)
+    endpoint = _endpoint if _endpoint is not None else os.environ.get("SWARMTRACE_ENDPOINT", "")
+    return resolve_remote_config(api_key_override=key, endpoint_override=endpoint)
 
 
 def _validate_endpoint_scheme(url: str) -> tuple[bool, str]:
-    """Check whether *url* is safe to send the API key to.
-
-    Returns ``(ok, reason)``. ``ok=True`` means safe (or empty — no
-    endpoint configured). ``ok=False`` means the URL would leak the API
-    key; ``reason`` is a human-readable explanation for the log warning.
-
-    Rules:
-      - Empty URL → ok (means no endpoint configured; worker will skip).
-      - ``https://`` → ok (any host).
-      - ``http://`` → ok ONLY for ``localhost``, ``127.0.0.1``, ``::1``
-        (local dev / testing).
-      - ``http://`` to anything else → rejected.
-      - Any other scheme (``ftp://``, ``file://``, etc.) → rejected.
-      - No scheme at all → rejected (ambiguous — could be either).
-
-    Audit finding #5: previously ``_normalize_base_url`` accepted any
-    string, so ``SWARMTRACE_ENDPOINT=http://example.com`` would silently
-    send the API key over plaintext HTTP with zero warning.
-    """
-    if not url:
-        return True, ""
-
-    parsed = urlparse(url)
-    scheme = (parsed.scheme or "").lower()
-    hostname = (parsed.hostname or "").lower()
-
-    if scheme == "https":
-        return True, ""
-
-    if scheme == "http":
-        # Allow localhost variants for local dev / testing.
-        # Note: this is intentionally narrow — only the canonical localhost
-        # names. RFC1918 IPs (192.168.x.x, 10.x.x.x, etc.) are NOT allowed
-        # because they're often used for internal services that may not be
-        # as trusted as a dev loopback. Users who need that can set up HTTPS
-        # locally (mkcert, caddy, etc.).
-        if hostname in ("localhost", "127.0.0.1", "::1"):
-            return True, ""
-        return False, (
-            f"http:// to non-localhost host '{hostname}' would send the "
-            f"API key over plaintext HTTP. Use https://, or set "
-            f"SWARMTRACE_ENDPOINT=http://localhost:... for local dev."
-        )
-
-    return False, (
-        f"unsupported scheme '{scheme or '(none)'}://' — only https:// "
-        f"(any host) and http:// (localhost only) are allowed."
-    )
+    """Compatibility alias for ``swarmtrace.config.validate_endpoint_scheme``."""
+    return validate_endpoint_scheme(url)
 
 
 def _normalize_base_url(url: str) -> str:
-    """Normalize the endpoint URL so it works whether the user set it with
-    or without a trailing /api.
-
-    Users set SWARMTRACE_ENDPOINT in different ways:
-        https://app.vercel.app
-        https://app.vercel.app/
-        https://app.vercel.app/api
-        https://app.vercel.app/api/
-
-    All four should work. We strip surrounding whitespace and trailing
-    slashes and a trailing /api, then callers append the full path
-    (/api/ingest, /api/events, etc.).
-
-    Note: scheme validation happens in _validate_endpoint_scheme (called
-    from _remote_config), NOT here. This function is purely about path
-    normalization — it doesn't second-guess whether the URL is safe.
-
-    Edge cases handled (audit finding #9):
-      - Repeated slashes before the suffix, e.g. ``.../api//`` or
-        ``...//api/`` (a plausible copy-paste typo) — previously left a
-        stray trailing slash after stripping ``/api`` (only the OUTER
-        slashes were stripped by the single ``rstrip("/")``, so a doubled
-        slash immediately before ``api`` survived the ``[:-4]`` cut). Now
-        re-strips trailing slashes after removing the suffix.
-      - Case: ``.../API`` (or ``/Api``, etc.) — previously not recognized
-        as the suffix at all (plain ``str.endswith`` is case-sensitive),
-        so the stray ``/API`` segment survived and calling code would
-        build a doubled, wrong path like ``.../API/api/ingest``. Matched
-        case-insensitively nowing (o, while the RETAINED portion of the URL
-        keeps its original casnly the recognized ``/api`` suffix
-        itself is stripped, not lowercased-and-compared-then-reinserted).
-      - Leading/trailing whitespace (e.g. a trailing newline or space from
-        an env var set via a shell heredoc or `.env` file) is now trimmed.
-
-    Known remaining limitation, NOT handled (documented rather than
-    fixed — a query string or fragment in the endpoint URL is not a
-    realistic configuration for this env var, so it isn't worth the
-    complexity of full URL parsing here): ``https://host/api?x=1`` will
-    NOT have ``/api`` recognized as the suffix (the string doesn't end in
-    ``/api``), so the ``?x=1`` survives into the "normalized" base and
-    breaks subsequent path concatenation. Don't put a query string or
-    fragment in SWARMTRACE_ENDPOINT.
-    """
-    s = url.strip().rstrip("/")
-    if s[-4:].casefold() == "/api":
-        s = s[:-4].rstrip("/")
-    return s
+    """Compatibility alias for ``swarmtrace.config.normalize_base_url``."""
+    return normalize_base_url(url)
 
 
 # ---------------------------------------------------------------------------

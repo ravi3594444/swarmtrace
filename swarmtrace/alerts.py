@@ -600,8 +600,8 @@ def start(*, interval_seconds: int = 60) -> None:
         return
     # Pull API key / endpoint lazily so values set after import are honoured.
     try:
-        from swarmtrace.tracer import _remote_config
-        key, endpoint = _remote_config()
+        from swarmtrace.config import remote_config
+        key, endpoint = remote_config()
     except Exception:
         key, endpoint = "", ""
     _runner = AlertRunner(

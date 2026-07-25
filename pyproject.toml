@@ -41,8 +41,9 @@ swarmtrace-resync = "swarmtrace.cli:main_resync"
 swarmtrace-gateway = "swarmtrace.gateway_cli:main"
 swarmtrace-otlp = "swarmtrace.otlp:main"
 
-[tool.setuptools]
-packages = ["swarmtrace"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["swarmtrace*"]
 
 [tool.setuptools.package-data]
 swarmtrace = ["py.typed"]
