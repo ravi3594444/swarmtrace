@@ -49,9 +49,10 @@ SwarmTrace is organized around a small ports-and-adapters core: public APIs and
 protocol ingress (`@observe`, `run()`/`span()`, MCP, OTLP) create canonical
 `SpanRecord`s, the runtime persists them locally, and delivery adapters batch
 them to the dashboard when remote ingest is configured. The dashboard includes a
-black **Node Network Map** that renders individual agent nodes, collaboration
-mode (solo / orchestrator / sub-agent / peer), per-agent RAG badges, and live
-connection lines from trace context. The Traces page also includes an
+charcoal **Node Network Map** that renders individual agent nodes, collaboration
+mode (solo / orchestrator / sub-agent / peer), per-agent RAG badges, a
+RAG/Obsidian focus toggle, heat intensity, and realtime connection lines from
+trace context. The Traces page also includes an
 **Architecture** view for kind-level span layers. See
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the module map, dependency
 rules, data flows, and extension guidelines.

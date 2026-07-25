@@ -40,26 +40,26 @@ type PositionedEdge = AgentGraphEdge & {
 const MODE_STYLE: Record<CollaborationMode, { label: string; color: string; glow: string; target: { x: number; y: number } }> = {
   orchestrator: {
     label: 'Orchestrator',
-    color: '#38bdf8',
-    glow: 'rgba(56, 189, 248, 0.75)',
+    color: '#ffffff',
+    glow: 'rgba(255, 255, 255, 0.55)',
     target: { x: WIDTH * 0.48, y: HEIGHT * 0.44 },
   },
   sub_agent: {
     label: 'Sub-agent',
-    color: '#8b5cf6',
-    glow: 'rgba(139, 92, 246, 0.72)',
+    color: '#c6c6c7',
+    glow: 'rgba(198, 198, 199, 0.42)',
     target: { x: WIDTH * 0.58, y: HEIGHT * 0.54 },
   },
   peer: {
     label: 'Peer',
-    color: '#22d3ee',
-    glow: 'rgba(34, 211, 238, 0.68)',
+    color: '#8e9192',
+    glow: 'rgba(142, 145, 146, 0.35)',
     target: { x: WIDTH * 0.38, y: HEIGHT * 0.56 },
   },
   solo: {
     label: 'Solo',
-    color: '#64748b',
-    glow: 'rgba(100, 116, 139, 0.5)',
+    color: '#444748',
+    glow: 'rgba(142, 145, 146, 0.24)',
     target: { x: WIDTH * 0.68, y: HEIGHT * 0.36 },
   },
 }
@@ -100,7 +100,7 @@ function layoutGraph(graph: AgentNetworkGraph): { nodes: PositionedNode[]; edges
       x: style.target.x + Math.cos(angle) * ring + jitter(seed, 70),
       y: style.target.y + Math.sin(angle) * ring + jitter(seed >> 8, 70),
       r: nodeRadius(node),
-      color: node.errors > 0 ? '#fb7185' : style.color,
+      color: node.errors > 0 ? '#ffb4ab' : style.color,
       heat: nodeHeat(node),
     }
   })
@@ -181,22 +181,22 @@ function formatMode(mode: CollaborationMode) {
 }
 
 function modePillClass(mode: CollaborationMode) {
-  if (mode === 'orchestrator') return 'border-sky-400/40 bg-sky-400/10 text-sky-200'
-  if (mode === 'sub_agent') return 'border-violet-400/40 bg-violet-400/10 text-violet-200'
-  if (mode === 'peer') return 'border-cyan-400/40 bg-cyan-400/10 text-cyan-200'
-  return 'border-slate-400/30 bg-slate-400/10 text-slate-200'
+  if (mode === 'orchestrator') return 'border-white bg-white text-black'
+  if (mode === 'sub_agent') return 'border-[#c6c6c7]/50 bg-[#c6c6c7]/10 text-[#e5e2e1]'
+  if (mode === 'peer') return 'border-[#8e9192]/50 bg-[#8e9192]/10 text-[#c4c7c8]'
+  return 'border-[#444748] bg-[#201f1f] text-[#8e9192]'
 }
 
 function EmptyNetwork() {
   return (
-    <div className="flex min-h-[620px] items-center justify-center rounded-[2rem] border border-white/10 bg-black/70 text-center shadow-2xl">
+    <div className="flex min-h-[620px] items-center justify-center rounded-[2rem] border border-[#333333] bg-[#0e0e0e] text-center">
       <div className="max-w-md px-8">
-        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-cyan-400/30 bg-cyan-400/10 shadow-[0_0_45px_rgba(34,211,238,0.35)]">
-          <Radio className="h-7 w-7 text-cyan-200" />
+        <div className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-2xl border border-white/30 bg-white/10">
+          <Radio className="h-7 w-7 text-white" />
         </div>
         <h2 className="text-2xl font-semibold text-white">No agent network yet</h2>
-        <p className="mt-2 text-sm leading-6 text-slate-400">
-          Run agents with <code className="rounded bg-white/10 px-1 py-0.5 text-cyan-100">@observe</code>,
+        <p className="mt-2 text-sm leading-6 text-[#8e9192]">
+          Run agents with <code className="rounded bg-white/10 px-1 py-0.5 text-white">@observe</code>,
           nested sub-agents, tools, or retrieval spans. SwarmTrace will draw the live collaboration map here.
         </p>
       </div>
@@ -222,6 +222,7 @@ export function NodeNetworkMap({
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [showHeatmap, setShowHeatmap] = useState(true)
   const [showLines, setShowLines] = useState(true)
+  const [graphMode, setGraphMode] = useState<'swarm' | 'rag'>('swarm')
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
@@ -242,44 +243,57 @@ export function NodeNetworkMap({
   if (nodes.length === 0) return <EmptyNetwork />
 
   return (
-    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <div className="relative min-h-[720px] overflow-hidden rounded-[2rem] border border-white/10 bg-[#020817] shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(59,130,246,0.18),transparent_34%),radial-gradient(circle_at_78%_28%,rgba(14,165,233,0.12),transparent_24%),radial-gradient(circle_at_22%_72%,rgba(139,92,246,0.13),transparent_25%),linear-gradient(180deg,#030712,#020617_52%,#000)]" />
-        <div className="absolute inset-0 opacity-[0.16] [background-image:linear-gradient(rgba(148,163,184,0.12)_1px,transparent_1px),linear-gradient(90deg,rgba(148,163,184,0.12)_1px,transparent_1px)] [background-size:34px_34px]" />
-        <div className="absolute inset-0 opacity-30 [background-image:radial-gradient(circle_at_center,rgba(56,189,248,0.22)_0,transparent_34%)]" />
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_380px]">
+      <div className="relative min-h-[720px] overflow-hidden rounded-[2rem] border border-[#333333] bg-[#0a0a0a]">
+        <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,rgba(255,255,255,0.10),transparent_34%),radial-gradient(circle_at_78%_28%,rgba(198,198,199,0.08),transparent_24%),radial-gradient(circle_at_22%_72%,rgba(142,145,146,0.09),transparent_25%),linear-gradient(180deg,#0e0e0e,#0a0a0a_52%,#000)]" />
+        <div className="absolute inset-0 opacity-[0.14] [background-image:linear-gradient(rgba(255,255,255,0.10)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.10)_1px,transparent_1px)] [background-size:34px_34px]" />
+        <div className="absolute inset-0 opacity-25 [background-image:radial-gradient(circle_at_center,rgba(255,255,255,0.16)_0,transparent_34%)]" />
 
         <div className="absolute left-5 right-5 top-5 z-20 flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-semibold tracking-tight text-white">Node Network Map</h2>
-              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200">
+              <span className="rounded-full border border-white/30 bg-white/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#e5e2e1]">
                 {isLive ? 'Live' : 'Paused'}
               </span>
               {truncated && (
-                <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200">
+                <span className="rounded-full border border-[#777777] bg-[#201f1f] px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-[#c4c7c8]">
                   partial
                 </span>
               )}
             </div>
-            <p className="mt-1 flex items-center gap-2 text-sm text-slate-400">
+            <p className="mt-1 flex items-center gap-2 text-sm text-[#8e9192]">
               <Move className="h-4 w-4" /> Drag to pan · scroll to zoom · click any agent node
             </p>
           </div>
 
-          <div className="flex items-center gap-2 rounded-2xl border border-white/10 bg-black/30 p-1.5 backdrop-blur-xl">
-            <button onClick={() => setZoom((z) => clamp(z + 0.12, 0.55, 2.2))} className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10" title="Zoom in">
+          <div className="flex flex-wrap items-center gap-2 rounded-2xl border border-[#333333] bg-[#121212]/80 p-1.5 backdrop-blur-xl">
+            <div className="flex rounded-full border border-[#333333] bg-[#0e0e0e] p-1">
+              {(['swarm', 'rag'] as const).map((mode) => (
+                <button
+                  key={mode}
+                  onClick={() => setGraphMode(mode)}
+                  className={`rounded-full px-3 py-1.5 text-[10px] font-bold uppercase tracking-[0.18em] transition ${
+                    graphMode === mode ? 'bg-white text-black' : 'text-[#8e9192] hover:text-white'
+                  }`}
+                >
+                  {mode === 'swarm' ? 'Swarm' : 'RAG / Obsidian'}
+                </button>
+              ))}
+            </div>
+            <button onClick={() => setZoom((z) => clamp(z + 0.12, 0.55, 2.2))} className="rounded-xl border border-[#333333] bg-[#201f1f] p-2 text-[#e5e2e1] hover:border-white/60 hover:bg-[#2a2a2a]" title="Zoom in">
               <ZoomIn className="h-4 w-4" />
             </button>
-            <button onClick={() => setZoom((z) => clamp(z - 0.12, 0.55, 2.2))} className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10" title="Zoom out">
+            <button onClick={() => setZoom((z) => clamp(z - 0.12, 0.55, 2.2))} className="rounded-xl border border-[#333333] bg-[#201f1f] p-2 text-[#e5e2e1] hover:border-white/60 hover:bg-[#2a2a2a]" title="Zoom out">
               <ZoomOut className="h-4 w-4" />
             </button>
-            <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-xs font-semibold text-slate-200 hover:bg-white/10">
+            <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} className="rounded-xl border border-[#333333] bg-[#201f1f] px-3 py-2 text-xs font-semibold text-[#e5e2e1] hover:border-white/60 hover:bg-[#2a2a2a]">
               Reset
             </button>
-            <button onClick={onRefresh} className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10" title="Refresh graph">
+            <button onClick={onRefresh} className="rounded-xl border border-[#333333] bg-[#201f1f] p-2 text-[#e5e2e1] hover:border-white/60 hover:bg-[#2a2a2a]" title="Refresh graph">
               <RefreshCw className="h-4 w-4" />
             </button>
-            <button onClick={onToggleLive} className="rounded-xl border border-white/10 bg-white/5 p-2 text-slate-200 hover:bg-white/10" title={isLive ? 'Pause live updates' : 'Resume live updates'}>
+            <button onClick={onToggleLive} className="rounded-xl border border-[#333333] bg-[#201f1f] p-2 text-[#e5e2e1] hover:border-white/60 hover:bg-[#2a2a2a]" title={isLive ? 'Pause live updates' : 'Resume live updates'}>
               {isLive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
             </button>
           </div>
@@ -289,10 +303,10 @@ export function NodeNetworkMap({
           <button
             onClick={() => setShowHeatmap((value) => !value)}
             className={`flex w-36 items-center gap-3 rounded-2xl border px-3 py-3 text-left text-xs font-semibold backdrop-blur-xl transition ${
-              showHeatmap ? 'border-orange-400/50 bg-orange-400/10 text-orange-100 shadow-[0_0_30px_rgba(251,146,60,0.25)]' : 'border-white/10 bg-black/35 text-slate-300'
+              showHeatmap ? 'border-white/60 bg-white text-black' : 'border-[#333333] bg-[#121212]/80 text-[#c4c7c8]'
             }`}
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-orange-300/40 bg-orange-400/10">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#333333] bg-[#201f1f]">
               <Flame className="h-4 w-4" />
             </span>
             Heatmap
@@ -300,10 +314,10 @@ export function NodeNetworkMap({
           <button
             onClick={() => setShowLines((value) => !value)}
             className={`flex w-36 items-center gap-3 rounded-2xl border px-3 py-3 text-left text-xs font-semibold backdrop-blur-xl transition ${
-              showLines ? 'border-emerald-400/50 bg-emerald-400/10 text-emerald-100 shadow-[0_0_30px_rgba(16,185,129,0.25)]' : 'border-white/10 bg-black/35 text-slate-300'
+              showLines ? 'border-white/60 bg-white text-black' : 'border-[#333333] bg-[#121212]/80 text-[#c4c7c8]'
             }`}
           >
-            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-emerald-300/40 bg-emerald-400/10">
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-[#333333] bg-[#201f1f]">
               <SlidersHorizontal className="h-4 w-4" />
             </span>
             Connections
@@ -342,9 +356,9 @@ export function NodeNetworkMap({
               </feMerge>
             </filter>
             <radialGradient id="heatGradient">
-              <stop offset="0%" stopColor="#f97316" stopOpacity="0.38" />
-              <stop offset="48%" stopColor="#f59e0b" stopOpacity="0.13" />
-              <stop offset="100%" stopColor="#f97316" stopOpacity="0" />
+              <stop offset="0%" stopColor="#ffffff" stopOpacity="0.32" />
+              <stop offset="48%" stopColor="#c6c6c7" stopOpacity="0.10" />
+              <stop offset="100%" stopColor="#ffffff" stopOpacity="0" />
             </radialGradient>
           </defs>
 
@@ -360,9 +374,25 @@ export function NodeNetworkMap({
               />
             ))}
 
+            {graphMode === 'rag' && nodes.filter((node) => node.ragSpans > 0).flatMap((node) => {
+              const count = Math.min(node.ragSpans, 7)
+              return Array.from({ length: count }).map((_, idx) => {
+                const angle = (idx / count) * Math.PI * 2 + (hashNumber(node.id) % 90) / 57
+                const radius = node.r + 44 + (idx % 2) * 12
+                const x = node.x + Math.cos(angle) * radius
+                const y = node.y + Math.sin(angle) * radius
+                return (
+                  <g key={`rag-${node.id}-${idx}`} opacity={highlighted && highlighted.id !== node.id ? 0.34 : 0.92}>
+                    <line x1={node.x} y1={node.y} x2={x} y2={y} stroke="#c6c6c7" strokeOpacity="0.28" strokeWidth="0.9" strokeDasharray="3 7" />
+                    <rect x={x - 4.5} y={y - 4.5} width="9" height="9" rx="2" fill="#e5e2e1" opacity="0.9" />
+                  </g>
+                )
+              })
+            })}
+
             {showLines && edges.map((edge) => {
               const isActive = connectedIds.has(edge.source) && connectedIds.has(edge.target)
-              const stroke = edge.relation === 'orchestrates' ? '#60a5fa' : '#64748b'
+              const stroke = edge.relation === 'orchestrates' ? '#ffffff' : '#777777'
               return (
                 <line
                   key={edge.id}
@@ -381,7 +411,7 @@ export function NodeNetworkMap({
             {nodes.map((node) => {
               const active = selected?.id === node.id
               const hoveredNode = hoveredId === node.id
-              const dimmed = highlighted && !connectedIds.has(node.id)
+              const dimmed = (highlighted && !connectedIds.has(node.id)) || (graphMode === 'rag' && node.ragSpans === 0)
               const style = MODE_STYLE[node.collaborationMode]
               return (
                 <g
@@ -401,17 +431,17 @@ export function NodeNetworkMap({
                     filter="url(#nodeGlow)"
                   />
                   {node.status === 'RUNNING' && (
-                    <circle cx={node.x} cy={node.y} r={node.r + 9} fill="none" stroke="#34d399" strokeOpacity="0.5" strokeWidth="1.4" />
+                    <circle cx={node.x} cy={node.y} r={node.r + 9} fill="none" stroke="#ffffff" strokeOpacity="0.5" strokeWidth="1.4" />
                   )}
                   {node.ragSpans > 0 && (
-                    <circle cx={node.x} cy={node.y} r={node.r + 5} fill="none" stroke="#34d399" strokeOpacity="0.9" strokeWidth="2" />
+                    <circle cx={node.x} cy={node.y} r={node.r + 5} fill="none" stroke="#ffffff" strokeOpacity="0.9" strokeWidth="2" />
                   )}
                   <circle
                     cx={node.x}
                     cy={node.y}
                     r={node.r}
                     fill={node.color}
-                    stroke={active ? '#ffffff' : node.errors > 0 ? '#fecdd3' : '#bfdbfe'}
+                    stroke={active ? '#ffffff' : node.errors > 0 ? '#ffdad6' : '#c6c6c7'}
                     strokeOpacity={active ? 0.95 : 0.55}
                     strokeWidth={active ? 2.5 : 1.2}
                     filter="url(#nodeGlow)"
@@ -425,13 +455,13 @@ export function NodeNetworkMap({
                         width="128"
                         height="42"
                         rx="14"
-                        fill="rgba(2, 6, 23, 0.82)"
-                        stroke="rgba(148, 163, 184, 0.28)"
+                        fill="rgba(14, 14, 14, 0.88)"
+                        stroke="rgba(255, 255, 255, 0.22)"
                       />
                       <text x={node.x} y={node.y + node.r + 28} textAnchor="middle" className="fill-white text-[12px] font-semibold">
                         {node.label.slice(0, 18)}
                       </text>
-                      <text x={node.x} y={node.y + node.r + 43} textAnchor="middle" className="fill-slate-400 text-[10px]">
+                      <text x={node.x} y={node.y + node.r + 43} textAnchor="middle" className="fill-[#8e9192] text-[10px]">
                         {formatMode(node.collaborationMode)}{node.ragSpans > 0 ? ' · RAG' : ''}
                       </text>
                     </g>
@@ -449,22 +479,22 @@ export function NodeNetworkMap({
             { label: 'RAG agents', value: graph.summary.ragAgents.toLocaleString() },
             { label: 'Cost', value: formatCost(graph.summary.totalCost) },
           ].map((item) => (
-            <div key={item.label} className="rounded-2xl border border-white/10 bg-black/35 px-4 py-3 backdrop-blur-xl">
-              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-slate-500">{item.label}</div>
+            <div key={item.label} className="rounded-2xl border border-[#333333] bg-[#121212]/80 px-4 py-3 backdrop-blur-xl">
+              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-[#777777]">{item.label}</div>
               <div className="mt-1 font-mono text-xl font-bold text-white">{item.value}</div>
             </div>
           ))}
         </div>
       </div>
 
-      <aside className="rounded-[2rem] border border-white/10 bg-[#050b18] p-5 text-slate-100 shadow-[0_30px_100px_rgba(0,0,0,0.45)]">
+      <aside className="rounded-[2rem] border border-[#333333] bg-[#0e0e0e] p-5 text-[#e5e2e1]">
         {selected && (
           <div className="space-y-5">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="text-[10px] font-bold uppercase tracking-[0.26em] text-cyan-300">Selected Agent</div>
+                <div className="text-[10px] font-bold uppercase tracking-[0.26em] text-[#c6c6c7]">Selected Agent</div>
                 <h3 className="mt-2 truncate text-2xl font-semibold text-white">{selected.label}</h3>
-                <p className="mt-1 break-all font-mono text-[11px] text-slate-500">{selected.id}</p>
+                <p className="mt-1 break-all font-mono text-[11px] text-[#777777]">{selected.id}</p>
               </div>
               <span className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${modePillClass(selected.collaborationMode)}`}>
                 {formatMode(selected.collaborationMode)}
@@ -472,11 +502,11 @@ export function NodeNetworkMap({
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${selected.status === 'ERROR' ? 'border-red-400/40 bg-red-400/10 text-red-200' : selected.status === 'RUNNING' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-slate-400/30 bg-slate-400/10 text-slate-300'}`}>
+              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${selected.status === 'ERROR' ? 'border-[#ffb4ab]/40 bg-[#ffb4ab]/10 text-[#ffdad6]' : selected.status === 'RUNNING' ? 'border-white/40 bg-white/10 text-white' : 'border-[#444748] bg-[#201f1f] text-[#c4c7c8]'}`}>
                 {selected.status}
               </span>
               {selected.ragSpans > 0 && (
-                <span className="rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-200">
+                <span className="rounded-full border border-white/40 bg-white/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-white">
                   RAG · {selected.ragSpans}
                 </span>
               )}
@@ -496,30 +526,30 @@ export function NodeNetworkMap({
                 { label: 'LLM', value: selected.llmSpans.toLocaleString() },
                 { label: 'Tools', value: selected.toolSpans.toLocaleString() },
               ].map((item) => (
-                <div key={item.label} className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">{item.label}</div>
+                <div key={item.label} className="rounded-2xl border border-[#333333] bg-[#121212] p-4">
+                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#777777]">{item.label}</div>
                   <div className="mt-1 font-mono text-lg font-bold text-white">{item.value}</div>
                 </div>
               ))}
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
-              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Last activity</div>
-              <div className="mt-1 text-sm text-slate-200">
+            <div className="rounded-2xl border border-[#333333] bg-[#121212] p-4">
+              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#777777]">Last activity</div>
+              <div className="mt-1 text-sm text-[#e5e2e1]">
                 {selected.lastActive ? formatRelativeTime(selected.lastActive) : 'unknown'}
               </div>
               <div className="mt-2 h-2 rounded-full bg-white/10">
                 <div
-                  className="h-full rounded-full bg-gradient-to-r from-cyan-400 via-blue-500 to-violet-500"
+                  className="h-full rounded-full bg-gradient-to-r from-[#777777] via-[#c6c6c7] to-white"
                   style={{ width: `${clamp((selected.spans / Math.max(...nodes.map((node) => node.spans), 1)) * 100, 8, 100)}%` }}
                 />
               </div>
             </div>
 
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-4">
+            <div className="rounded-2xl border border-[#333333] bg-[#121212] p-4">
               <div className="mb-3 flex items-center justify-between">
-                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-slate-500">Connections</div>
-                <span className="text-xs text-slate-500">{edges.filter((edge) => edge.source === selected.id || edge.target === selected.id).length}</span>
+                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-[#777777]">Connections</div>
+                <span className="text-xs text-[#777777]">{edges.filter((edge) => edge.source === selected.id || edge.target === selected.id).length}</span>
               </div>
               <div className="space-y-2">
                 {edges.filter((edge) => edge.source === selected.id || edge.target === selected.id).slice(0, 8).map((edge) => {
@@ -528,18 +558,18 @@ export function NodeNetworkMap({
                     <button
                       key={edge.id}
                       onClick={() => setSelectedId(other.id)}
-                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left transition hover:border-cyan-400/30 hover:bg-cyan-400/5"
+                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-white/10 bg-black/20 px-3 py-2 text-left transition hover:border-white/50 hover:bg-white/5"
                     >
                       <div className="min-w-0">
                         <div className="truncate text-xs font-semibold text-white">{other.label}</div>
-                        <div className="text-[10px] text-slate-500">{edge.relation} · {edge.calls} call{edge.calls === 1 ? '' : 's'}</div>
+                        <div className="text-[10px] text-[#777777]">{edge.relation} · {edge.calls} call{edge.calls === 1 ? '' : 's'}</div>
                       </div>
-                      <span className={`h-2.5 w-2.5 rounded-full ${other.errors > 0 ? 'bg-red-400' : 'bg-cyan-300'}`} />
+                      <span className={`h-2.5 w-2.5 rounded-full ${other.errors > 0 ? 'bg-[#ffb4ab]' : 'bg-white'}`} />
                     </button>
                   )
                 })}
                 {edges.filter((edge) => edge.source === selected.id || edge.target === selected.id).length === 0 && (
-                  <div className="rounded-xl border border-dashed border-white/10 px-3 py-5 text-center text-xs text-slate-500">
+                  <div className="rounded-xl border border-dashed border-white/10 px-3 py-5 text-center text-xs text-[#777777]">
                     No collaboration edges for this agent in the current range.
                   </div>
                 )}
@@ -548,7 +578,7 @@ export function NodeNetworkMap({
 
             <Link
               href="/traces"
-              className="block rounded-2xl border border-cyan-400/40 bg-cyan-400/10 px-4 py-3 text-center text-sm font-semibold text-cyan-100 transition hover:bg-cyan-400/20"
+              className="block rounded-2xl border border-white bg-white px-4 py-3 text-center text-sm font-semibold text-black transition hover:bg-[#e2e2e2]"
             >
               View trace details
             </Link>

@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTraceRealtime } from '@/contexts/RealtimeContext'
 import type { AgentNetworkGraph } from './agent-network'
 import { fetchSwarmGraph } from './swarm-api'
 import type { TimeRangeKey } from './trace-utils'
@@ -22,14 +23,14 @@ const EMPTY_GRAPH: AgentNetworkGraph = {
   },
 }
 
-export function useAgentGraph(range: TimeRangeKey, pollMs = 8000) {
+export function useAgentGraph(range: TimeRangeKey) {
   const [graph, setGraph] = useState<AgentNetworkGraph>(EMPTY_GRAPH)
   const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isLive, setIsLive] = useState(true)
-  const interval = useRef<ReturnType<typeof setInterval> | null>(null)
   const mounted = useRef(true)
   const reqId = useRef(0)
+  const realtime = useTraceRealtime(isLive)
 
   const load = useCallback(async () => {
     const id = ++reqId.current
@@ -47,19 +48,17 @@ export function useAgentGraph(range: TimeRangeKey, pollMs = 8000) {
   }, [load])
 
   useEffect(() => {
-    if (interval.current) clearInterval(interval.current)
-    if (isLive) {
-      load()
-      interval.current = setInterval(load, pollMs)
-    }
-    return () => { if (interval.current) clearInterval(interval.current) }
-  }, [isLive, load, pollMs])
+    if (!isLive || realtime.version === 0) return
+    load()
+  }, [isLive, load, realtime.version])
 
   return {
     graph,
     truncated,
     loading,
     isLive,
+    realtimeConnected: realtime.connected,
+    realtimeError: realtime.error,
     refresh: load,
     toggleLive: () => setIsLive((value) => !value),
   }

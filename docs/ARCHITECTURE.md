@@ -195,15 +195,16 @@ trace set into product-level architecture layers:
 Agents -> LLM -> Tools -> Retrieval -> Functions
 ```
 
-The dashboard also exposes `/network`, a black desktop **Node Network Map** that
-uses `/api/graph` to render individual agent nodes and collaboration edges:
+The dashboard also exposes `/network`, a charcoal desktop **Node Network Map**
+that uses `/api/graph` to render individual agent nodes and collaboration edges:
 
 ```text
 agent node
 ├── collaborationMode: solo | orchestrator | sub_agent | peer
 ├── RAG badge from retrieval-like spans
-├── heatmap from tokens/cost/errors/retrieval usage
-└── connections from parent agent spans and shared trace/session context
+├── RAG/Obsidian focus mode from retrieval-like spans
+├── heat intensity from tokens/cost/errors/retrieval usage
+└── realtime connections from parent agent spans and shared trace/session context
 ```
 
 Both views are computed entirely from canonical fields (`kind`, `agent_id`,

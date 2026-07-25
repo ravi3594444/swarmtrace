@@ -58,6 +58,13 @@ interface AgentChannel {
   subscribers: number   // ref-count so we know when to *stop* garbage-collecting
 }
 
+interface TraceChannel {
+  channel: RealtimeChannel | null
+  connected: boolean
+  error: string | null
+  subscribers: number
+}
+
 interface RealtimeContextValue {
   subscribe:   (agentId: string) => void
   unsubscribe: (agentId: string) => void
@@ -66,6 +73,14 @@ interface RealtimeContextValue {
   getError:    (agentId: string) => string | null
   // notifies components when events for a specific agent change
   version:     Record<string, number>
+
+  // Global trace-table channel used by topology views. It bumps whenever any
+  // trace row visible under Supabase RLS is inserted/updated/deleted.
+  subscribeTraces:   () => void
+  unsubscribeTraces: () => void
+  traceVersion:      number
+  traceConnected:    boolean
+  traceError:        string | null
 }
 
 const MAX_EVENTS_PER_AGENT = 300
@@ -79,6 +94,11 @@ const RealtimeContext = createContext<RealtimeContextValue>({
   isConnected: () => false,
   getError:    () => null,
   version:     {},
+  subscribeTraces:   () => {},
+  unsubscribeTraces: () => {},
+  traceVersion:      0,
+  traceConnected:    false,
+  traceError:        null,
 })
 
 // ── Provider ─────────────────────────────────────────────────────────────────
@@ -92,7 +112,16 @@ const SB_TTL_MS = 45 * 60 * 1000
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [version, setVersion] = useState<Record<string, number>>({})
+  const [traceVersion, setTraceVersion] = useState(0)
+  const [traceConnected, setTraceConnected] = useState(false)
+  const [traceError, setTraceError] = useState<string | null>(null)
   const channels = useRef<Record<string, AgentChannel>>({})
+  const traceChannel = useRef<TraceChannel>({
+    channel: null,
+    connected: false,
+    error: null,
+    subscribers: 0,
+  })
   const sb        = useRef<SupabaseClient | null>(null)
   // Track when the cached client was built so we can detect token expiry.
   const sbBuiltAt = useRef<number>(0)
@@ -113,6 +142,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       Object.values(channels.current).forEach(c => {
         if (c.channel) sb.current!.removeChannel(c.channel)
       })
+      if (traceChannel.current.channel) {
+        sb.current.removeChannel(traceChannel.current.channel)
+        traceChannel.current.channel = null
+        traceChannel.current.connected = false
+        setTraceConnected(false)
+      }
       sb.current = null
     }
 
@@ -148,8 +183,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
         Object.values(channels.current).forEach(c => {
           if (c.channel) client.removeChannel(c.channel)
         })
+        if (traceChannel.current.channel) {
+          client.removeChannel(traceChannel.current.channel)
+        }
       }
       channels.current = {}
+      traceChannel.current = { channel: null, connected: false, error: null, subscribers: 0 }
     }
   }, [])
   
@@ -253,8 +292,62 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const isConnected = useCallback((agentId: string) => channels.current[agentId]?.connected ?? false, [])
   const getError    = useCallback((agentId: string) => channels.current[agentId]?.error ?? null, [])
 
+  const openTraceChannel = useCallback(async () => {
+    if (traceChannel.current.channel) return
+    const client = await getClient()
+    if (!client) {
+      traceChannel.current.error =
+        'Realtime unavailable — Supabase client could not be initialized.'
+      setTraceError(traceChannel.current.error)
+      return
+    }
+
+    const channel = client
+      .channel('traces:graph')
+      .on(
+        'postgres_changes',
+        { event: '*', schema: 'public', table: 'traces' },
+        () => setTraceVersion((v) => v + 1),
+      )
+      .subscribe(status => {
+        const connected = status === 'SUBSCRIBED'
+        traceChannel.current.connected = connected
+        traceChannel.current.error = connected ? null : traceChannel.current.error
+        setTraceConnected(connected)
+        if (connected) setTraceError(null)
+      })
+
+    traceChannel.current.channel = channel
+  }, [getClient])
+
+  const subscribeTraces = useCallback(() => {
+    traceChannel.current.subscribers += 1
+    openTraceChannel()
+  }, [openTraceChannel])
+
+  const unsubscribeTraces = useCallback(() => {
+    traceChannel.current.subscribers = Math.max(0, traceChannel.current.subscribers - 1)
+    // Keep the trace channel warm across route changes, mirroring per-agent
+    // event channels. It is removed only when the provider unmounts or when
+    // the Supabase client is rebuilt after token TTL expiry.
+  }, [])
+
   return (
-    <RealtimeContext.Provider value={{ subscribe, unsubscribe, getEvents, isConnected, getError, version }}>
+    <RealtimeContext.Provider
+      value={{
+        subscribe,
+        unsubscribe,
+        getEvents,
+        isConnected,
+        getError,
+        version,
+        subscribeTraces,
+        unsubscribeTraces,
+        traceVersion,
+        traceConnected,
+        traceError,
+      }}
+    >
       {children}
     </RealtimeContext.Provider>
   )
@@ -286,5 +379,34 @@ export function useAgentEvents(agentId: string) {
     events:    ctx.getEvents(agentId),
     connected: ctx.isConnected(agentId),
     error:     ctx.getError(agentId),
+  }
+}
+
+/**
+ * useTraceRealtime(enabled)
+ *
+ * Subscribes to the traces table via Supabase Realtime and returns a global
+ * version counter. Topology views can re-fetch their server-derived graph on
+ * version changes instead of polling on a timer.
+ */
+export function useTraceRealtime(enabled = true) {
+  const {
+    subscribeTraces,
+    unsubscribeTraces,
+    traceVersion,
+    traceConnected,
+    traceError,
+  } = useContext(RealtimeContext)
+
+  useEffect(() => {
+    if (!enabled) return
+    subscribeTraces()
+    return () => unsubscribeTraces()
+  }, [enabled, subscribeTraces, unsubscribeTraces])
+
+  return {
+    version: traceVersion,
+    connected: traceConnected,
+    error: traceError,
   }
 }
