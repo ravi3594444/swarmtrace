@@ -133,7 +133,7 @@ export default function AgentsPage() {
       <PageHeader
         title="Agents"
         description="Registered swarm agents and their health"
-        liveStatus="live"
+        liveStatus={counts.RUNNING > 0 ? 'live' : agents.length > 0 ? 'paused' : 'offline'}
         actions={
           <div className="flex items-center gap-2">
             <TimeRangeDropdown value={range} onChange={setRange} />
