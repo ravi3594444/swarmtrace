@@ -43,6 +43,18 @@ Every call is recorded — latency, tokens, cost, errors. Nothing else to config
 
 ---
 
+## Architecture
+
+SwarmTrace is organized around a small ports-and-adapters core: public APIs and
+protocol ingress (`@observe`, `run()`/`span()`, MCP, OTLP) create canonical
+`SpanRecord`s, the runtime persists them locally, and delivery adapters batch
+them to the dashboard when remote ingest is configured. The Traces page also
+includes an **Architecture** view that summarizes a run as agent, LLM, tool,
+retrieval, and function layers. See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)
+for the module map, dependency rules, data flows, and extension guidelines.
+
+---
+
 ## Single Agent
 
 Wrap your agent with `@observe`. Any LLM or tool calls inside it get tagged with `kind="llm"` or `kind="tool"` so they roll up into the agent's stats — they never appear as phantom agents on the dashboard.

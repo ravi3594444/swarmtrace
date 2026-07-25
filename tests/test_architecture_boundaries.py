@@ -1,0 +1,98 @@
+"""Executable architecture checks.
+
+These tests keep the dependency boundaries documented in docs/ARCHITECTURE.md
+from drifting as the codebase grows. They are intentionally lightweight AST
+checks, not a full import-linter dependency.
+"""
+
+from __future__ import annotations
+
+import ast
+from pathlib import Path
+
+from setuptools import find_packages
+
+ROOT = Path(__file__).resolve().parents[1]
+PACKAGE = ROOT / "swarmtrace"
+
+
+def _imports(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(), filename=str(path))
+    found: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            for alias in node.names:
+                found.add(alias.name)
+        elif isinstance(node, ast.ImportFrom):
+            if node.module:
+                found.add(node.module)
+    return found
+
+
+def test_core_modules_do_not_import_infrastructure_or_public_facade():
+    """Pure core modules should stay free of storage/transport/framework code."""
+    core_modules = [
+        PACKAGE / "config.py",
+        PACKAGE / "span_model.py",
+        PACKAGE / "trace_context.py",
+        PACKAGE / "ports.py",
+        PACKAGE / "events.py",
+    ]
+    forbidden_prefixes = (
+        "swarmtrace.tracer",
+        "swarmtrace.storage",
+        "swarmtrace.adapters",
+        "swarmtrace.delivery",
+        "swarmtrace.auto_instrument",
+        "swarmtrace.fov",
+        "swarmtrace.mcp_gateway",
+        "swarmtrace.otlp",
+    )
+
+    violations: list[str] = []
+    for path in core_modules:
+        for imported in _imports(path):
+            if imported.startswith(forbidden_prefixes):
+                violations.append(f"{path.relative_to(ROOT)} imports {imported}")
+
+    assert violations == []
+
+
+def test_runtime_and_optional_modules_use_shared_config_not_tracer_internals():
+    """Modules below the public facade should not import tracer private config."""
+    modules = [
+        PACKAGE / "runtime.py",
+        PACKAGE / "alerts.py",
+        PACKAGE / "fov.py",
+    ]
+
+    violations = []
+    for path in modules:
+        for imported in _imports(path):
+            if imported == "swarmtrace.tracer" or imported.startswith("swarmtrace.tracer."):
+                violations.append(f"{path.relative_to(ROOT)} imports {imported}")
+
+    assert violations == []
+
+
+def test_nested_runtime_packages_are_discovered_for_distribution():
+    """The wheel must include adapter/delivery subpackages required at runtime."""
+    packages = set(find_packages(where=str(ROOT), include=["swarmtrace*"]))
+
+    assert "swarmtrace" in packages
+    assert "swarmtrace.adapters" in packages
+    assert "swarmtrace.delivery" in packages
+
+
+def test_architecture_document_covers_required_sections():
+    doc = (ROOT / "docs" / "ARCHITECTURE.md").read_text()
+
+    for heading in [
+        "## 2. Architectural style",
+        "## 3. Python SDK package map",
+        "## 5. Canonical data model",
+        "## 6. Main data flows",
+        "## 8. Extension guidelines",
+        "## 9. Resilience and privacy invariants",
+    ]:
+        assert heading in doc

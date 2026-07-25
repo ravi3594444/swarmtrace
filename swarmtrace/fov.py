@@ -45,8 +45,11 @@ import uuid
 import weakref
 from datetime import datetime, timezone
 
-# ── context from tracer ──────────────────────────────────────────────────────
-from swarmtrace.tracer import _remote_config
+# ── shared config + context ─────────────────────────────────────────────────
+from swarmtrace.config import (
+    normalize_base_url as _normalize_base_url,
+    remote_config as _remote_config,
+)
 from swarmtrace.trace_context import current_agent
 
 # Compatibility alias used by older tests that monkeypatch fov._current_agent.
@@ -212,7 +215,6 @@ def _fov_worker() -> None:
         if key and url:
             # Normalize URL so both "https://app.vercel.app" and
             # "https://app.vercel.app/api" work (strips trailing /api).
-            from swarmtrace.tracer import _normalize_base_url
             base = _normalize_base_url(url)
             for attempt in range(3):
                 try:

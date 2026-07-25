@@ -148,12 +148,12 @@ def get_runtime() -> Runtime:
     if _runtime is None:
         from swarmtrace.adapters.http_transport import HttpTransport
         from swarmtrace.adapters.sqlite_repository import SqliteRepository
-        from swarmtrace.tracer import _remote_config
+        from swarmtrace.config import remote_config
 
         _runtime = Runtime(
             SqliteRepository(),
             HttpTransport(),
-            _remote_config,
+            remote_config,
         )
     return _runtime
 
