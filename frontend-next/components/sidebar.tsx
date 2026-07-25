@@ -109,9 +109,12 @@ function NavItem({
  * button would force the user back through the sign-in flow. The modal
  * gates the action behind an explicit "Log out" confirmation.
  *
- * Styling: the trigger button and the confirm action button both use
- * destructive (red) styling — logout ends the session, so it should look
- * like a destructive action, not a neutral one.
+ * Styling: the trigger button is neutral at rest, matching the rest of
+ * the sidebar's icon buttons — a permanently red icon sitting in an
+ * otherwise neutral UI for a routine, frequent action read as an alarm
+ * that was always going off. It shifts to red on hover as a light hint
+ * of intent, and the confirm button in the modal below is fully
+ * destructive (red) styling, since that's the actual point of no return.
  *
  * Positioning: rendered as a `fixed` overlay centered in the viewport,
  * rather than an `absolute` popover anchored to the button. The button lives
@@ -147,7 +150,7 @@ function LogoutButton() {
         aria-label="Log out"
         aria-haspopup="dialog"
         aria-expanded={confirmOpen}
-        className="w-7 h-7 rounded-lg border border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 flex items-center justify-center text-red-600 dark:text-red-400 hover:bg-red-100 dark:bg-red-950/40 hover:text-red-700 dark:text-red-400 hover:border-red-300 dark:border-red-900/60 transition-colors shrink-0"
+        className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/60 transition-colors shrink-0"
       >
         <LogOut className="w-3.5 h-3.5" />
       </button>
