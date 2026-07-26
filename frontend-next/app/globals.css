@@ -84,49 +84,54 @@
 }
 
 .dark {
-  /* SwarmTrace AI Monitoring - Dark theme */
-  --background: oklch(0.12 0.01 155);
-  --foreground: oklch(0.98 0.005 155);
+  /* SwarmTrace AI Monitoring - Dark theme.
+     Charcoal & Ivory Monochrome — values pulled 1:1 from
+     stitch_swarmtrace_developer_dashboard/charcoal_ivory_monochrome/DESIGN.md.
+     Strictly achromatic: no blue/indigo/warm undertones anywhere except the
+     error/destructive role, which keeps a small amount of red chroma on
+     purpose so failures stay visually distinct from everything else. */
+  --background: #0e0e0e;           /* surface-container-lowest */
+  --foreground: #e5e2e1;           /* on-surface */
 
   /* Material Design surface tokens — dark mode */
-  --surface: oklch(0.15 0.01 155);
-  --surface-container: oklch(0.15 0.01 155);
-  --surface-container-high: oklch(0.20 0.015 155);
-  --surface-container-low: oklch(0.13 0.01 155);
-  --on-surface: oklch(0.95 0.005 155);
-  --on-surface-variant: oklch(0.65 0.02 155);
-  --outline: oklch(0.28 0.02 155);
-  --outline-variant: oklch(0.22 0.015 155);
-  --card: oklch(0.15 0.01 155);
-  --card-foreground: oklch(0.98 0.005 155);
-  --popover: oklch(0.15 0.01 155);
-  --popover-foreground: oklch(0.98 0.005 155);
-  --primary: oklch(0.55 0.18 155);
-  --primary-foreground: oklch(0.98 0.01 155);
-  --secondary: oklch(0.2 0.02 155);
-  --secondary-foreground: oklch(0.98 0.005 155);
-  --muted: oklch(0.2 0.02 155);
-  --muted-foreground: oklch(0.65 0.02 155);
-  --accent: oklch(0.55 0.18 155);
-  --accent-foreground: oklch(0.98 0.01 155);
-  --destructive: oklch(0.5 0.2 25);
-  --destructive-foreground: oklch(0.98 0.01 0);
-  --border: oklch(0.25 0.02 155);
-  --input: oklch(0.25 0.02 155);
-  --ring: oklch(0.55 0.18 155);
-  --chart-1: oklch(0.42 0.15 155);
-  --chart-2: oklch(0.55 0.18 155);
-  --chart-3: oklch(0.65 0.12 155);
-  --chart-4: oklch(0.75 0.08 155);
-  --chart-5: oklch(0.85 0.04 155);
-  --sidebar: oklch(0.15 0.01 155);
-  --sidebar-foreground: oklch(0.98 0.005 155);
-  --sidebar-primary: oklch(0.55 0.18 155);
-  --sidebar-primary-foreground: oklch(0.98 0.01 155);
-  --sidebar-accent: oklch(0.2 0.02 155);
-  --sidebar-accent-foreground: oklch(0.98 0.005 155);
-  --sidebar-border: oklch(0.25 0.02 155);
-  --sidebar-ring: oklch(0.55 0.18 155);
+  --surface: #131313;
+  --surface-container: #201f1f;
+  --surface-container-high: #2a2a2a;
+  --surface-container-low: #1c1b1b;
+  --on-surface: #e5e2e1;
+  --on-surface-variant: #c4c7c8;
+  --outline: #8e9192;
+  --outline-variant: #444748;
+  --card: #1c1b1b;                 /* elevated surface — tonal layering, no shadows */
+  --card-foreground: #e5e2e1;
+  --popover: #2a2a2a;               /* overlay layer — tooltips / floating menus */
+  --popover-foreground: #e5e2e1;
+  --primary: #ffffff;               /* reserved for CTAs, active states, critical info */
+  --primary-foreground: #2f3131;
+  --secondary: #2a2a2a;
+  --secondary-foreground: #e5e2e1;
+  --muted: #1c1b1b;
+  --muted-foreground: #8e9192;
+  --accent: #353534;
+  --accent-foreground: #ffffff;
+  --destructive: #93000a;           /* error-container */
+  --destructive-foreground: #ffdad6; /* on-error-container */
+  --border: #444748;
+  --input: #444748;
+  --ring: #ffffff;                  /* focus state moves the border to white, per DESIGN.md */
+  --chart-1: #ffffff;
+  --chart-2: #c6c6c7;
+  --chart-3: #8e9192;
+  --chart-4: #636565;
+  --chart-5: #444748;
+  --sidebar: #131313;
+  --sidebar-foreground: #e5e2e1;
+  --sidebar-primary: #ffffff;
+  --sidebar-primary-foreground: #2f3131;
+  --sidebar-accent: #201f1f;
+  --sidebar-accent-foreground: #e5e2e1;
+  --sidebar-border: #444748;
+  --sidebar-ring: #ffffff;
 }
 
 @theme inline {

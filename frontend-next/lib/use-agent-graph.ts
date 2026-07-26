@@ -1,9 +1,10 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
-import type { AgentNetworkGraph } from './agent-network'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { AgentGraphNode, AgentNetworkGraph } from './agent-network'
 import { fetchSwarmGraph } from './swarm-api'
 import type { TimeRangeKey } from './trace-utils'
+import { useAgentPresence } from '@/contexts/RealtimeContext'
 
 const EMPTY_GRAPH: AgentNetworkGraph = {
   nodes: [],
@@ -22,7 +23,15 @@ const EMPTY_GRAPH: AgentNetworkGraph = {
   },
 }
 
-export function useAgentGraph(range: TimeRangeKey, pollMs = 8000) {
+// Realtime channels (contexts/RealtimeContext.tsx) are scoped per agent_id,
+// so they can tell us a *known* agent just changed status, but not that a
+// brand-new agent_id started existing. Topology (nodes/edges appearing or
+// disappearing) still needs a periodic full re-fetch; per-node status now
+// comes from Realtime instead, so this interval can be much longer than the
+// old 7-8s poll.
+const TOPOLOGY_POLL_MS = 20000
+
+export function useAgentGraph(range: TimeRangeKey, pollMs = TOPOLOGY_POLL_MS) {
   const [graph, setGraph] = useState<AgentNetworkGraph>(EMPTY_GRAPH)
   const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
@@ -55,8 +64,25 @@ export function useAgentGraph(range: TimeRangeKey, pollMs = 8000) {
     return () => { if (interval.current) clearInterval(interval.current) }
   }, [isLive, load, pollMs])
 
+  // Patch node status instantly from the existing Supabase Realtime
+  // channels, without waiting for the next topology poll above.
+  const agentIds = useMemo(() => graph.nodes.map((node) => node.id), [graph.nodes])
+  const presence = useAgentPresence(isLive ? agentIds : [])
+
+  const liveGraph = useMemo<AgentNetworkGraph>(() => {
+    if (!isLive) return graph
+    let changed = false
+    const nodes: AgentGraphNode[] = graph.nodes.map((node) => {
+      const p = presence[node.id]
+      if (!p || !p.status || p.status === node.status) return node
+      changed = true
+      return { ...node, status: p.status, lastActive: p.lastEventAt ?? node.lastActive }
+    })
+    return changed ? { ...graph, nodes } : graph
+  }, [graph, presence, isLive])
+
   return {
-    graph,
+    graph: liveGraph,
     truncated,
     loading,
     isLive,
