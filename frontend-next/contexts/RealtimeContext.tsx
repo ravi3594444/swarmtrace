@@ -288,3 +288,52 @@ export function useAgentEvents(agentId: string) {
     error:     ctx.getError(agentId),
   }
 }
+
+/**
+ * useAgentPresence(agentIds)
+ *
+ * Multi-agent variant of useAgentEvents, for screens that show many agents
+ * at once (e.g. the Node Network Map) and need instant per-node status
+ * updates without re-fetching the whole graph. Subscribes/unsubscribes to
+ * every id in the list as it changes, and returns the latest known status
+ * for each — 'RUNNING' while an agent's most recent event is
+ * started/streaming, 'ERROR' if it's error, or null once it's done (the
+ * node falls back to whatever status the last full fetch had, e.g. IDLE).
+ *
+ * This does NOT tell you about agents that haven't been seen yet — Realtime
+ * channels here are scoped per agent_id, so a brand-new agent_id needs a
+ * fresh fetch of the graph before it can be subscribed to. Pair this with a
+ * periodic topology re-fetch (see lib/use-agent-graph.ts) rather than
+ * relying on this alone.
+ */
+export function useAgentPresence(agentIds: string[]): Record<string, { status: 'RUNNING' | 'ERROR' | null; lastEventAt: string | null }> {
+  const ctx = useContext(RealtimeContext)
+  const idsKey = agentIds.join(',')
+
+  useEffect(() => {
+    const ids = idsKey ? idsKey.split(',') : []
+    ids.forEach((id) => ctx.subscribe(id))
+    return () => { ids.forEach((id) => ctx.unsubscribe(id)) }
+    // idsKey is the intentional dep — it's a stable string derived from the id list
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [idsKey])
+
+  const ids = idsKey ? idsKey.split(',') : []
+  // Reading ctx.version[id] for every subscribed id (even though the value
+  // itself isn't used below) is what subscribes this render to updates for
+  // each one — same trick useAgentEvents uses above.
+  const _tick = ids.map((id) => ctx.version[id]).join(',')
+
+  const presence: Record<string, { status: 'RUNNING' | 'ERROR' | null; lastEventAt: string | null }> = {}
+  for (const id of ids) {
+    const events = ctx.getEvents(id)
+    const latest = events[events.length - 1]
+    if (!latest) {
+      presence[id] = { status: null, lastEventAt: null }
+      continue
+    }
+    const status = latest.status === 'error' ? 'ERROR' : latest.status === 'done' ? null : 'RUNNING'
+    presence[id] = { status, lastEventAt: latest.timestamp }
+  }
+  return presence
+}
