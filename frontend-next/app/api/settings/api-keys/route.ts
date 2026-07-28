@@ -44,6 +44,24 @@ export async function POST(req: Request) {
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   try {
+    // Enforce plan limits before creating a new key. The Hobby plan
+    // (the only plan currently available — see /api/settings/billing)
+    // allows 1 API key. Pro/Enterprise will allow more once billing is
+    // live; for now everyone is on Hobby. Without this check, the UI
+    // says "1 API key" on the Hobby plan card but the API silently
+    // allowed unlimited keys.
+    const MAX_KEYS_HOBBY = 1
+    const existing = (await supaUserRequest(
+      `api_keys?user_id=eq.${encodeURIComponent(userId)}&revoked=eq.false&select=id`,
+      userId
+    )) as { id: string }[]
+    if (existing.length >= MAX_KEYS_HOBBY) {
+      return NextResponse.json(
+        { error: `Your plan allows ${MAX_KEYS_HOBBY} API key${MAX_KEYS_HOBBY !== 1 ? 's' : ''}. Revoke an existing key or upgrade to create more.` },
+        { status: 402 }, // 402 Payment Required — signals a plan limit
+      )
+    }
+
     const body = await req.json().catch(() => ({}))
     const name = typeof body.name === 'string' && body.name.trim()
       ? body.name.trim().slice(0, 100)

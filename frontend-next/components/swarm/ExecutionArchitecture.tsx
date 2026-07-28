@@ -48,7 +48,7 @@ export function ExecutionArchitecture({
           { label: 'Cost', value: formatCost(summary.totalCost) },
         ].map((item) => (
           <div key={item.label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
-            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
+            <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
               {item.label}
             </div>
             <div className="mt-1 font-mono text-lg font-bold text-foreground">{item.value}</div>
@@ -64,7 +64,7 @@ export function ExecutionArchitecture({
               Built from canonical span kinds, parent IDs, and trace context.
             </p>
           </div>
-          <div className="flex gap-2 text-[10px] font-semibold uppercase tracking-wider">
+          <div className="flex gap-2 text-[11px] font-semibold uppercase tracking-wider">
             {summary.totalErrors > 0 && <span className="rounded-full border border-red-200 bg-red-50 px-2 py-1 text-red-700 dark:border-red-900/60 dark:bg-red-950/30 dark:text-red-400">{summary.totalErrors} errors</span>}
             {summary.orphaned > 0 && <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-1 text-amber-700 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-400">{summary.orphaned} orphaned</span>}
           </div>
@@ -80,14 +80,14 @@ export function ExecutionArchitecture({
                 <div className="mb-3 flex items-start justify-between gap-2">
                   <div>
                     <div className="text-xs font-bold text-foreground">{layer.label}</div>
-                    <div className="mt-0.5 text-[10px] text-muted-foreground">{layer.description}</div>
+                    <div className="mt-0.5 text-[11px] text-muted-foreground">{layer.description}</div>
                   </div>
-                  <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[10px] text-muted-foreground">
+                  <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 font-mono text-[11px] text-muted-foreground">
                     {layer.spans}
                   </span>
                 </div>
 
-                <div className="mb-3 grid grid-cols-2 gap-2 text-[10px]">
+                <div className="mb-3 grid grid-cols-2 gap-2 text-[11px]">
                   <div className="rounded-lg bg-muted/30 p-2">
                     <div className="text-muted-foreground">Latency</div>
                     <div className="font-mono font-semibold text-foreground">{formatLatency(layer.latency)}</div>
@@ -118,15 +118,15 @@ export function ExecutionArchitecture({
                         >
                           <div className="flex items-center justify-between gap-2">
                             <span className="truncate text-xs font-medium text-foreground">{component.name}</span>
-                            <span className="font-mono text-[10px] text-muted-foreground">{component.calls}×</span>
+                            <span className="font-mono text-[11px] text-muted-foreground">{component.calls}×</span>
                           </div>
-                          <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[10px] text-muted-foreground">
+                          <div className="mt-1 flex items-center justify-between gap-2 font-mono text-[11px] text-muted-foreground">
                             <span>{formatLatency(component.latency)}</span>
                             <span>{component.tokens.toLocaleString()} tok</span>
                             <span>{formatCost(component.cost)}</span>
                           </div>
                           {component.errors > 0 && (
-                            <div className="mt-1 text-[10px] font-semibold text-red-600 dark:text-red-400">
+                            <div className="mt-1 text-[11px] font-semibold text-red-600 dark:text-red-400">
                               {component.errors} error{component.errors > 1 ? 's' : ''}
                             </div>
                           )}
@@ -147,7 +147,7 @@ export function ExecutionArchitecture({
             <h3 className="text-sm font-semibold text-foreground">Observed span flows</h3>
             <p className="text-xs text-muted-foreground">Parent → child relationships by kind.</p>
           </div>
-          <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
             {edges.length} flow{edges.length === 1 ? '' : 's'}
           </span>
         </div>

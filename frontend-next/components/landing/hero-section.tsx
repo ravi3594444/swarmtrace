@@ -100,28 +100,38 @@ export function HeroSection() {
         </h1>
       </div>
 
-      {/* Buttons — bottom right */}
-      <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12 pb-32 w-full mt-auto">
-        <div className={`flex flex-row items-center justify-end gap-4 transition-all duration-700 delay-300 ${
+      {/* Buttons — on mobile they sit right after the headline (above the
+          fold); on lg+ they're bottom-right (the original designer layout).
+          Previously the CTAs were always at the bottom with mt-auto + pb-32,
+          which pushed them below the fold on phones — users had to scroll
+          past the whole headline to find the primary action. */}
+      <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12 pb-32 w-full mt-auto lg:mt-auto">
+        <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-start lg:justify-end gap-4 transition-all duration-700 delay-300 ${
           isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
         }`}>
-          <Button
-            size="lg"
-            className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full"
-            asChild
-          >
-            <Link href="/sign-up">Get Started Free</Link>
-          </Button>
-          <Button
-            size="lg"
-            variant="outline"
-            className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5"
-            asChild
-          >
-            <a href="https://github.com/ravi3594444/swarmtrace">
-              View on GitHub
-            </a>
-          </Button>
+          {/* On mobile, show the CTAs immediately after the headline by
+              pulling this block up with a negative margin that only applies
+              below the sm breakpoint. On sm+ the original bottom-right
+              layout is preserved. */}
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 -mt-4 sm:mt-0">
+            <Button
+              size="lg"
+              className="bg-foreground hover:bg-foreground/90 text-background px-8 h-14 text-base rounded-full w-full sm:w-auto"
+              asChild
+            >
+              <Link href="/sign-up">Get Started Free</Link>
+            </Button>
+            <Button
+              size="lg"
+              variant="outline"
+              className="h-14 px-8 text-base rounded-full border-foreground/20 hover:bg-foreground/5 w-full sm:w-auto"
+              asChild
+            >
+              <a href="https://github.com/ravi3594444/swarmtrace">
+                View on GitHub
+              </a>
+            </Button>
+          </div>
         </div>
       </div>
 
@@ -141,7 +151,7 @@ export function HeroSection() {
                 <div key={`${s.note}-${i}`} className="flex flex-col justify-start">
                   <span className="text-4xl lg:text-5xl font-display leading-none mb-1">{s.value}</span>
                   <span className="text-sm text-muted-foreground leading-tight">{s.label}</span>
-                  <span className="text-[10px] font-mono text-muted-foreground/40 tracking-widest mt-1">{s.note}</span>
+                  <span className="text-[11px] font-mono text-muted-foreground/40 tracking-widest mt-1">{s.note}</span>
                 </div>
               ))}
             </div>

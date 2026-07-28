@@ -57,7 +57,7 @@ function PeriodBlock({
 function SubStat({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex flex-col gap-0.5">
-      <div className="text-[10px] uppercase tracking-wider text-muted-foreground/70">{label}</div>
+      <div className="text-[11px] uppercase tracking-wider text-muted-foreground/70">{label}</div>
       <div className="text-sm font-semibold text-foreground tabular-nums">{value}</div>
     </div>
   )

@@ -106,7 +106,7 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
                     <td className="px-4 py-3 text-xs tabular-nums text-foreground">{t.output_tokens || <span className="text-muted-foreground/50">0</span>}</td>
                     <td className="px-4 py-3 text-xs tabular-nums text-foreground font-semibold">${t.cost_usd.toFixed(4)}</td>
                     <td className="px-4 py-3 text-center">
-                      <span className={`inline-block rounded-full px-2 py-0.5 text-[10px] font-bold uppercase border ${
+                      <span className={`inline-block rounded-full px-2 py-0.5 text-[11px] font-bold uppercase border ${
                         ok ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60" : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60"
                       }`}>{ok ? "OK" : "FAIL"}</span>
                     </td>

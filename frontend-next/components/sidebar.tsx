@@ -70,7 +70,16 @@ function NavItem({
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
+  // Use startsWith so sub-routes keep the parent nav item highlighted.
+  // Previously this was strict equality (pathname === href), which meant
+  // /traces/abc123 wouldn't highlight the Traces nav item. The Settings
+  // item also benefits: /settings?tab=api now highlights Settings.
+  // We guard against false positives (e.g. /over matching /overview) by
+  // requiring either an exact match or the next char after the prefix to
+  // be a path separator (/) or the end of the string.
   const isActive = pathname === href
+    || pathname.startsWith(href + '/')
+    || pathname.startsWith(href + '?')
 
   return (
     <Link href={href} onClick={onNavigate}>
@@ -312,7 +321,7 @@ export function Sidebar() {
         {navGroups.map((group, gi) => (
           <div key={group.label} className={open ? 'space-y-0.5' : 'space-y-1 flex flex-col items-center'}>
             {open && (
-              <div className="px-2.5 pt-1.5 pb-1 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+              <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
                 {group.label}
               </div>
             )}
@@ -335,7 +344,7 @@ export function Sidebar() {
             <UserButton appearance={{ elements: { avatarBox: 'w-7 h-7 shrink-0' } }} />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-medium text-foreground truncate">{email}</div>
-              <div className="text-[10px] text-muted-foreground">{initials}</div>
+              <div className="text-[11px] text-muted-foreground">{initials}</div>
             </div>
             <LogoutButton />
           </div>

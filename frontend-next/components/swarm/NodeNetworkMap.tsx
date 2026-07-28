@@ -265,11 +265,11 @@ export function NodeNetworkMap({
             <div className="flex items-center gap-3">
               <h2 className="text-2xl font-semibold tracking-tight text-foreground">Node Network Map</h2>
               {/* Live/partial keep the app's existing status-color convention (emerald = live, amber = warning) */}
-              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-emerald-200">
+              <span className="rounded-full border border-emerald-400/30 bg-emerald-400/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-emerald-200">
                 {isLive ? 'Live' : 'Paused'}
               </span>
               {truncated && (
-                <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-[0.2em] text-amber-200">
+                <span className="rounded-full border border-amber-400/40 bg-amber-400/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.2em] text-amber-200">
                   partial
                 </span>
               )}
@@ -393,7 +393,7 @@ export function NodeNetworkMap({
               )
             })}
 
-            {nodes.map((node) => {
+            {nodes.map((node, nodeIndex) => {
               const active = selected?.id === node.id
               const hoveredNode = hoveredId === node.id
               const dimmed = highlighted && !connectedIds.has(node.id)
@@ -402,10 +402,34 @@ export function NodeNetworkMap({
                 <g
                   key={node.id}
                   opacity={dimmed ? 0.32 : 1}
+                  // Keyboard accessibility: each node is a focusable button.
+                  // Tab moves between nodes in layout order; Enter/Space
+                  // selects; ArrowLeft/ArrowRight move to the previous/next
+                  // node. aria-label describes the agent so screen readers
+                  // can announce it. Previously this was mouse-only.
+                  tabIndex={0}
+                  role="button"
+                  aria-label={`${node.label}, ${formatMode(node.collaborationMode)}${node.ragSpans > 0 ? ', RAG' : ''}${node.status === 'RUNNING' ? ', running' : node.status === 'ERROR' ? ', error' : ''}, ${node.spans} spans, ${formatCost(node.cost)}`}
+                  onKeyDown={(event) => {
+                    if (event.key === 'Enter' || event.key === ' ') {
+                      event.preventDefault()
+                      setSelectedId(node.id)
+                    } else if (event.key === 'ArrowRight') {
+                      event.preventDefault()
+                      const next = nodes[(nodeIndex + 1) % nodes.length]
+                      setSelectedId(next.id)
+                      ;(event.currentTarget.parentElement?.children[nodeIndex + 1] as SVGElement | undefined)?.focus?.()
+                    } else if (event.key === 'ArrowLeft') {
+                      event.preventDefault()
+                      const prev = nodes[(nodeIndex - 1 + nodes.length) % nodes.length]
+                      setSelectedId(prev.id)
+                      ;(event.currentTarget.parentElement?.children[nodeIndex - 1] as SVGElement | undefined)?.focus?.()
+                    }
+                  }}
                   onMouseEnter={() => setHoveredId(node.id)}
                   onMouseLeave={() => setHoveredId(null)}
                   onClick={(event) => { event.stopPropagation(); setSelectedId(node.id) }}
-                  className="cursor-pointer"
+                  className="cursor-pointer focus-visible:outline-none"
                 >
                   <circle
                     cx={node.x}
@@ -449,7 +473,7 @@ export function NodeNetworkMap({
                       <text x={node.x} y={node.y + node.r + 28} textAnchor="middle" className="fill-white text-[12px] font-semibold">
                         {node.label.slice(0, 18)}
                       </text>
-                      <text x={node.x} y={node.y + node.r + 43} textAnchor="middle" className="fill-muted-foreground text-[10px]">
+                      <text x={node.x} y={node.y + node.r + 43} textAnchor="middle" className="fill-muted-foreground text-[11px]">
                         {formatMode(node.collaborationMode)}{node.ragSpans > 0 ? ' · RAG' : ''}
                       </text>
                     </g>
@@ -468,7 +492,7 @@ export function NodeNetworkMap({
             { label: 'Cost', value: formatCost(graph.summary.totalCost) },
           ].map((item) => (
             <div key={item.label} className="rounded-2xl border border-border bg-black/35 px-4 py-3 backdrop-blur-xl">
-              <div className="text-[10px] font-bold uppercase tracking-[0.22em] text-muted-foreground">{item.label}</div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.22em] text-muted-foreground">{item.label}</div>
               <div className="mt-1 font-mono text-xl font-bold text-foreground">{item.value}</div>
             </div>
           ))}
@@ -480,26 +504,26 @@ export function NodeNetworkMap({
           <div className="space-y-5">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                <div className="text-[10px] font-bold uppercase tracking-[0.26em] text-muted-foreground">Selected Agent</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.26em] text-muted-foreground">Selected Agent</div>
                 <h3 className="mt-2 truncate text-2xl font-semibold text-foreground">{selected.label}</h3>
                 <p className="mt-1 break-all font-mono text-[11px] text-muted-foreground">{selected.id}</p>
               </div>
-              <span className={`rounded-full border px-3 py-1 text-[10px] font-bold uppercase tracking-[0.18em] ${modePillClass(selected.collaborationMode)}`}>
+              <span className={`rounded-full border px-3 py-1 text-[11px] font-bold uppercase tracking-[0.18em] ${modePillClass(selected.collaborationMode)}`}>
                 {formatMode(selected.collaborationMode)}
               </span>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <span className={`rounded-full border px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider ${selected.status === 'ERROR' ? 'border-destructive/50 bg-destructive/15 text-destructive-foreground' : selected.status === 'RUNNING' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-outline-variant/50 bg-outline-variant/10 text-muted-foreground'}`}>
+              <span className={`rounded-full border px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider ${selected.status === 'ERROR' ? 'border-destructive/50 bg-destructive/15 text-destructive-foreground' : selected.status === 'RUNNING' ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-200' : 'border-outline-variant/50 bg-outline-variant/10 text-muted-foreground'}`}>
                 {selected.status}
               </span>
               {selected.ragSpans > 0 && (
-                <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-foreground">
+                <span className="rounded-full border border-primary/40 bg-primary/10 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-foreground">
                   RAG · {selected.ragSpans}
                 </span>
               )}
               {selected.errors > 0 && (
-                <span className="rounded-full border border-destructive/50 bg-destructive/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-destructive-foreground">
+                <span className="rounded-full border border-destructive/50 bg-destructive/15 px-2.5 py-1 text-[11px] font-bold uppercase tracking-wider text-destructive-foreground">
                   {selected.errors} errors
                 </span>
               )}
@@ -515,14 +539,14 @@ export function NodeNetworkMap({
                 { label: 'Tools', value: selected.toolSpans.toLocaleString() },
               ].map((item) => (
                 <div key={item.label} className="rounded-2xl border border-border bg-white/[0.03] p-4">
-                  <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{item.label}</div>
+                  <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">{item.label}</div>
                   <div className="mt-1 font-mono text-lg font-bold text-foreground">{item.value}</div>
                 </div>
               ))}
             </div>
 
             <div className="rounded-2xl border border-border bg-white/[0.03] p-4">
-              <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Last activity</div>
+              <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Last activity</div>
               <div className="mt-1 text-sm text-on-surface-variant">
                 {selected.lastActive ? formatRelativeTime(selected.lastActive) : 'unknown'}
               </div>
@@ -536,7 +560,7 @@ export function NodeNetworkMap({
 
             <div className="rounded-2xl border border-border bg-white/[0.03] p-4">
               <div className="mb-3 flex items-center justify-between">
-                <div className="text-[10px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Connections</div>
+                <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-muted-foreground">Connections</div>
                 <span className="text-xs text-muted-foreground">{edges.filter((edge) => edge.source === selected.id || edge.target === selected.id).length}</span>
               </div>
               <div className="space-y-2">
@@ -550,7 +574,7 @@ export function NodeNetworkMap({
                     >
                       <div className="min-w-0">
                         <div className="truncate text-xs font-semibold text-foreground">{other.label}</div>
-                        <div className="text-[10px] text-muted-foreground">{edge.relation} · {edge.calls} call{edge.calls === 1 ? '' : 's'}</div>
+                        <div className="text-[11px] text-muted-foreground">{edge.relation} · {edge.calls} call{edge.calls === 1 ? '' : 's'}</div>
                       </div>
                       <span className={`h-2.5 w-2.5 rounded-full ${other.errors > 0 ? 'bg-destructive' : 'bg-foreground'}`} />
                     </button>

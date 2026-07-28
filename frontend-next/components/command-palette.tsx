@@ -34,7 +34,6 @@ export function CommandPalette() {
   const [activeIdx, setActiveIdx] = useState(0)
   const [agents, setAgents] = useState<AgentCard[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
-  const fetchedRef = useRef(false)
 
   // Global shortcuts: Ctrl/Cmd+K toggles, Escape closes. Query/selection are
   // reset here (in the event handlers, not an effect) so each open starts
@@ -67,26 +66,31 @@ export function CommandPalette() {
     }
   }, [])
 
-  // Focus the input and lazily load agents each time the palette opens.
+  // Focus the input and fetch agents each time the palette opens.
+  // Previously this was gated by fetchedRef (fetch once per session),
+  // which meant new agents that started after the first open wouldn't
+  // appear until a page reload. Re-fetching on every open keeps the
+  // agent list fresh — the request is cheap (small payload) and the
+  // palette is user-initiated so the latency is expected.
   useEffect(() => {
     if (!open) return
     inputRef.current?.focus()
-    if (!fetchedRef.current) {
-      fetchedRef.current = true
-      fetch('/api/agents')
-        .then((r) => (r.ok ? r.json() : null))
-        .then((d) => {
-          if (d?.agents) {
-            setAgents(
-              d.agents.map((a: { id: string; name: string }) => ({
-                id: a.id,
-                name: a.name,
-              }))
-            )
-          }
-        })
-        .catch(() => {})
-    }
+    let cancelled = false
+    fetch('/api/agents')
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (cancelled) return
+        if (d?.agents) {
+          setAgents(
+            d.agents.map((a: { id: string; name: string }) => ({
+              id: a.id,
+              name: a.name,
+            }))
+          )
+        }
+      })
+      .catch(() => {})
+    return () => { cancelled = true }
   }, [open])
 
   const close = () => setOpen(false)
@@ -126,14 +130,37 @@ export function CommandPalette() {
     })),
   ]
 
+  // Fuzzy match: for each item, compute a match score against the query.
+  // The algorithm walks the query characters in order, finding each one in
+  // the target string. Consecutive matches and word-boundary matches (char
+  // after a space or at position 0) score higher. Items where not all query
+  // chars are found in order are filtered out. This lets users type "ov"
+  // to match "Overview", "st" to match "Settings", etc. — much more
+  // forgiving than the old strict substring filter.
   const q = query.trim().toLowerCase()
-  const filtered = q
-    ? items.filter(
-        (i) =>
-          i.label.toLowerCase().includes(q) ||
-          (i.keywords ?? '').toLowerCase().includes(q) ||
-          i.hint.toLowerCase().includes(q)
-      )
+  const filtered: Item[] = q
+    ? items
+        .map((i) => {
+          const target = `${i.label} ${i.keywords ?? ''} ${i.hint}`.toLowerCase()
+          let score = 0
+          let qi = 0
+          let consecutive = 0
+          for (let ti = 0; ti < target.length && qi < q.length; ti++) {
+            if (target[ti] === q[qi]) {
+              const isBoundary = ti === 0 || target[ti - 1] === ' '
+              score += isBoundary ? 3 : 1
+              consecutive += 1
+              score += consecutive
+              qi += 1
+            } else {
+              consecutive = 0
+            }
+          }
+          return qi === q.length ? { item: i, score } : null
+        })
+        .filter((x): x is { item: Item; score: number } => x !== null)
+        .sort((a, b) => b.score - a.score)
+        .map((x) => x.item)
     : items
   const active = Math.min(activeIdx, Math.max(filtered.length - 1, 0))
 
@@ -175,7 +202,7 @@ export function CommandPalette() {
             placeholder="Search pages, agents, actions…"
             className="flex-1 py-3.5 bg-transparent text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none"
           />
-          <kbd className="text-[10px] text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">Esc</kbd>
+          <kbd className="text-[11px] text-muted-foreground border border-border rounded px-1.5 py-0.5 shrink-0">Esc</kbd>
         </div>
         <div className="max-h-72 overflow-y-auto py-2" role="listbox">
           {filtered.length === 0 ? (
@@ -196,7 +223,7 @@ export function CommandPalette() {
                 >
                   <Icon className="w-4 h-4 shrink-0" />
                   <span className="flex-1 truncate">{item.label}</span>
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground/60 shrink-0">{item.hint}</span>
+                  <span className="text-[11px] uppercase tracking-wider text-muted-foreground/60 shrink-0">{item.hint}</span>
                 </button>
               )
             })

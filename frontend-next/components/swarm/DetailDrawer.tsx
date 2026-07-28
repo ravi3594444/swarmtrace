@@ -62,12 +62,12 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
                 {trace.error}
               </pre>
               <div>
-                <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Call chain</div>
+                <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Call chain</div>
                 <CallChainCrumbs trace={trace} allTraces={allTraces} onJump={onJump} />
               </div>
               {siblings.length > 0 && (
                 <div>
-                  <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Sibling calls</div>
+                  <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">Sibling calls</div>
                   <div className="space-y-1">
                     {siblings.map((s) => {
                       const sOk = !s.error;
@@ -77,7 +77,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
                           <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${sOk ? "bg-emerald-500" : "bg-red-400"}`} />
                           <span className="flex-1 truncate text-xs text-foreground">{s.function}</span>
                           <span className="text-[11px] text-muted-foreground">{s.id}</span>
-                          <span className={`rounded-full px-1.5 py-0.5 border text-[10px] font-bold uppercase ${sOk ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60" : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60"}`}>
+                          <span className={`rounded-full px-1.5 py-0.5 border text-[11px] font-bold uppercase ${sOk ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60" : "bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60"}`}>
                             {sOk ? "OK" : "ERR"}
                           </span>
                         </button>
@@ -98,7 +98,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
               <div key={label} className="rounded-xl border border-border bg-muted/30 p-3 text-center">
                 <Icon className="w-3.5 h-3.5 text-muted-foreground mx-auto mb-1" />
                 <div className="text-xs font-bold text-foreground">{value}</div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{label}</div>
               </div>
             ))}
           </div>
@@ -138,7 +138,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="mb-2 text-[10px] font-bold uppercase tracking-widest text-muted-foreground">{label}</div>
+      <div className="mb-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">{label}</div>
       {children}
     </div>
   );

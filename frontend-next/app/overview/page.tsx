@@ -39,7 +39,7 @@ function EventRow({ type, message }: { type: string; message: string }) {
       onClick={() => isDense && setExpanded((v) => !v)}
       className={`flex w-full items-start gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/30 ${isDense ? 'cursor-pointer' : 'cursor-default'}`}
     >
-      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[10px] font-bold uppercase mt-0.5 ${isAlert ? 'bg-red-50 dark:bg-red-950/30 text-destructive border-red-200 dark:border-red-900/60' : 'bg-muted text-muted-foreground border-border'}`}>
+      <span className={`shrink-0 rounded-full border px-1.5 py-0.5 text-[11px] font-bold uppercase mt-0.5 ${isAlert ? 'bg-red-50 dark:bg-red-950/30 text-destructive border-red-200 dark:border-red-900/60' : 'bg-muted text-muted-foreground border-border'}`}>
         {type}
       </span>
       <p className={`text-xs text-foreground leading-relaxed min-w-0 flex-1 font-mono ${expanded ? 'whitespace-pre-wrap break-all' : 'truncate'}`}>
@@ -193,9 +193,9 @@ function CostProjectionWidget({ traces }: { traces: Trace[] }) {
               { label: 'Per Month', value: fmt(monthly), sub: '30d projection' },
             ].map(({ label, value, sub }) => (
               <div key={label} className="rounded-lg border border-border bg-muted/20 p-3 text-center">
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
                 <div className="font-mono text-sm font-bold text-foreground">{value}</div>
-                <div className="text-[10px] text-muted-foreground mt-0.5">{sub}</div>
+                <div className="text-[11px] text-muted-foreground mt-0.5">{sub}</div>
               </div>
             ))}
           </div>
@@ -256,7 +256,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
       >
         <GitCompare className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Trace Diff</h3>
-        <span className="ml-1.5 text-[10px] text-muted-foreground">Compare two spans for regressions</span>
+        <span className="ml-1.5 text-[11px] text-muted-foreground">Compare two spans for regressions</span>
         <ChevronDown className={`w-3.5 h-3.5 ml-auto text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
 
@@ -282,7 +282,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
               { label: 'Candidate span', value: candId, set: setCandId },
             ] as const).map(({ label, value, set }) => (
               <div key={label}>
-                <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
                 <select
                   value={value}
                   onChange={e => set(e.target.value)}
@@ -327,7 +327,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
                   <div key={label} className={`rounded-lg border p-2.5 text-center ${ok ? 'border-emerald-200 dark:border-emerald-900/60 bg-emerald-50 dark:bg-emerald-950/30' : 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30'}`}>
                     <Icon className={`w-3.5 h-3.5 mx-auto mb-1 ${ok ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500'}`} />
                     <div className={`font-mono text-xs font-bold ${ok ? 'text-emerald-700 dark:text-emerald-400' : 'text-red-600 dark:text-red-400'}`}>{value}</div>
-                    <div className="text-[10px] text-muted-foreground mt-0.5">{label}</div>
+                    <div className="text-[11px] text-muted-foreground mt-0.5">{label}</div>
                   </div>
                 ))}
               </div>
@@ -339,8 +339,8 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
                   { label: 'Candidate output', content: cand.output, err: cand.error },
                 ].map(({ label, content, err }) => (
                   <div key={label}>
-                    <div className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
-                    <pre className={`rounded-lg border p-2.5 text-[10px] font-mono leading-relaxed overflow-auto max-h-40 whitespace-pre-wrap break-all
+                    <div className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1">{label}</div>
+                    <pre className={`rounded-lg border p-2.5 text-[11px] font-mono leading-relaxed overflow-auto max-h-40 whitespace-pre-wrap break-all
                       ${err ? 'border-red-200 dark:border-red-900/60 bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400' : 'border-border bg-muted/20 text-foreground'}`}>
                       {err ? `ERROR: ${err}` : (content || '(empty)')}
                     </pre>
@@ -393,7 +393,7 @@ function TokenBudgetPanel({ traces }: { traces: Trace[] }) {
       <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <Coins className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Token Budget Monitor</h3>
-        <span className="ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
+        <span className="ml-1.5 flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500" />ACTIVE
         </span>
         <span className="ml-auto text-[11px] text-muted-foreground">per agent · all time</span>
@@ -418,9 +418,9 @@ function TokenBudgetPanel({ traces }: { traces: Trace[] }) {
                     <div className="h-full rounded-full bg-primary transition-all" style={{ width: `${pct}%` }} />
                   </div>
                   <div className="flex gap-3 mt-0.5">
-                    <span className="text-[10px] text-muted-foreground">↑ {a.input.toLocaleString()} in</span>
-                    <span className="text-[10px] text-muted-foreground">↓ {a.output.toLocaleString()} out</span>
-                    <span className="text-[10px] text-muted-foreground">{a.calls} calls</span>
+                    <span className="text-[11px] text-muted-foreground">↑ {a.input.toLocaleString()} in</span>
+                    <span className="text-[11px] text-muted-foreground">↓ {a.output.toLocaleString()} out</span>
+                    <span className="text-[11px] text-muted-foreground">{a.calls} calls</span>
                   </div>
                 </div>
               )
@@ -460,7 +460,7 @@ function RegressionPanel({ traces }: { traces: Trace[] }) {
       <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <TrendingDown className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Regression Monitor</h3>
-        <span className={`ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${riskFns.length > 0 ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20' : 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'}`}>
+        <span className={`ml-1.5 flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full border ${riskFns.length > 0 ? 'bg-yellow-500/10 text-yellow-600 dark:text-yellow-400 border-yellow-500/20' : 'bg-green-500/10 text-green-600 dark:text-green-400 border-green-500/20'}`}>
           <span className={`w-1.5 h-1.5 rounded-full ${riskFns.length > 0 ? 'bg-yellow-500' : 'bg-green-500'}`} />
           {riskFns.length > 0 ? `${riskFns.length} AT RISK` : 'ALL CLEAR'}
         </span>
@@ -478,12 +478,12 @@ function RegressionPanel({ traces }: { traces: Trace[] }) {
               <div key={r.fn} className="flex items-center justify-between p-2.5 bg-yellow-500/5 border border-yellow-500/20 rounded-lg">
                 <div className="min-w-0">
                   <p className="text-xs font-mono font-medium text-foreground truncate">{r.fn}</p>
-                  <p className="text-[10px] text-muted-foreground mt-0.5">{r.calls} calls · avg {r.avg.toFixed(2)}s</p>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">{r.calls} calls · avg {r.avg.toFixed(2)}s</p>
                 </div>
                 <span className="text-xs font-semibold text-yellow-600 dark:text-yellow-400 ml-3 shrink-0">CV {(r.cv * 100).toFixed(0)}%</span>
               </div>
             ))}
-            <p className="text-[10px] text-muted-foreground pt-1">High coefficient of variation (CV &gt; 40%) signals unstable latency.</p>
+            <p className="text-[11px] text-muted-foreground pt-1">High coefficient of variation (CV &gt; 40%) signals unstable latency.</p>
           </div>
         )}
       </div>

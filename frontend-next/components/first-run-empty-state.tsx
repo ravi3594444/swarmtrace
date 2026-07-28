@@ -92,7 +92,11 @@ export function FirstRunEmptyState() {
 
       {/* 3-step checklist */}
       <div className="w-full max-w-lg space-y-4 text-left">
-        {/* Step 1: Install SDK */}
+        {/* Step 1: Install SDK
+            No checkmark here — we can't reliably detect from the browser
+            whether pip install actually ran, so showing a green check
+            would be misleading. Only step 2 (API key) gets a checkmark
+            because we can verify it via the /api/settings/api-keys call. */}
         <div className="flex items-start gap-4 p-4 rounded-xl border border-border bg-card">
           <div className="w-8 h-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0 mt-0.5">
             <span className="text-sm font-bold text-primary">1</span>
@@ -118,7 +122,6 @@ export function FirstRunEmptyState() {
               </button>
             </div>
           </div>
-          <CheckCircle className="w-5 h-5 text-green-500 shrink-0 mt-1" />
         </div>
 
         {/* Step 2: Get API key */}
