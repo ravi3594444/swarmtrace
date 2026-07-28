@@ -1,11 +1,16 @@
 'use client'
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, memo } from "react";
 import type { Trace } from "@/lib/trace-types";
 import { Activity, Clock, Coins, Hash } from "lucide-react";
 import { UsageBreakdownDrawer } from "./UsageBreakdownDrawer";
 
-function StatCard({ label, value, unit, icon: Icon, trend, onMenuClick, menuLabel }: {
+// Memoized so the slide-in-up animation doesn't replay when the parent
+// re-renders (e.g. on every poll cycle). The animation only plays on mount;
+// memo prevents the component from being re-created when the props are
+// unchanged. Previously every re-render of StatBar re-ran the animation,
+// causing a distracting flash every 8s (the poll interval).
+const StatCard = memo(function StatCard({ label, value, unit, icon: Icon, trend, onMenuClick, menuLabel }: {
   label: string;
   value: string;
   unit?: string;
@@ -40,7 +45,7 @@ function StatCard({ label, value, unit, icon: Icon, trend, onMenuClick, menuLabe
       {trend && <div className="mt-2.5 text-xs text-muted-foreground">{trend}</div>}
     </div>
   );
-}
+});
 
 export function StatBar({ traces }: { traces: Trace[] }) {
   const [drawerOpen, setDrawerOpen] = useState(false);

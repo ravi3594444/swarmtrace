@@ -56,6 +56,7 @@ interface AgentChannel {
   connected: boolean
   error: string | null    // non-null if the history fetch or subscription failed
   subscribers: number   // ref-count so we know when to *stop* garbage-collecting
+  lastUsed: number      // epoch ms of last subscribe — for LRU eviction
 }
 
 interface RealtimeContextValue {
@@ -69,6 +70,13 @@ interface RealtimeContextValue {
 }
 
 const MAX_EVENTS_PER_AGENT = 300
+
+// Max number of agent channels to keep cached at 0 subscribers. Without
+// this cap, every agent the user ever views stays in memory forever (the
+// original code never GC'd channels). With LRU eviction, the oldest
+// 0-subscriber channels are removed when the cache exceeds this size.
+// Active channels (subscribers > 0) are never evicted.
+const MAX_CACHED_CHANNELS = 20
 
 // ── Context ──────────────────────────────────────────────────────────────────
 
@@ -225,8 +233,10 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
   const subscribe = useCallback((agentId: string) => {
     if (channels.current[agentId]) {
-      // Channel already open — just increment subscriber count
+      // Channel already open — just increment subscriber count and bump
+      // lastUsed so LRU eviction keeps it around longer.
       channels.current[agentId].subscribers += 1
+      channels.current[agentId].lastUsed = Date.now()
       return
     }
     // Create the slot synchronously so concurrent calls don't double-open
@@ -236,8 +246,24 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       connected: false,
       error: null,
       subscribers: 1,
+      lastUsed: Date.now(),
     }
     openChannel(agentId)
+
+    // LRU eviction: if the cache of 0-subscriber channels has grown beyond
+    // MAX_CACHED_CHANNELS, remove the oldest ones. Active channels
+    // (subscribers > 0) are never evicted. This prevents unbounded memory
+    // growth when the user browses many different agents over time.
+    const cached = Object.entries(channels.current)
+      .filter(([, ch]) => ch.subscribers <= 0)
+      .sort((a, b) => a[1].lastUsed - b[1].lastUsed)
+    if (cached.length > MAX_CACHED_CHANNELS) {
+      const toEvict = cached.slice(0, cached.length - MAX_CACHED_CHANNELS)
+      for (const [id, ch] of toEvict) {
+        if (ch.channel && sb.current) sb.current.removeChannel(ch.channel)
+        delete channels.current[id]
+      }
+    }
   }, [openChannel])
 
   const unsubscribe = useCallback((agentId: string) => {

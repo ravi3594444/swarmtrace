@@ -1,6 +1,7 @@
 'use client'
 
 import { useRef, useState, useEffect, useCallback } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentEvents, AgentEvent, EventData } from '@/contexts/RealtimeContext'
 
 // ── Per-event data shapes ────────────────────────────────────────────────────
@@ -178,6 +179,39 @@ function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick
   )
 }
 
+// ── Virtualized event list ───────────────────────────────────────────────────
+// Renders only the visible window of events + overscan when the list is
+// large (>50 items). Uses @tanstack/react-virtual with dynamic measuring
+// so expanded rows (screenshots, token streams) are measured correctly.
+// This is a separate component so the useVirtualizer hook is called at the
+// top level (not inside a conditional), satisfying the Rules of Hooks.
+function VirtualizedEventList({ filtered, listRef, onScreenshotClick }: {
+  filtered: AgentEvent[]
+  listRef: React.RefObject<HTMLDivElement | null>
+  onScreenshotClick: (src: string, url?: string) => void
+}) {
+  const virtualizer = useVirtualizer({
+    count: filtered.length,
+    getScrollElement: () => listRef.current,
+    estimateSize: () => 44, // collapsed row height — expanded rows are measured
+    overscan: 8,
+  })
+  return (
+    <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+      {virtualizer.getVirtualItems().map((virtualItem) => (
+        <div
+          key={filtered[virtualItem.index].id}
+          data-index={virtualItem.index}
+          ref={virtualizer.measureElement}
+          style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${virtualItem.start}px)` }}
+        >
+          <EventRow ev={filtered[virtualItem.index]} onScreenshotClick={onScreenshotClick} />
+        </div>
+      ))}
+    </div>
+  )
+}
+
 // ── Main component ───────────────────────────────────────────────────────────
 export default function LiveActivity({ agentId, agentName }: Props) {
   const { events, connected, error } = useAgentEvents(agentId)
@@ -185,6 +219,7 @@ export default function LiveActivity({ agentId, agentName }: Props) {
   const [filter, setFilter]   = useState<string>('all')
   const [lightbox, setLightbox] = useState<{ src: string; url?: string } | null>(null)
   const bottomRef  = useRef<HTMLDivElement>(null)
+  const listRef    = useRef<HTMLDivElement>(null)
 
   const openLightbox = useCallback((src: string, url?: string) => {
     setLightbox({ src, url })
@@ -197,6 +232,11 @@ export default function LiveActivity({ agentId, agentName }: Props) {
   const filtered = filter === 'all'
     ? events
     : events.filter(e => e.event_type === filter)
+
+  // Virtualize only when the list is large enough that the DOM cost
+  // matters. Small lists render normally so the expand/collapse +
+  // lightbox interactions stay simple.
+  const useVirtualization = filtered.length > 50
 
   const counts = events.reduce<Record<string, number>>((acc, e) => {
     acc[e.event_type] = (acc[e.event_type] ?? 0) + 1
@@ -240,7 +280,7 @@ export default function LiveActivity({ agentId, agentName }: Props) {
       </div>
 
       {/* Event list */}
-      <div className="flex-1 overflow-y-auto py-1 scrollbar-thin">
+      <div ref={listRef} className="flex-1 overflow-y-auto py-1 scrollbar-thin">
         {error ? (
           <div className="flex flex-col items-center justify-center h-full text-center px-6">
             <p className="text-sm text-red-500 dark:text-red-400 font-medium">Couldn&apos;t load agent activity</p>
@@ -250,6 +290,8 @@ export default function LiveActivity({ agentId, agentName }: Props) {
           <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
             {connected ? 'Waiting for agent activity…' : 'Connecting to live feed…'}
           </div>
+        ) : useVirtualization ? (
+          <VirtualizedEventList filtered={filtered} listRef={listRef} onScreenshotClick={openLightbox} />
         ) : (
           filtered.map(ev => <EventRow key={ev.id} ev={ev} onScreenshotClick={openLightbox} />)
         )}

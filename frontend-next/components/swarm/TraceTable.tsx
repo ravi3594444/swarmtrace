@@ -5,7 +5,10 @@ import type { Trace } from "@/lib/trace-types";
 import { formatTraceTime as formatTime } from "@/lib/format-time";
 import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from "lucide-react";
 
-const PAGE_SIZES = [25, 50, 100];
+// Includes 500 so users can see the full backend cap (500 traces) on one
+// page instead of paginating 20 times. 25/50/100 remain for smaller screens
+// or when the user prefers incremental browsing.
+const PAGE_SIZES = [25, 50, 100, 500];
 
 type SortKey = "id" | "function" | "latency_sec" | "input_tokens" | "output_tokens" | "cost_usd" | "timestamp";
 
