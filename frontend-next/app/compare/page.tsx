@@ -4,7 +4,7 @@ import { useMemo, useState } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
-import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { similarity, lineDiff } from '@/lib/text-compare'
 import { filterTracesByRange } from '@/lib/trace-utils'
@@ -28,7 +28,7 @@ function TracePicker({
 }) {
   return (
     <div className="flex-1 min-w-0">
-      <label className="block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{label}</label>
+      <label className="block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground mb-1.5">{label}</label>
       <select
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -48,7 +48,7 @@ function OutputPanel({ title, trace }: { title: string; trace: Trace | undefined
       <div className="border-b border-border bg-muted/30 px-4 py-2.5 flex items-center justify-between">
         <h3 className="text-xs font-semibold text-foreground">{title}</h3>
         {trace && (
-          <span className="text-[10px] text-muted-foreground font-mono">
+          <span className="text-[11px] text-muted-foreground font-mono">
             {(trace.latency_sec ?? 0).toFixed(2)}s · ${(trace.cost_usd ?? 0).toFixed(4)}
           </span>
         )}
@@ -96,7 +96,7 @@ export default function ComparePage() {
 
   if (loading) return (
     <DashboardLayout>
-      <SwarmLoadingScreen message="Loading traces to compare…" />
+      <DashboardSkeleton title="Compare" description="Side-by-side trace comparison" />
     </DashboardLayout>
   )
 

@@ -5,7 +5,7 @@ import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
-import { SwarmLoadingScreen } from '@/components/swarm/LoadingScreen'
+import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import type { Trace } from '@/lib/trace-types'
 import { clusterErrors } from '@/lib/error-clustering'
@@ -30,7 +30,7 @@ export default function FailuresPage() {
 
   if (loading) return (
     <DashboardLayout>
-      <SwarmLoadingScreen message="Scanning for failures…" />
+      <DashboardSkeleton title="Failures" description="Clustered errors from your agents" />
     </DashboardLayout>
   )
 
@@ -100,7 +100,7 @@ export default function FailuresPage() {
                     <div className="border-t border-border/60 animate-slide-in-up">
                       <table className="w-full">
                         <thead>
-                          <tr className="border-b border-border/60 bg-muted/20 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+                          <tr className="border-b border-border/60 bg-muted/20 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
                             <th className="px-4 py-2.5 text-left">ID</th>
                             <th className="px-4 py-2.5 text-left">Function</th>
                             <th className="px-4 py-2.5 text-left">Error</th>

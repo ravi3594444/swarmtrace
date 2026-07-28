@@ -3,7 +3,8 @@
 import { useState } from "react";
 import type { Trace } from "@/lib/trace-types";
 import { buildSpanTree, type SpanNode as Node } from "@/lib/span-tree";
-import { ChevronRight, Copy, Check } from "lucide-react";
+import { ChevronRight, Copy, Check, GitBranch } from "lucide-react";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 
 function truncateId(id: string): string {
   return id.length <= 10 ? id : `${id.slice(0, 4)}...${id.slice(-4)}`;
@@ -29,7 +30,7 @@ function CopyId({ id }: { id: string }) {
       title={copied ? "Copied!" : `Copy ${id}`}
       className="shrink-0 flex items-center gap-1 rounded px-1 py-0.5 -mx-1 text-muted-foreground/70 hover:text-foreground hover:bg-muted transition-colors"
     >
-      <span className="font-mono text-[10px]">{truncateId(id)}</span>
+      <span className="font-mono text-[11px]">{truncateId(id)}</span>
       {copied ? <Check className="w-2.5 h-2.5 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-2.5 h-2.5" />}
     </button>
   );
@@ -74,7 +75,7 @@ function TreeNode({
         <span className="w-14 shrink-0 text-right tabular-nums text-muted-foreground font-mono">
           {node.latency_sec.toFixed(2)}s
         </span>
-        <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[10px] font-bold uppercase ${
+        <span className={`shrink-0 rounded-full px-2 py-0.5 font-mono text-[11px] font-bold uppercase ${
           ok ? "bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border border-emerald-200 dark:border-emerald-900/60"
              : "bg-red-50 dark:bg-red-950/30 text-destructive border border-red-200 dark:border-red-900/60"
         }`}>
@@ -96,11 +97,17 @@ export function CallTree({ traces, onSelect }: { traces: Trace[]; onSelect: (t: 
     <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3">
         <h3 className="text-sm font-semibold text-foreground">Agent Call Tree</h3>
-        <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">execution sequence</span>
+        <span className="font-mono text-[11px] text-muted-foreground uppercase tracking-wider">execution sequence</span>
       </div>
       <div>
         {roots.length === 0 ? (
-          <div className="py-12 text-center text-sm text-muted-foreground">No traces to display</div>
+          <Empty className="py-12 border-0">
+            <EmptyMedia variant="icon">
+              <GitBranch className="w-5 h-5" />
+            </EmptyMedia>
+            <EmptyTitle>No traces to display</EmptyTitle>
+            <EmptyDescription>Traces will appear here once your agents run.</EmptyDescription>
+          </Empty>
         ) : (
           roots.map((r) => (
             <TreeNode key={r.id} node={r} maxLatency={maxLatency} depth={0} onSelect={onSelect} />

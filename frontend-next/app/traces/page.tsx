@@ -234,7 +234,7 @@ function TagFilterBar({
   return (
     <div className="flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/10 flex-wrap">
       <Tag className="w-3.5 h-3.5 text-muted-foreground shrink-0" />
-      <span className="text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">Tags:</span>
+      <span className="text-[11px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">Tags:</span>
       {allTags.map(({ tag, count }) => {
         const active = activeTags.has(tag)
         const [prefix, label] = tag.split(':')
@@ -242,7 +242,7 @@ function TagFilterBar({
           <button
             key={tag}
             onClick={() => onToggle(tag)}
-            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium transition-all
+            className={`flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-all
               ${active
                 ? 'bg-primary text-primary-foreground border-primary'
                 : 'bg-card text-muted-foreground border-border hover:border-primary/50 hover:text-foreground'}`}
@@ -256,7 +256,7 @@ function TagFilterBar({
       {activeTags.size > 0 && (
         <button
           onClick={onClear}
-          className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          className="flex items-center gap-1 rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground transition-colors"
         >
           <X className="w-2.5 h-2.5" /> Clear
         </button>
@@ -276,7 +276,7 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
           <div className={`text-sm font-semibold truncate ${ok ? 'text-foreground' : 'text-destructive'}`}>
             {trace.function}
           </div>
-          <div className="font-mono text-[10px] text-muted-foreground mt-0.5">{trace.id}</div>
+          <div className="font-mono text-[11px] text-muted-foreground mt-0.5">{trace.id}</div>
         </div>
         <button onClick={onClose} className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0 ml-2">
           <X className="w-4 h-4" />
@@ -303,14 +303,14 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
             <div key={label} className="rounded-xl border border-border bg-muted/30 p-2.5 text-center">
               <Icon className="w-3 h-3 text-muted-foreground mx-auto mb-1" />
               <div className="font-mono text-xs font-bold text-foreground">{value}</div>
-              <div className="text-[10px] text-muted-foreground">{label}</div>
+              <div className="text-[11px] text-muted-foreground">{label}</div>
             </div>
           ))}
         </div>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Status</div>
-          <span className={`inline-block rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase border ${ok ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60' : 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60'}`}>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Status</div>
+          <span className={`inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold uppercase border ${ok ? 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60' : 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60'}`}>
             {ok ? 'SUCCESS' : 'ERROR'}
           </span>
         </div>
@@ -318,15 +318,15 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
         {/* Tags row */}
         {(trace.kind || trace.agent_name) && (
           <div>
-            <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Tags</div>
+            <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Tags</div>
             <div className="flex flex-wrap gap-1.5">
               {trace.kind && (
-                <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                   kind:{trace.kind}
                 </span>
               )}
               {trace.agent_name && (
-                <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                <span className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
                   agent:{trace.agent_name}
                 </span>
               )}
@@ -335,22 +335,22 @@ function TraceDetail({ trace, allTraces, onClose, onJump }: {
         )}
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Call Chain</div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Call Chain</div>
           <CallChainCrumbs trace={trace} allTraces={allTraces} onJump={onJump} />
         </div>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Input</div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Input</div>
           <SmartJson raw={trace.args} maxHeight="180px" />
         </div>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Output</div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Output</div>
           <SmartJson raw={trace.output} maxHeight="200px" />
         </div>
 
         <div>
-          <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Details</div>
+          <div className="text-[11px] font-bold uppercase tracking-widest text-muted-foreground mb-1.5">Details</div>
           <div className="rounded-xl border border-border bg-muted/20 overflow-hidden">
             {([
               ['Span ID', trace.id],
@@ -432,16 +432,16 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
 
         {/* Kind badge */}
         {node.kind && node.kind !== 'function' && (
-          <span className="hidden lg:inline-block text-[10px] font-bold uppercase rounded-full px-1.5 py-0.5 border border-border bg-muted/40 text-muted-foreground shrink-0">
+          <span className="hidden lg:inline-block text-[11px] font-bold uppercase rounded-full px-1.5 py-0.5 border border-border bg-muted/40 text-muted-foreground shrink-0">
             {node.kind}
           </span>
         )}
 
         {isRoot && descCount > 0 && (
-          <span className="font-mono text-[10px] text-muted-foreground/50 shrink-0 hidden lg:block">+{descCount}</span>
+          <span className="font-mono text-[11px] text-muted-foreground/50 shrink-0 hidden lg:block">+{descCount}</span>
         )}
 
-        <span className="font-mono text-[10px] text-muted-foreground/35 shrink-0 w-16 text-right hidden lg:block truncate">
+        <span className="font-mono text-[11px] text-muted-foreground/35 shrink-0 w-16 text-right hidden lg:block truncate">
           {node.id.slice(0, 8)}
         </span>
 
@@ -457,7 +457,7 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
           ${(node.cost_usd ?? 0).toFixed(4)}
         </span>
 
-        <span className={`text-[10px] font-bold uppercase rounded-full px-1.5 py-0.5 border shrink-0 ${hasErr ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60' : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60'}`}>
+        <span className={`text-[11px] font-bold uppercase rounded-full px-1.5 py-0.5 border shrink-0 ${hasErr ? 'bg-red-50 dark:bg-red-950/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-900/60' : 'bg-emerald-50 dark:bg-emerald-950/30 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-900/60'}`}>
           {hasErr ? 'ERR' : 'OK'}
         </span>
       </div>
@@ -500,7 +500,7 @@ function ToolAttentionPanel({ traces }: { traces: Trace[] }) {
       <div className="flex items-center gap-2 border-b border-border bg-muted/30 px-4 py-3">
         <Wrench className="w-4 h-4 text-primary" />
         <h3 className="text-sm font-semibold text-foreground">Tool Attention</h3>
-        <span className="ml-1.5 flex items-center gap-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
+        <span className="ml-1.5 flex items-center gap-1 text-[11px] font-semibold px-1.5 py-0.5 rounded-full bg-green-500/10 text-green-600 dark:text-green-400 border border-green-500/20">
           <span className="w-1.5 h-1.5 rounded-full bg-green-500" />ACTIVE
         </span>
         <span className="ml-auto text-[11px] text-muted-foreground">kind=tool spans only</span>
@@ -774,7 +774,7 @@ export default function TracesPage() {
                     </span>
                   </div>
 
-                  <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/20 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">
+                  <div className="flex items-center gap-2 px-3 py-2 border-b border-border bg-muted/20 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground shrink-0">
                     <div className="w-4 shrink-0" />
                     <div className="w-1.5 shrink-0" />
                     <div className="flex-1">Span / Function</div>

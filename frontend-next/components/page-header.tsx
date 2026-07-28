@@ -56,7 +56,7 @@ export function PageHeader({
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-foreground truncate">{title}</h1>
           {badge && (
-            <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 uppercase tracking-wide shrink-0">
+            <span className="text-[11px] font-semibold px-1.5 py-0.5 rounded bg-primary/10 text-primary border border-primary/20 uppercase tracking-wide shrink-0">
               {badge}
             </span>
           )}
@@ -104,7 +104,7 @@ export function PageHeader({
           className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-2.5 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-zinc-300 dark:hover:border-zinc-600 transition-[background-color,border-color,color] duration-200 shadow-sm"
         >
           <Search className="w-3.5 h-3.5" />
-          <kbd className="text-[10px] border border-border rounded px-1 py-px">Ctrl K</kbd>
+          <kbd className="text-[11px] border border-border rounded px-1 py-px">Ctrl K</kbd>
         </button>
         <ThemeToggle />
       </div>
