@@ -27,7 +27,7 @@ export function ExecutionArchitecture({
 
   if (traces.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-8 text-center shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-8 text-center">
         <Activity className="mx-auto mb-3 h-8 w-8 text-muted-foreground/60" />
         <h3 className="text-sm font-semibold text-foreground">No architecture to draw yet</h3>
         <p className="mt-1 text-sm text-muted-foreground">
@@ -47,7 +47,7 @@ export function ExecutionArchitecture({
           { label: 'Tokens', value: summary.totalTokens.toLocaleString() },
           { label: 'Cost', value: formatCost(summary.totalCost) },
         ].map((item) => (
-          <div key={item.label} className="rounded-xl border border-border bg-card p-4 shadow-sm">
+          <div key={item.label} className="rounded-xl border border-border bg-card p-4">
             <div className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">
               {item.label}
             </div>
@@ -56,7 +56,7 @@ export function ExecutionArchitecture({
         ))}
       </div>
 
-      <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden">
+      <div className="rounded-xl border border-border bg-card overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 border-b border-border bg-muted/30 px-4 py-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Execution Architecture</h3>
@@ -141,7 +141,7 @@ export function ExecutionArchitecture({
         </div>
       </div>
 
-      <div className="rounded-xl border border-border bg-card p-4 shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-4">
         <div className="mb-3 flex items-center justify-between gap-3">
           <div>
             <h3 className="text-sm font-semibold text-foreground">Observed span flows</h3>

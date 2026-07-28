@@ -2,6 +2,7 @@
 
 import { useRef, useState, useEffect, useCallback } from 'react'
 import { useAgentEvents, AgentEvent, EventData } from '@/contexts/RealtimeContext'
+import { Globe, Sparkles, Link as LinkIcon, FileText, Camera } from 'lucide-react'
 
 // ── Per-event data shapes ────────────────────────────────────────────────────
 interface BrowserData  { method?: string; url?: string; args?: string[]; screenshot?: string; error?: string }
@@ -16,22 +17,28 @@ interface Props {
 }
 
 // ── Icons ───────────────────────────────────────────────────────────────────
-const ICONS: Record<string, string> = {
-  browser:     '🌐',
-  llm_token:   '✨',
-  http:        '🔗',
-  file:        '📄',
-  screen_tick: '📸',
+// Lucide icons (aria-hidden) replace the old emoji set — emoji are read
+// verbatim by screen readers and don't match the rest of the app's icon
+// system. Each entry is a component so we can size + color it consistently.
+const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
+  browser:     Globe,
+  llm_token:   Sparkles,
+  http:        LinkIcon,
+  file:        FileText,
+  screen_tick: Camera,
 }
 
-// Use CSS variables so the component works in BOTH light and dark mode.
-// The old code hardcoded text-zinc-300/500 and bg-black/20 which are
-// invisible on a light background (the dashboard default).
+// Status colors stay strictly within the app's tonal system — no purple
+// (which was outside the Charcoal & Ivory monochrome palette). `streaming`
+// now uses the same muted accent as `info` so the palette stays achromatic;
+// the motion of accumulating tokens is enough to signal "streaming" without
+// a distinct hue. Error/started/done keep their semantic colors because
+// they match how status is coded everywhere else in the dashboard.
 const STATUS_COLOR: Record<string, string> = {
   started:   'text-blue-500 dark:text-blue-400',
-  done:      'text-green-600 dark:text-green-400 dark:text-green-400',
+  done:      'text-green-600 dark:text-green-400',
   error:     'text-red-500 dark:text-red-400',
-  streaming: 'text-purple-500 dark:text-purple-400',
+  streaming: 'text-muted-foreground',
   info:      'text-muted-foreground',
 }
 
@@ -112,6 +119,18 @@ function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick
           ? 'bg-red-500/10 hover:bg-red-500/15 dark:bg-red-500/10 dark:hover:bg-red-500/15'
           : 'hover:bg-muted/60'}`}
       onClick={() => hasExpandable && setExpanded(e => !e)}
+      onKeyDown={(e) => {
+        // Keyboard support: Enter/Space toggles expand for expandable rows.
+        // Non-expandable rows are not interactive and don't get a tabIndex.
+        if (hasExpandable && (e.key === 'Enter' || e.key === ' ')) {
+          e.preventDefault()
+          setExpanded(x => !x)
+        }
+      }}
+      role={hasExpandable ? 'button' : undefined}
+      tabIndex={hasExpandable ? 0 : undefined}
+      aria-expanded={hasExpandable ? expanded : undefined}
+      aria-label={hasExpandable ? `${ev.event_type} event — ${ev.status}. ${label}` : undefined}
     >
       <div className="flex items-center gap-2 text-sm">
         {/* Thumbnail for screen_tick events — visible even when collapsed */}
@@ -120,12 +139,20 @@ function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick
             onClick={(e) => { e.stopPropagation(); onScreenshotClick(screenshot!, (d as BrowserData).url) }}
             className="shrink-0 w-12 h-8 rounded border border-border overflow-hidden hover:ring-2 hover:ring-primary transition-all"
             title="Click to view full size"
+            aria-label={`View screenshot of ${(d as BrowserData).url ?? 'page'} full size`}
           >
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={screenshot} alt="thumbnail" className="w-full h-full object-cover" />
+            <img src={screenshot} alt={`screenshot of ${(d as BrowserData).url ?? 'page'}`} className="w-full h-full object-cover" />
           </button>
         ) : (
-          <span className="text-base leading-none shrink-0">{ICONS[ev.event_type] ?? '●'}</span>
+          (() => {
+            const Icon = ICONS[ev.event_type]
+            return Icon ? (
+              <Icon className="shrink-0 w-4 h-4 text-muted-foreground" aria-hidden />
+            ) : (
+              <span className="shrink-0 w-4 h-4 flex items-center justify-center text-muted-foreground" aria-hidden>●</span>
+            )
+          })()
         )}
         <span className={`text-xs font-mono shrink-0 ${STATUS_COLOR[ev.status] ?? 'text-muted-foreground'}`}>{ev.status}</span>
         <span className="text-foreground/80 flex-1 truncate font-mono text-xs">{label}</span>
@@ -223,20 +250,24 @@ export default function LiveActivity({ agentId, agentName }: Props) {
 
       {/* Filter bar */}
       <div className="flex gap-1 px-3 py-2 border-b border-border/50 shrink-0 overflow-x-auto scrollbar-thin">
-        {(['all', 'browser', 'llm_token', 'http', 'file', 'screen_tick'] as const).map(f => (
-          <button
-            key={f}
-            onClick={() => setFilter(f)}
-            className={`px-2 py-0.5 rounded text-xs font-mono whitespace-nowrap transition-colors
-              ${filter === f
-                ? 'bg-primary/15 text-primary'
-                : 'text-muted-foreground hover:text-foreground'}`}
-          >
-            {f === 'all'
-              ? `all (${events.length})`
-              : `${ICONS[f]} ${f} (${counts[f] ?? 0})`}
-          </button>
-        ))}
+        {(['all', 'browser', 'llm_token', 'http', 'file', 'screen_tick'] as const).map(f => {
+          const Icon = ICONS[f]
+          return (
+            <button
+              key={f}
+              onClick={() => setFilter(f)}
+              aria-pressed={filter === f}
+              className={`flex items-center gap-1 px-2.5 py-1 rounded text-xs font-mono whitespace-nowrap transition-colors
+                ${filter === f
+                  ? 'bg-primary/15 text-primary'
+                  : 'text-muted-foreground hover:text-foreground'}`}
+            >
+              {f === 'all'
+                ? `all (${events.length})`
+                : <>{Icon && <Icon className="w-3 h-3" aria-hidden />} {f} ({counts[f] ?? 0})</>}
+            </button>
+          )
+        })}
       </div>
 
       {/* Event list */}

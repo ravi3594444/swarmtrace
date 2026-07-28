@@ -21,9 +21,24 @@ function SortableHeader({ k, sortKey, asc, onToggle, children }: {
   onToggle: (k: SortKey) => void;
   children: React.ReactNode;
 }) {
+  const active = sortKey === k;
+  // The <th> keeps its implicit columnheader role (so aria-sort is valid)
+  // and carries the sort state. The actual interactive element is a nested
+  // <button> — this is the WAI-ARIA recommended pattern for sortable
+  // column headers, and it's keyboard-accessible by default (no need for
+  // tabIndex/role hacks on the <th> itself).
   return (
-    <th onClick={() => onToggle(k)} className="px-4 py-3 cursor-pointer select-none text-[11px] font-semibold uppercase tracking-wider text-muted-foreground hover:text-foreground transition-colors text-left">
-      <span className="flex items-center gap-1">{children}<SortIcon active={sortKey === k} asc={asc} /></span>
+    <th
+      aria-sort={active ? (asc ? "ascending" : "descending") : "none"}
+      className="px-4 py-3 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground text-left"
+    >
+      <button
+        onClick={() => onToggle(k)}
+        aria-label={`Sort by ${children}${active ? ` (${asc ? "ascending" : "descending"})` : ""}`}
+        className="flex items-center gap-1 cursor-pointer select-none hover:text-foreground transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
+      >
+        {children}<SortIcon active={active} asc={asc} />
+      </button>
     </th>
   );
 }
@@ -60,7 +75,7 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
   const pageRows = sorted.slice(start, start + pageSize);
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
         <h3 className="text-sm font-semibold text-foreground">{showErrors ? "Failed Traces" : "All Traces"}</h3>
         <span className="text-[11px] text-muted-foreground">{sorted.length} rows</span>
@@ -135,7 +150,7 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
             <select
               value={pageSize}
               onChange={(e) => { setPageSize(Number(e.target.value)); setPage(0); }}
-              className="h-7 rounded-md border border-border bg-card px-1.5 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              className="h-9 rounded-md border border-border bg-card px-2 text-[11px] text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
               aria-label="Rows per page"
             >
               {PAGE_SIZES.map((s) => <option key={s} value={s}>{s}</option>)}
@@ -150,9 +165,9 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
                 onClick={() => setPage(Math.max(safePage - 1, 0))}
                 disabled={safePage === 0}
                 aria-label="Previous page"
-                className="flex items-center justify-center w-7 h-7 rounded-md border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center justify-center w-9 h-9 rounded-md border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
               >
-                <ChevronLeft className="w-3.5 h-3.5" />
+                <ChevronLeft className="w-4 h-4" />
               </button>
               <span className="text-[11px] text-muted-foreground tabular-nums px-1">
                 {safePage + 1} / {pageCount}
@@ -161,9 +176,9 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
                 onClick={() => setPage(Math.min(safePage + 1, pageCount - 1))}
                 disabled={safePage >= pageCount - 1}
                 aria-label="Next page"
-                className="flex items-center justify-center w-7 h-7 rounded-md border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                className="flex items-center justify-center w-9 h-9 rounded-md border border-border bg-card text-muted-foreground hover:text-foreground disabled:opacity-40 disabled:cursor-not-allowed transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
               >
-                <ChevronRight className="w-3.5 h-3.5" />
+                <ChevronRight className="w-4 h-4" />
               </button>
             </div>
           </div>

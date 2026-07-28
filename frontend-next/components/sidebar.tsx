@@ -2,7 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
@@ -10,6 +10,7 @@ import {
 } from 'lucide-react'
 import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 import { useOnboardingTour } from './onboarding/OnboardingTour'
+import { useFocusTrap } from '@/lib/use-focus-trap'
 
 /** "Take a tour" trigger — replays the new-user onboarding tour on demand. */
 function TakeTourButton({ collapsed }: { collapsed: boolean }) {
@@ -131,6 +132,8 @@ function NavItem({
  * confirm button, so it integrates with the existing Clerk auth flow. */
 function LogoutButton() {
   const [confirmOpen, setConfirmOpen] = useState(false)
+  const modalRef = useRef<HTMLDivElement>(null)
+  useFocusTrap(modalRef, confirmOpen)
 
   // Close on Escape so the modal doesn't get stranded.
   useEffect(() => {
@@ -164,10 +167,12 @@ function LogoutButton() {
           onClick={() => setConfirmOpen(false)}
         >
           <div
+            ref={modalRef}
             role="dialog"
+            aria-modal="true"
             aria-label="Confirm log out"
             onClick={(e) => e.stopPropagation()}
-            className="w-64 rounded-xl border border-border bg-card shadow-xl overflow-hidden"
+            className="w-64 rounded-xl border border-border bg-card overflow-hidden"
           >
             <div className="px-4 py-3 border-b border-border bg-muted/30">
               <p className="text-sm font-medium text-foreground text-center">Log out?</p>
