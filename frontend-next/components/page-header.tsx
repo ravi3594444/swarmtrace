@@ -1,9 +1,18 @@
 'use client'
 
 import { ReactNode, useState, useEffect } from 'react'
-import { Search, RefreshCw } from 'lucide-react'
+import { Search, RefreshCw, ChevronRight } from 'lucide-react'
 import { ThemeToggle } from '@/components/theme-toggle'
 import { openCommandPalette } from '@/components/command-palette'
+
+/**
+ * A single breadcrumb crumb. Either a link (href) or plain text.
+ * The last crumb is rendered as plain text (the current page).
+ */
+export interface Breadcrumb {
+  label: string
+  href?: string
+}
 
 /**
  * RelativeTime — ticks every second to show "3s ago", "45s ago", etc.
@@ -27,7 +36,7 @@ function RelativeTime({ date }: { date: Date }) {
 
 export function PageHeader({
   title, description, badge, liveStatus, actions,
-  lastUpdated, onRefresh,
+  lastUpdated, onRefresh, breadcrumbs,
 }: {
   title: string
   description?: string
@@ -38,6 +47,10 @@ export function PageHeader({
   lastUpdated?: Date | null
   /** Callback for a manual refresh button. If omitted, no refresh button. */
   onRefresh?: () => void
+  /** Optional breadcrumbs for context (e.g. Traces → trace_id). The last
+   *  crumb is rendered as plain text; earlier crumbs are links if `href`
+   *  is provided. When omitted, no breadcrumb row is shown. */
+  breadcrumbs?: Breadcrumb[]
 }) {
   const [refreshing, setRefreshing] = useState(false)
 
@@ -53,6 +66,29 @@ export function PageHeader({
   return (
     <div className="sticky top-0 z-20 bg-background/90 backdrop-blur-sm border-b border-border px-6 py-4 flex items-center justify-between gap-4 transition-[background-color,border-color,color] duration-200">
       <div className="min-w-0">
+        {breadcrumbs && breadcrumbs.length > 0 && (
+          <nav aria-label="Breadcrumb" className="mb-1">
+            <ol className="flex items-center gap-1 text-[11px] text-muted-foreground">
+              {breadcrumbs.map((bc, i) => {
+                const isLast = i === breadcrumbs.length - 1
+                return (
+                  <li key={i} className="flex items-center gap-1">
+                    {bc.href && !isLast ? (
+                      <a href={bc.href} className="hover:text-foreground transition-colors truncate max-w-[160px]">
+                        {bc.label}
+                      </a>
+                    ) : (
+                      <span className={isLast ? "text-foreground font-medium truncate max-w-[200px]" : "truncate max-w-[160px]"}>
+                        {bc.label}
+                      </span>
+                    )}
+                    {!isLast && <ChevronRight className="w-3 h-3 shrink-0 text-muted-foreground/50" />}
+                  </li>
+                )
+              })}
+            </ol>
+          </nav>
+        )}
         <div className="flex items-center gap-3">
           <h1 className="text-base font-semibold text-foreground truncate">{title}</h1>
           {badge && (

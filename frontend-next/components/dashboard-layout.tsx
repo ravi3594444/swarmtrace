@@ -4,6 +4,7 @@ import { Sidebar } from './sidebar'
 import { RealtimeProvider } from '@/contexts/RealtimeContext'
 import { DashboardErrorBoundary } from './dashboard-error-boundary'
 import { CommandPalette } from './command-palette'
+import { KeyboardShortcutHelp } from './keyboard-shortcut-help'
 import { OnboardingTourProvider } from './onboarding/OnboardingTour'
 
 export function DashboardLayout({ children }: { children: React.ReactNode }) {
@@ -12,6 +13,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
       <OnboardingTourProvider>
         <div className="flex h-screen bg-background transition-colors duration-200">
           <CommandPalette />
+          <KeyboardShortcutHelp />
           <Sidebar />
           {/* pt-12 lg:pt-0 — the mobile top bar (h-12) is fixed, so the
               main content needs top padding on mobile to not sit under it.
