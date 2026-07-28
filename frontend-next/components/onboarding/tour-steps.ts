@@ -9,8 +9,10 @@ import {
  *
  * `target` is a CSS selector for the element to spotlight. When it is
  * undefined the step is rendered as a centred modal (used for the welcome
- * and finish steps). The tour stays on the current page and spotlights the
- * sidebar entry for each feature rather than navigating between routes.
+ * and finish steps). `route` is the dashboard path the tour navigates to
+ * before spotlighting the target — this lets the user actually see each
+ * feature's page instead of just its sidebar entry. When omitted, the tour
+ * stays on the current page.
  */
 export type TourStep = {
   id: string
@@ -19,6 +21,8 @@ export type TourStep = {
   icon: LucideIcon
   target?: string
   placement?: 'right' | 'left' | 'top' | 'bottom'
+  /** Dashboard route to navigate to before spotlighting the target. */
+  route?: string
 }
 
 export const TOUR_STEPS: TourStep[] = [
@@ -42,6 +46,7 @@ export const TOUR_STEPS: TourStep[] = [
     icon: LayoutGrid,
     target: '[data-tour="nav-overview"]',
     placement: 'right',
+    route: '/overview',
   },
   {
     id: 'agents',
@@ -53,6 +58,7 @@ export const TOUR_STEPS: TourStep[] = [
     icon: Users,
     target: '[data-tour="nav-agents"]',
     placement: 'right',
+    route: '/agents',
   },
   {
     id: 'traces',
@@ -64,6 +70,7 @@ export const TOUR_STEPS: TourStep[] = [
     icon: ActivitySquare,
     target: '[data-tour="nav-traces"]',
     placement: 'right',
+    route: '/traces',
   },
   {
     id: 'threads',
@@ -75,6 +82,7 @@ export const TOUR_STEPS: TourStep[] = [
     icon: MessagesSquare,
     target: '[data-tour="nav-threads"]',
     placement: 'right',
+    route: '/threads',
   },
   {
     id: 'metrics',
@@ -86,6 +94,7 @@ export const TOUR_STEPS: TourStep[] = [
     icon: BarChart3,
     target: '[data-tour="nav-metrics"]',
     placement: 'right',
+    route: '/metrics',
   },
   {
     id: 'compare',
@@ -97,6 +106,7 @@ export const TOUR_STEPS: TourStep[] = [
     icon: GitCompareArrows,
     target: '[data-tour="nav-compare"]',
     placement: 'right',
+    route: '/compare',
   },
   {
     id: 'failures',
@@ -108,6 +118,7 @@ export const TOUR_STEPS: TourStep[] = [
     icon: AlertTriangle,
     target: '[data-tour="nav-failures"]',
     placement: 'right',
+    route: '/failures',
   },
   {
     id: 'settings',
@@ -119,6 +130,7 @@ export const TOUR_STEPS: TourStep[] = [
     icon: Settings,
     target: '[data-tour="nav-settings"]',
     placement: 'right',
+    route: '/settings',
   },
   {
     id: 'search',

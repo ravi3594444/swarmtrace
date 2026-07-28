@@ -18,6 +18,7 @@ import {
   createContext, useCallback, useContext, useEffect, useState,
 } from 'react'
 import { createPortal } from 'react-dom'
+import { useRouter, usePathname } from 'next/navigation'
 import { useUser } from '@clerk/nextjs'
 import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { TOUR_STEPS, type TourStep } from './tour-steps'
@@ -230,6 +231,8 @@ function TourOverlay({
 }: {
   onFinish: () => void
 }) {
+  const router = useRouter()
+  const pathname = usePathname()
   // Resume from the persisted step so a route-driven remount doesn't reset the
   // tour. The overlay only renders client-side (via a portal), so reading
   // sessionStorage in the initializer can't cause a hydration mismatch.
@@ -238,7 +241,23 @@ function TourOverlay({
   const step = TOUR_STEPS[index]
   const total = TOUR_STEPS.length
 
+  // Navigate to the step's route before measuring the target. This is what
+  // makes the tour actually show each page instead of just spotlighting
+  // sidebar entries from /overview. We skip the push when already on the
+  // target route (e.g. the welcome step has no route, or the user manually
+  // navigated to the same page). `router.push` is the only side effect here
+  // — no setState, so no cascading render. The pathname change triggers the
+  // measure effect below to re-attempt targeting on the new page.
+  useEffect(() => {
+    if (!step.route) return
+    if (pathname === step.route) return
+    if (typeof window === 'undefined') return
+    router.push(step.route)
+  }, [step.route, pathname, router])
+
   // Locate the target element, retrying briefly while the page mounts.
+  // Retries matter most right after a route push (above), when the new
+  // page's sidebar item may not be in the DOM yet on the first frame.
   useEffect(() => {
     let cancelled = false
     let raf = 0
@@ -250,12 +269,12 @@ function TourOverlay({
         raf = window.setTimeout(() => attempt(tries - 1), 80)
       }
     }
-    attempt(20)
+    attempt(25)
     return () => {
       cancelled = true
       window.clearTimeout(raf)
     }
-  }, [step.target, index])
+  }, [step.target, index, pathname])
 
   // Keep the spotlight aligned on scroll / resize.
   useEffect(() => {
@@ -389,6 +408,13 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
   // output. The two setActive(true) calls below are an intentional
   // post-hydration sync with those browser-only APIs, not an accidental
   // render cascade, so the set-state-in-effect rule is disabled locally.
+  //
+  // Auto-start is GATED on `swarmtrace:has_traces === '1'` so that brand-new
+  // users (who are seeing <FirstRunEmptyState> on /overview) don't get two
+  // overlapping onboarding experiences at once. Those users reach the tour
+  // via the explicit "Take the tour" button in FirstRunEmptyState instead.
+  // Returning users who somehow never saw the tour still get auto-started
+  // because they have traces (has_traces === '1') and seen === false.
   useEffect(() => {
     if (typeof window === 'undefined') return
     let running = false
@@ -409,14 +435,24 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
     } catch {
       seen = false
     }
-    if (!seen) {
-      try {
-        window.sessionStorage.setItem(RUNNING_KEY, '1')
-      } catch {
-        // sessionStorage may be unavailable; auto-start still works this load.
-      }
-      setActive(true)
+    if (seen) return
+    // Don't auto-start the tour for brand-new users who are still on the
+    // first-run empty state — they get the 3-step setup guide instead, and
+    // can launch the tour explicitly via "Take the tour". This avoids the
+    // two-overlapping-onboarding-experiences problem.
+    let hasTraces = false
+    try {
+      hasTraces = window.localStorage.getItem('swarmtrace:has_traces') === '1'
+    } catch {
+      hasTraces = false
     }
+    if (!hasTraces) return
+    try {
+      window.sessionStorage.setItem(RUNNING_KEY, '1')
+    } catch {
+      // sessionStorage may be unavailable; auto-start still works this load.
+    }
+    setActive(true)
   }, [isLoaded, isSignedIn, userId])
 
   return (

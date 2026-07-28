@@ -8,18 +8,31 @@ import { Save, Check, Copy, Trash2, AlertCircle, Key, CreditCard, Puzzle, Settin
 import { fetchApiKeys, createApiKey, revokeApiKey, fetchBillingInfo } from '@/lib/api'
 import { useIntegrations, type Integration } from '@/contexts/IntegrationsContext'
 import { SkeletonCard } from '@/components/skeleton'
-import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
 
 // ─── Billing Page ─────────────────────────────────────────────────────────────
 function BillingTab() {
-  const [usage, setUsage] = useState<{ traces_used?: number; cost_this_month?: number } | null>(null)
+  // `plan` and `traces_limit` come from the billing API so the UI never
+  // disagrees with the backend about which plan the user is on. The plan
+  // cards below still hardcode the marketing copy for Hobby/Pro/Enterprise,
+  // but the "current plan" highlight is driven by `plan` from the API —
+  // so when billing goes live and the API starts returning 'Pro', the
+  // highlight moves automatically.
+  const [usage, setUsage] = useState<{
+    plan?: string
+    traces_used?: number
+    traces_limit?: number
+    retention_days?: number
+    cost_this_month?: number
+  } | null>(null)
 
   useEffect(() => {
     fetchBillingInfo().then((d) => { if (d) setUsage(d) })
   }, [])
+
+  const currentPlan = usage?.plan ?? 'Hobby'
 
   const plans = [
     {
@@ -29,7 +42,9 @@ function BillingTab() {
       description: 'For personal projects and experimentation.',
       features: ['10,000 traces / month', '1 API key', '7-day retention', 'Community support'],
       cta: 'Current Plan',
-      current: true,
+      // `current` is derived from the API response so the highlight always
+      // matches the backend's view of the user's plan.
+      current: currentPlan === 'Hobby',
       highlight: false,
       comingSoon: false,
     },
@@ -40,7 +55,7 @@ function BillingTab() {
       description: 'For teams shipping AI to production.',
       features: ['1,000,000 traces / month', 'Unlimited API keys', '90-day retention', 'Realtime dashboard', 'CSV & PDF export', 'Email support'],
       cta: 'Coming Soon',
-      current: false,
+      current: currentPlan === 'Pro',
       highlight: true,
       comingSoon: true,
     },
@@ -51,7 +66,7 @@ function BillingTab() {
       description: 'For large-scale deployments with custom needs.',
       features: ['Unlimited traces', 'Custom retention', 'SSO / SAML', 'SLA guarantee', 'Dedicated support', 'On-prem option'],
       cta: 'Contact Us',
-      current: false,
+      current: currentPlan === 'Enterprise',
       highlight: false,
       comingSoon: false,
     },
@@ -62,12 +77,19 @@ function BillingTab() {
       {/* Current usage summary */}
       <div className="bg-card border border-border rounded-xl p-6">
         <h2 className="text-xl font-semibold text-foreground mb-1">Current Usage</h2>
-        <p className="text-sm text-muted-foreground mb-5">You are on the <span className="text-primary font-semibold">Hobby</span> plan.</p>
+        <p className="text-sm text-muted-foreground mb-5">You are on the <span className="text-primary font-semibold">{currentPlan}</span> plan.</p>
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           {[
-            { label: 'Traces this month', value: usage ? String(usage.traces_used ?? 0) : '…', max: '10,000' },
+            {
+              label: 'Traces this month',
+              value: usage ? String(usage.traces_used ?? 0) : '…',
+              // Read the limit from the API so the UI can't disagree with
+              // the backend about the cap. Falls back to the Hobby limit
+              // while the request is in flight.
+              max: usage ? (usage.traces_limit ?? 10_000).toLocaleString() : '10,000',
+            },
             { label: 'Cost this month', value: usage ? `$${(usage.cost_this_month ?? 0).toFixed(4)}` : '…', max: null },
-            { label: 'Data retention', value: '7 days', max: null },
+            { label: 'Data retention', value: usage ? `${usage.retention_days ?? 7} days` : '7 days', max: null },
           ].map(({ label, value, max }) => (
             <div key={label} className="bg-muted/40 border border-border rounded-xl p-4">
               <p className="text-xs text-muted-foreground mb-1">{label}</p>
@@ -325,7 +347,6 @@ export default function SettingsPage() {
   const { user } = useUser()
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState<string | null>(null)
-  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
 
   // Seed profile from Clerk user data WITHOUT a set-state-in-effect.
   // React-recommended pattern: store the previous user ref and adjust
@@ -348,45 +369,6 @@ export default function SettingsPage() {
     setPrevClerkKey(clerkKey)
     if (user) {
       setProfile({ fullName: clerkFullName, email: clerkEmail })
-    }
-  }
-  // Notification preferences persist per-user in Clerk unsafeMetadata (no
-  // extra backend table needed). Seeded lazily for the cached-session case
-  // and re-synced below when the Clerk user data arrives.
-  const readPrefs = (u: typeof user) => {
-    const p = (u?.unsafeMetadata?.preferences ?? {}) as Partial<Record<string, boolean>>
-    return {
-      emailNotifications: p.emailNotifications ?? true,
-      weeklyReports: p.weeklyReports ?? false,
-    }
-  }
-  const [preferences, setPreferences] = useState(() => readPrefs(user))
-  const [prefsError, setPrefsError] = useState<string | null>(null)
-  const [savingPref, setSavingPref] = useState<string | null>(null)
-
-  // Value-based sync (same pattern as the profile fields above): when the
-  // stored metadata values change, adopt them.
-  const clerkPrefs = readPrefs(user)
-  const clerkPrefsKey = `${clerkPrefs.emailNotifications}|${clerkPrefs.weeklyReports}`
-  const [prevClerkPrefsKey, setPrevClerkPrefsKey] = useState(clerkPrefsKey)
-  if (clerkPrefsKey !== prevClerkPrefsKey) {
-    setPrevClerkPrefsKey(clerkPrefsKey)
-    if (user) setPreferences(clerkPrefs)
-  }
-
-  const togglePreference = async (field: 'emailNotifications' | 'weeklyReports') => {
-    if (!user || savingPref) return
-    const next = { ...preferences, [field]: !preferences[field] }
-    setPreferences(next) // optimistic
-    setPrefsError(null)
-    setSavingPref(field)
-    try {
-      await user.update({ unsafeMetadata: { ...user.unsafeMetadata, preferences: next } })
-    } catch {
-      setPreferences(preferences) // revert
-      setPrefsError('Could not save preference — please try again.')
-    } finally {
-      setSavingPref(null)
     }
   }
   const [saved, setSaved] = useState(false)
@@ -657,63 +639,36 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="bg-card border border-border rounded-xl p-6">
-                  <div className="flex items-center justify-between mb-6">
-                    <h2 className="text-xl font-semibold text-foreground">Notification Preferences</h2>
-                    {prefsError && (
-                      <span className="text-xs text-red-500 font-medium">{prefsError}</span>
-                    )}
+                  <div className="flex items-center gap-2 mb-1">
+                    <h2 className="text-xl font-semibold text-foreground">Notifications</h2>
+                    <span className="text-[10px] font-semibold uppercase tracking-wider text-amber-600 dark:text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2 py-0.5 rounded-full">
+                      Coming soon
+                    </span>
                   </div>
-                  <div className="space-y-3">
-                    {[
-                      { field: 'emailNotifications', label: 'Email Notifications', desc: 'Receive alerts and updates' },
-                      { field: 'weeklyReports', label: 'Weekly Reports', desc: 'Get weekly performance summaries' },
-                    ].map(({ field, label, desc }) => {
-                      const key = field as 'emailNotifications' | 'weeklyReports'
-                      const on = preferences[key]
-                      return (
-                        <div key={field} className="flex items-center justify-between p-4 bg-muted/30 rounded-xl border border-border/50">
-                          <div>
-                            <p className="text-sm font-medium text-foreground">{label}</p>
-                            <p className="text-xs text-muted-foreground">{desc}</p>
-                          </div>
-                          <button
-                            onClick={() => togglePreference(key)}
-                            disabled={savingPref !== null}
-                            role="switch"
-                            aria-checked={on}
-                            aria-label={label}
-                            className={`relative w-11 h-6 rounded-full transition-colors ${on ? 'bg-primary' : 'bg-muted'} ${savingPref === field ? 'opacity-60' : ''}`}
-                          >
-                            <div className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${on ? 'translate-x-5' : 'translate-x-0'}`} />
-                          </button>
-                        </div>
-                      )
-                    })}
-                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    Email alerts for error spikes, cost thresholds, and weekly
+                    performance summaries are on the roadmap. Once enabled,
+                    you&apos;ll be able to toggle each alert type here. We&apos;ll
+                    never email you without your explicit opt-in.
+                  </p>
                 </div>
 
                 <div className="bg-card border border-border rounded-xl p-6">
                   <h2 className="text-xl font-semibold text-foreground mb-1">Danger Zone</h2>
-                  <p className="text-sm text-muted-foreground mb-4">Permanently delete your account and all traces. This cannot be undone.</p>
+                  <p className="text-sm text-muted-foreground mb-4">
+                    Account deletion is managed by your Clerk account. Clicking
+                    the button opens Clerk&apos;s user portal in a new tab, where
+                    you can permanently delete your account. SwarmTrace traces,
+                    agents, and API keys associated with your account will be
+                    removed when Clerk notifies us of the deletion.
+                  </p>
                   <button
-                    onClick={() => setDeleteDialogOpen(true)}
-                    className="px-6 py-2 rounded-full bg-red-500/10 text-red-500 font-medium text-sm border border-red-500/30 hover:bg-red-500/20 transition-colors">
-                    Delete Account
+                    onClick={() => window.open('https://accounts.clerk.dev/user', '_blank', 'noopener,noreferrer')}
+                    className="px-6 py-2 rounded-full bg-red-500/10 text-red-500 font-medium text-sm border border-red-500/30 hover:bg-red-500/20 transition-colors"
+                    title="Opens Clerk's account portal in a new tab"
+                  >
+                    Manage account in Clerk
                   </button>
-                  <ConfirmDialog
-                    open={deleteDialogOpen}
-                    title="Delete your account?"
-                    description="This permanently deletes your account and every trace, agent, and API key on it. There's no undo."
-                    confirmationPhrase="DELETE"
-                    confirmLabel="Delete account"
-                    onCancel={() => setDeleteDialogOpen(false)}
-                    onConfirm={() => {
-                      setDeleteDialogOpen(false)
-                      // Account deletion via Clerk requires a backend endpoint.
-                      // Until wired up, direct the user to Clerk's user portal.
-                      window.open('https://accounts.clerk.dev/user', '_blank')
-                    }}
-                  />
                 </div>
 
                 <div className="flex justify-end gap-3 flex-wrap">

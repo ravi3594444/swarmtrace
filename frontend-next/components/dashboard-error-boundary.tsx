@@ -1,15 +1,31 @@
 'use client'
 
 import React from 'react'
+import { usePathname } from 'next/navigation'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 
 interface State { hasError: boolean; message: string }
 
-export class DashboardErrorBoundary extends React.Component<
-  { children: React.ReactNode },
+/**
+ * DashboardErrorBoundary — catches render-time errors inside the dashboard
+ * page content area so a single page crash doesn't take down the whole app
+ * shell (sidebar, command palette, etc. remain usable).
+ *
+ * RESET ON ROUTE CHANGE:
+ * Class components can't use hooks directly, so we split the boundary into
+ * the class itself (which holds the error state) and a thin functional
+ * wrapper that reads `usePathname()` and passes it as a `resetKey`. When the
+ * path changes, `componentDidUpdate` sees a new `resetKey` and clears the
+ * error state — so a transient error on /traces doesn't persist after the
+ * user navigates to /overview. Without this, a one-off render error would
+ * "stick" until a full page reload, even though the underlying route segment
+ * is different.
+ */
+export class DashboardErrorBoundaryInner extends React.Component<
+  { children: React.ReactNode; resetKey: string },
   State
 > {
-  constructor(props: { children: React.ReactNode }) {
+  constructor(props: { children: React.ReactNode; resetKey: string }) {
     super(props)
     this.state = { hasError: false, message: '' }
   }
@@ -20,6 +36,17 @@ export class DashboardErrorBoundary extends React.Component<
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
     console.error('[DashboardErrorBoundary]', error, info)
+  }
+
+  componentDidUpdate(prevProps: { resetKey: string }) {
+    // Route changed while an error was showing — clear it so the new page
+    // gets a fresh chance to render. This is the fix for "transient error
+    // persists across navigation" — without it, the boundary stays in its
+    // error state until a full page reload, even though the user has moved
+    // to a completely different route segment.
+    if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
+      this.setState({ hasError: false, message: '' })
+    }
   }
 
   render() {
@@ -39,6 +66,10 @@ export class DashboardErrorBoundary extends React.Component<
         <button
           onClick={() => {
             this.setState({ hasError: false, message: '' })
+            // Hard reload is the most reliable way to recover from a render
+            // error: it clears any cached route segment, re-runs server
+            // components, and re-fetches client data. A soft `router.refresh()`
+            // alone doesn't always clear a thrown render in the App Router.
             window.location.reload()
           }}
           className="flex items-center gap-2 px-4 py-2 rounded-lg border border-border bg-card text-sm text-foreground hover:bg-muted/60 transition-colors"
@@ -49,4 +80,14 @@ export class DashboardErrorBoundary extends React.Component<
       </div>
     )
   }
+}
+
+/** Functional wrapper that feeds the current pathname to the class boundary. */
+export function DashboardErrorBoundary({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname()
+  return (
+    <DashboardErrorBoundaryInner resetKey={pathname ?? '/'}>
+      {children}
+    </DashboardErrorBoundaryInner>
+  )
 }

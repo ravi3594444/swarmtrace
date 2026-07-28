@@ -172,12 +172,12 @@ export function FirstRunEmptyState() {
 
       {/* Footer actions */}
       <div className="flex flex-col sm:flex-row items-center gap-3 mt-10">
-        <Button variant="outline" size="sm" onClick={startTour}>
-          Watch the tour
+        <Button size="sm" onClick={startTour}>
+          Take the tour <ArrowRight className="w-3.5 h-3.5 ml-1" />
         </Button>
-        <Button size="sm" asChild>
+        <Button variant="outline" size="sm" asChild>
           <a href="https://github.com/ravi3594444/swarmtrace#readme" target="_blank" rel="noopener noreferrer">
-            Full docs <ArrowRight className="w-3.5 h-3.5 ml-1" />
+            Full docs
           </a>
         </Button>
       </div>
