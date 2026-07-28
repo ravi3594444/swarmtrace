@@ -1,6 +1,6 @@
 'use client'
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Flame,
@@ -119,7 +119,16 @@ function layoutGraph(graph: AgentNetworkGraph): { nodes: PositionedNode[]; edges
   const indexById = new Map(nodes.map((node, index) => [node.id, index]))
   const velocities = nodes.map(() => ({ x: 0, y: 0 }))
 
-  for (let iteration = 0; iteration < 150; iteration += 1) {
+  // Iteration count scales down for large graphs to keep the layout
+  // responsive. 150 iterations of O(n²) repulsion is fine for ~30 nodes
+  // but janks at 100+. For larger graphs we reduce iterations — the
+  // layout is slightly less converged but still visually correct, and
+  // the main thread stays responsive. A web worker would be the ideal
+  // fix but requires bundler setup; this adaptive approach is a pragmatic
+  // middle ground that prevents the UI from freezing.
+  const iterations = nodes.length > 80 ? 50 : nodes.length > 40 ? 100 : 150
+
+  for (let iteration = 0; iteration < iterations; iteration += 1) {
     for (let i = 0; i < nodes.length; i += 1) {
       for (let j = i + 1; j < nodes.length; j += 1) {
         const a = nodes[i]
@@ -228,7 +237,39 @@ export function NodeNetworkMap({
   onToggleLive: () => void
   onRefresh: () => void
 }) {
-  const { nodes, edges } = useMemo(() => layoutGraph(graph), [graph])
+  // Layout is computed asynchronously via requestIdleCallback so the initial
+  // render (which includes the SVG container + controls) isn't blocked by
+  // the O(n²) force simulation. For large graphs this keeps the page
+  // responsive — the map shows a "Layouting…" state for a frame, then
+  // snaps to the laid-out nodes. For small graphs (<30 nodes) the layout
+  // is fast enough that the loading state is never visible.
+  const [layout, setLayout] = useState<{ nodes: PositionedNode[]; edges: PositionedEdge[] } | null>(null)
+  useEffect(() => {
+    let cancelled = false
+    // requestIdleCallback isn't available in all environments (older
+    // browsers, SSR). Fall back to setTimeout(0) which yields to the
+    // event loop without the idle-cooperative scheduling.
+    const ric = typeof window !== 'undefined' && 'requestIdleCallback' in window
+      ? (window as Window).requestIdleCallback
+      : (cb: () => void) => setTimeout(cb, 0)
+    const handle = ric(() => {
+      if (cancelled) return
+      setLayout(layoutGraph(graph))
+    })
+    return () => {
+      cancelled = true
+      // requestIdleCallback returns a number (like setTimeout); cancel via
+      // cancelIdleCallback when available, otherwise clearTimeout.
+      if (typeof handle === 'number') {
+        const cic = typeof window !== 'undefined' && 'cancelIdleCallback' in window
+          ? (window as Window).cancelIdleCallback
+          : clearTimeout
+        cic(handle)
+      }
+    }
+  }, [graph])
+
+  const { nodes, edges } = layout ?? { nodes: [], edges: [] }
   const [selectedId, setSelectedId] = useState<string | null>(nodes[0]?.id ?? null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [showHeatmap, setShowHeatmap] = useState(true)
@@ -250,7 +291,25 @@ export function NodeNetworkMap({
     return ids
   }, [edges, highlighted])
 
-  if (nodes.length === 0) return <EmptyNetwork />
+  // Distinguish "graph has no nodes" (real empty state) from "layout is
+  // still computing" (loading). The layout runs in requestIdleCallback so
+  // there's a brief window where `layout` is null even though the graph
+  // has nodes — showing EmptyNetwork during that window would flash the
+  // wrong message.
+  if (graph.nodes.length === 0) return <EmptyNetwork />
+  if (nodes.length === 0) {
+    // Layout is computing — show the map container with a subtle
+    // "Layouting…" indicator instead of blocking the render.
+    return (
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="relative min-h-[720px] overflow-hidden rounded-[2rem] border border-border bg-background flex items-center justify-center">
+          <p className="text-sm text-muted-foreground font-mono uppercase tracking-wider animate-pulse">
+            Layouting…
+          </p>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">

@@ -113,7 +113,7 @@ export const TOUR_STEPS: TourStep[] = [
     id: 'settings',
     title: 'Settings',
     body:
-      "Manage your API keys, integrations, team and billing here. Grab an API " +
+      "Manage your API keys, integrations, and billing here. Grab an API " +
       "key from this page — you'll need it to start sending traces from your " +
       "code.",
     icon: Settings,
