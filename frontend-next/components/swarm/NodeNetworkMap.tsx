@@ -414,16 +414,21 @@ export function NodeNetworkMap({
                     if (event.key === 'Enter' || event.key === ' ') {
                       event.preventDefault()
                       setSelectedId(node.id)
-                    } else if (event.key === 'ArrowRight') {
+                    } else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
                       event.preventDefault()
-                      const next = nodes[(nodeIndex + 1) % nodes.length]
-                      setSelectedId(next.id)
-                      ;(event.currentTarget.parentElement?.children[nodeIndex + 1] as SVGElement | undefined)?.focus?.()
-                    } else if (event.key === 'ArrowLeft') {
-                      event.preventDefault()
-                      const prev = nodes[(nodeIndex - 1 + nodes.length) % nodes.length]
-                      setSelectedId(prev.id)
-                      ;(event.currentTarget.parentElement?.children[nodeIndex - 1] as SVGElement | undefined)?.focus?.()
+                      // Selection already wraps via modulo; focus must use the same
+                      // wrapped index. parentElement.children mixes heat/edge/node
+                      // siblings, so resolve focusable node elements by role instead
+                      // of raw child index — otherwise wrap hits undefined and the
+                      // focus ring sticks, trapping arrow nav at the boundary.
+                      const delta = event.key === 'ArrowRight' ? 1 : -1
+                      const nextIndex = (nodeIndex + delta + nodes.length) % nodes.length
+                      setSelectedId(nodes[nextIndex].id)
+                      const parent = event.currentTarget.parentElement
+                      const nodeEls = parent
+                        ? Array.from(parent.querySelectorAll<SVGElement>('[role="button"]'))
+                        : []
+                      nodeEls[nextIndex]?.focus?.()
                     }
                   }}
                   onMouseEnter={() => setHoveredId(node.id)}
