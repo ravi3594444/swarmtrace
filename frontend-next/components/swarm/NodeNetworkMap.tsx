@@ -270,13 +270,27 @@ export function NodeNetworkMap({
   }, [graph])
 
   const { nodes, edges } = layout ?? { nodes: [], edges: [] }
-  const [selectedId, setSelectedId] = useState<string | null>(nodes[0]?.id ?? null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [showHeatmap, setShowHeatmap] = useState(true)
   const [showLines, setShowLines] = useState(true)
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
+
+  // Auto-select the first node when the layout resolves. The async layout
+  // (requestIdleCallback above) means `nodes` is empty on the first render,
+  // so `selectedId` can't be initialized from nodes[0] in useState (it
+  // would be null and stay null). This effect runs when nodes arrive and
+  // sets the selection to the first node — but only if the user hasn't
+  // already selected something (selectedId === null). This preserves the
+  // user's selection across graph refreshes while ensuring the detail
+  // sidebar isn't empty on first load.
+  useEffect(() => {
+    if (selectedId === null && nodes.length > 0) {
+      setSelectedId(nodes[0].id)
+    }
+  }, [nodes, selectedId])
 
   const selected = nodes.find((node) => node.id === selectedId) ?? nodes[0]
   const hovered = nodes.find((node) => node.id === hoveredId)
