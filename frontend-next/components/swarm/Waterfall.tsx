@@ -8,7 +8,7 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
 
   if (traces.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground shadow-sm">
+      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
         No traces to plot.
       </div>
     );
@@ -26,7 +26,7 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
   const ticks  = 5;
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3">
         <h3 className="text-sm font-semibold text-foreground">Waterfall</h3>
         <span className="font-mono text-[10px] text-muted-foreground">
@@ -66,7 +66,9 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
                         onClick={() => onSelect(t)}
                         onMouseEnter={(e) => setHover({ t, x: e.clientX, y: e.clientY })}
                         onMouseLeave={() => setHover(null)}
-                        className={`absolute top-1/2 -translate-y-1/2 rounded transition-all hover:brightness-110 hover:scale-y-125 ${
+                        aria-label={`${t.function}, ${t.latency_sec.toFixed(2)} seconds, ${ok ? "ok" : "error"}. ${t.id}`}
+                        title={`${t.function} — ${t.latency_sec.toFixed(2)}s`}
+                        className={`absolute top-1/2 -translate-y-1/2 rounded transition-all hover:brightness-110 hover:scale-y-125 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${
                           ok ? "bg-primary" : "bg-destructive"
                         }`}
                         style={{ left: `${startOff}%`, width: `${width}%`, height: rowH - 16, minWidth: 4 }}
@@ -84,8 +86,14 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
 
         {hover && (
           <div
-            className="pointer-events-none fixed z-50 max-w-xs rounded-xl border border-border bg-card px-3 py-2 text-xs shadow-xl"
-            style={{ left: hover.x + 12, top: hover.y - 50 }}
+            className="pointer-events-none fixed z-50 max-w-xs rounded-xl border border-border bg-card px-3 py-2 text-xs"
+            style={{
+              // Clamp the tooltip to the viewport so it never renders
+              // off-screen on the right or bottom edges (the old code used
+              // raw clientX/Y which could push it past the viewport).
+              left: Math.min(hover.x + 12, (typeof window !== 'undefined' ? window.innerWidth : 1280) - 260),
+              top: Math.max(8, hover.y - 50),
+            }}
           >
             <div className="font-semibold text-foreground">{hover.t.function}</div>
             <div className="mt-0.5 font-mono text-muted-foreground">{hover.t.id}</div>

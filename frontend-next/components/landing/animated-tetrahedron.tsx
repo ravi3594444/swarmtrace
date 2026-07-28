@@ -13,6 +13,20 @@ export function AnimatedTetrahedron() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // Respect prefers-reduced-motion: render one static frame, no rAF loop.
+    const reducedMotion = typeof window !== "undefined"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // Cache the theme color so we don't read the DOM every frame. Updated
+    // via MutationObserver when the .dark class toggles — same pattern as
+    // AnimatedSphere. Without this the tetrahedron is invisible in dark
+    // mode (it hardcodes rgba(0,0,0,...) which is black-on-black).
+    const colorRef = { current: typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "255,255,255" : "0,0,0" };
+    const observer = new MutationObserver(() => {
+      colorRef.current = document.documentElement.classList.contains("dark") ? "255,255,255" : "0,0,0";
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+
     const chars = "░▒▓█▀▄▌▐│─┤├┴┬╭╮╰╯";
     let time = 0;
 
@@ -149,12 +163,14 @@ export function AnimatedTetrahedron() {
       // Draw points
       points.forEach((point) => {
         const alpha = 0.15 + (point.z + 1.5) * 0.25;
-        ctx.fillStyle = `rgba(0, 0, 0, ${Math.min(alpha, 0.9)})`;
+        ctx.fillStyle = `rgba(${colorRef.current}, ${Math.min(alpha, 0.9)})`;
         ctx.fillText(point.char, point.x, point.y);
       });
 
       time += 0.015;
-      frameRef.current = requestAnimationFrame(render);
+      if (!reducedMotion) {
+        frameRef.current = requestAnimationFrame(render);
+      }
     };
 
     render();
@@ -162,6 +178,7 @@ export function AnimatedTetrahedron() {
     return () => {
       window.removeEventListener("resize", resize);
       cancelAnimationFrame(frameRef.current);
+      observer.disconnect();
     };
   }, []);
 

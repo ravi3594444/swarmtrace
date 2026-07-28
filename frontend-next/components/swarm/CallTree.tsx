@@ -53,7 +53,8 @@ function TreeNode({
     <div>
       <button
         onClick={() => onSelect(node)}
-        className="group flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs transition-all hover:bg-muted/60 border-b border-border/50 last:border-0"
+        aria-label={`${node.function}, ${node.latency_sec.toFixed(2)} seconds, ${ok ? "ok" : "error"}. ${node.id}`}
+        className="group flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs transition-all hover:bg-muted/60 border-b border-border/50 last:border-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
         style={{ paddingLeft: `${depth * 20 + 16}px` }}
       >
         {depth > 0 && (
@@ -93,7 +94,7 @@ export function CallTree({ traces, onSelect }: { traces: Trace[]; onSelect: (t: 
   const maxLatency = Math.max(...traces.map((t) => t.latency_sec), 0.001);
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3">
         <h3 className="text-sm font-semibold text-foreground">Agent Call Tree</h3>
         <span className="font-mono text-[10px] text-muted-foreground uppercase tracking-wider">execution sequence</span>
