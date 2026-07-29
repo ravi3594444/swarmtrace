@@ -106,13 +106,10 @@ export default function RootLayout({
         className={`${GeistSans.variable} ${GeistMono.variable}`}
       >
         <head>
-          {/* Loaded as <link> instead of CSS @import to avoid PostCSS ordering
-              violations (inlined @imports from tw-animate-css would precede it)
-              and because <link> loads in parallel while @import is render-blocking. */}
-          <link
-            rel="stylesheet"
-            href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@3.31.0/dist/tabler-icons.min.css"
-          />
+          {/* Tabler Icons CDN <link> removed — landing page now uses Lucide
+              icons (already bundled via the lucide-react npm package), which
+              unifies the icon system with the dashboard and removes a
+              third-party network request + render-blocking stylesheet. */}
           {/* schema.org structured data — lets AI answer engines (ChatGPT,
               Perplexity, Google AI Overviews, etc.) reliably parse what
               SwarmTrace is, its price, license, and where to get it. */}

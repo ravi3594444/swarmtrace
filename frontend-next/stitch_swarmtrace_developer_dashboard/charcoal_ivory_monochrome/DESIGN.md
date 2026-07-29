@@ -126,7 +126,9 @@ The palette is strictly achromatic to eliminate visual noise and focus the user'
 Avoid all blue, indigo, or warm undertones. Grays must be neutral or slightly cool-balanced to maintain the "Charcoal" feel.
 
 ## Typography
-The design system utilizes **JetBrains Mono** across all levels to reinforce a technical, precise, and developer-friendly character. 
+The design system utilizes **JetBrains Mono** across all levels to reinforce a technical, precise, and developer-friendly character.
+
+> **Implementation note:** The shipped app uses **Geist Mono** (bundled via the `geist` npm package) in place of JetBrains Mono. Geist Mono is a near-identical monospace with the same metrics and feel, and using it avoids an extra webfont network fetch. The `--font-jetbrains` CSS variable in `globals.css` is kept as an alias that resolves to Geist Mono for forward compatibility — if a future revision wants to swap in JetBrains Mono, only the variable needs to change. All sizing, weight, and letter-spacing guidance below applies equally to either font.
 
 The monospaced nature of the font requires generous line height (1.6 for body text) to ensure readability in long-form content. Display styles should use tighter tracking and heavier weights to create a "blocky" high-fashion editorial feel. Labels and small captions should leverage uppercase styling with increased letter spacing to maximize legibility against the dark background.
 

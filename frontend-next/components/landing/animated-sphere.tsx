@@ -21,6 +21,12 @@ export function AnimatedSphere() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // Respect prefers-reduced-motion: render a single static frame instead
+    // of running the requestAnimationFrame loop. The sphere still appears
+    // (so the hero keeps its visual identity) but doesn't animate.
+    const reducedMotion = typeof window !== "undefined"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
     // Watch for theme class changes on <html> so the sphere re-colors instantly
     // This is more efficient than reading classList on every animation frame
     const observer = new MutationObserver(() => {
@@ -102,7 +108,10 @@ export function AnimatedSphere() {
       });
 
       time += 0.02;
-      frameRef.current = requestAnimationFrame(render);
+      // Reduced-motion users get a single static frame (no rAF loop).
+      if (!reducedMotion) {
+        frameRef.current = requestAnimationFrame(render);
+      }
     };
 
     render();

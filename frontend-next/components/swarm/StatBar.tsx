@@ -22,7 +22,7 @@ function StatCard({ label, value, unit, icon: Icon, trend, onMenuClick, menuLabe
   }`;
   const iconEl = <Icon className="w-[18px] h-[18px] text-muted-foreground" />;
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm hover:shadow-md transition-[background-color,border-color,color,box-shadow] duration-200">
+    <div className="rounded-xl border border-border bg-card p-5 hover:border-on-surface-variant transition-[background-color,border-color,color] duration-200">
       <div className="flex items-start justify-between mb-4">
         <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{label}</div>
         {onMenuClick ? (

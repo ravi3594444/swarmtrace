@@ -148,7 +148,7 @@ export function CommandPalette() {
       aria-label="Command palette"
     >
       <div
-        className="w-full max-w-lg bg-card border border-border rounded-xl shadow-2xl overflow-hidden animate-palette-pop-in transition-[background-color,border-color,color] duration-200"
+        className="w-full max-w-lg bg-card border border-border rounded-xl overflow-hidden animate-palette-pop-in transition-[background-color,border-color,color] duration-200"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center gap-2 px-4 border-b border-border">

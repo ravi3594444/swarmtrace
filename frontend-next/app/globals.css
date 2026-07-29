@@ -48,6 +48,29 @@
   --sidebar-accent-foreground: oklch(0.25 0 0);
   --sidebar-border: oklch(0.90 0 0);
   --sidebar-ring: oklch(0.2178 0 0);
+  /* NodeNetworkMap theme tokens — light mode. The map uses a light gradient
+     background with dark grid lines and dark vignette glow so it reads as
+     an integrated part of the page instead of a dark island. Values are
+     inverted in .dark below. */
+  --network-bg-from: #f4f4f4;
+  --network-bg-to: #e8e8e8;
+  --network-bg-end: #d4d4d4;
+  --network-vignette: rgba(0, 0, 0, 0.04);
+  --network-grid: rgba(100, 100, 100, 0.14);
+  --network-center-glow: rgba(0, 0, 0, 0.06);
+  --network-label-bg: rgba(255, 255, 255, 0.92);
+  --network-label-border: rgba(100, 100, 100, 0.3);
+  /* Node fill colors — light mode: dark nodes on light background (inverted
+     from dark mode). The tonal ramp goes primary (darkest) → outline (lightest)
+     so orchestrator nodes still read as "most emphasis". */
+  --network-node-primary: #1a1a1a;
+  --network-node-primary-glow: rgba(26, 26, 26, 0.35);
+  --network-node-on-surface: #404040;
+  --network-node-on-surface-glow: rgba(64, 64, 64, 0.3);
+  --network-node-on-surface-variant: #6b6b6b;
+  --network-node-on-surface-variant-glow: rgba(107, 107, 107, 0.28);
+  --network-node-outline: #9a9a9a;
+  --network-node-outline-glow: rgba(154, 154, 154, 0.25);
   /* Font stacks — Geist is loaded from the geist npm package (local font files,
      no Google Fonts network fetch needed at build time). The --font-geist-sans and
      --font-geist-mono variables are injected by the geist package via className on <html>. */
@@ -132,6 +155,25 @@
   --sidebar-accent-foreground: #e5e2e1;
   --sidebar-border: #444748;
   --sidebar-ring: #ffffff;
+  /* NodeNetworkMap theme tokens — dark mode. Matches the original hardcoded
+     charcoal gradient so the dark-mode visual is unchanged. */
+  --network-bg-from: #0e0e0e;
+  --network-bg-to: #0a0a0a;
+  --network-bg-end: #000000;
+  --network-vignette: rgba(255, 255, 255, 0.06);
+  --network-grid: rgba(142, 145, 146, 0.14);
+  --network-center-glow: rgba(255, 255, 255, 0.10);
+  --network-label-bg: rgba(14, 14, 14, 0.85);
+  --network-label-border: rgba(142, 145, 146, 0.3);
+  /* Node fill colors — dark mode: original white/light values. */
+  --network-node-primary: #ffffff;
+  --network-node-primary-glow: rgba(255, 255, 255, 0.55);
+  --network-node-on-surface: #e5e2e1;
+  --network-node-on-surface-glow: rgba(229, 226, 225, 0.45);
+  --network-node-on-surface-variant: #c4c7c8;
+  --network-node-on-surface-variant-glow: rgba(196, 199, 200, 0.4);
+  --network-node-outline: #8e9192;
+  --network-node-outline-glow: rgba(142, 145, 146, 0.32);
 }
 
 @theme inline {

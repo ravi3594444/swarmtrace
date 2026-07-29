@@ -8,8 +8,12 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      "rounded-2xl border border-outline bg-surface-container text-on-surface shadow-sm transition-colors duration-200",
-      interactive && "transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md",
+      // DESIGN.md specifies depth via tonal layering + 1px borders, NOT
+      // drop shadows. The shadow-sm/shadow-md on hover are removed to
+      // follow the spec; hover state is communicated via border color
+      // change instead.
+      "rounded-2xl border border-outline bg-surface-container text-on-surface transition-colors duration-200",
+      interactive && "hover:border-on-surface-variant",
       className
     )}
     {...props}

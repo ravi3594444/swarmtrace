@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { X } from "lucide-react";
 import { fetchMetrics } from "@/lib/api";
+import { useFocusTrap } from "@/lib/use-focus-trap";
 
 // ── Types (mirrors the /api/metrics response shape) ──────────────────────────
 type MetricsTotals = { cost: number; tokens_in: number; tokens_out: number; traces: number }
@@ -88,6 +89,8 @@ export function UsageBreakdownDrawer({ open, onClose }: {
 }) {
   const [data, setData] = useState<MetricsData | null>(null)
   const [fetchFailed, setFetchFailed] = useState(false)
+  const drawerRef = useRef<HTMLElement>(null)
+  useFocusTrap(drawerRef, open)
 
   // Fetch metrics when the drawer opens (not on every render). Cached in
   // state so re-opening is instant unless the component unmounts.
@@ -117,6 +120,15 @@ export function UsageBreakdownDrawer({ open, onClose }: {
     return () => window.removeEventListener("keydown", h)
   }, [open, onClose])
 
+  // Lock body scroll while open — matches DetailDrawer. Previously this
+  // drawer was missing the scroll lock, so the background page could scroll
+  // behind it (inconsistent with DetailDrawer and jarring on long lists).
+  useEffect(() => {
+    if (!open) return
+    document.body.style.overflow = "hidden"
+    return () => { document.body.style.overflow = "" }
+  }, [open])
+
   if (!open) return null
 
   const periods = data
@@ -137,7 +149,13 @@ export function UsageBreakdownDrawer({ open, onClose }: {
       />
 
       {/* Drawer panel */}
-      <aside className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-border bg-card shadow-2xl fade-slide-in">
+      <aside
+        ref={drawerRef}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Usage breakdown"
+        className="absolute right-0 top-0 flex h-full w-full max-w-md flex-col border-l border-border bg-card fade-slide-in"
+      >
         {/* Header */}
         <header className="flex items-start justify-between border-b border-border px-5 py-4 bg-muted/20">
           <div className="min-w-0">

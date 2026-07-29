@@ -143,7 +143,7 @@ function TourCard({
       role="dialog"
       aria-modal="true"
       aria-label={`Tour step ${index + 1} of ${total}: ${step.title}`}
-      className="fixed z-[1001] w-[320px] max-w-[calc(100vw-24px)] rounded-xl border border-border bg-card shadow-2xl"
+      className="fixed z-[1001] w-[320px] max-w-[calc(100vw-24px)] rounded-xl border border-border bg-card"
       style={style}
     >
       <div className="flex items-start gap-3 px-4 pt-4">
