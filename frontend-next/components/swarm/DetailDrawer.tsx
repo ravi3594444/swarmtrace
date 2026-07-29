@@ -6,7 +6,7 @@ import { getSiblings } from "@/lib/trace-utils";
 import { SmartJson } from "./SmartJson";
 import { CallChainCrumbs } from "./CallChainCrumbs";
 import { useFocusTrap } from "@/lib/use-focus-trap";
-import { X, Clock, Coins, Activity, AlertTriangle } from "lucide-react";
+import { X, Clock, Coins, Activity, AlertTriangle, ChevronLeft, ChevronRight } from "lucide-react";
 
 export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
   trace: Trace | null;
@@ -33,10 +33,38 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
     return () => { document.body.style.overflow = ""; };
   }, [trace]);
 
+  // Keyboard navigation: J/K or ArrowLeft/ArrowRight to move between traces
+  // sequentially — matches the pattern used in many dev tools (GitHub PR
+  // files, Sentry events). Lets you triage a list of traces without
+  // closing the drawer. We look up the current trace's index in allTraces
+  // and jump to the neighbour. The handler depends on `trace` so it always
+  // has the current position.
+  useEffect(() => {
+    if (!trace) return;
+    const idx = allTraces.findIndex((t) => t.id === trace.id);
+    if (idx === -1) return;
+    const h = (e: KeyboardEvent) => {
+      // Don't hijack arrows when the user is typing in an input/textarea
+      // (e.g. copying from the args JSON).
+      const target = e.target as HTMLElement;
+      if (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable) return;
+      if (e.key === "ArrowLeft" || e.key.toLowerCase() === "k") {
+ if (idx > 0) { e.preventDefault(); onJump(allTraces[idx - 1]); }
+      } else if (e.key === "ArrowRight" || e.key.toLowerCase() === "j") {
+        if (idx < allTraces.length - 1) { e.preventDefault(); onJump(allTraces[idx + 1]); }
+      }
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [trace, allTraces, onJump]);
+
   if (!trace) return null;
   const ok       = !trace.error;
   const parent   = trace.parent_id ? allTraces.find((t) => t.id === trace.parent_id) : null;
   const siblings = getSiblings(trace, allTraces);
+  const currentIdx = allTraces.findIndex((t) => t.id === trace.id);
+  const hasPrev = currentIdx > 0;
+  const hasNext = currentIdx >= 0 && currentIdx < allTraces.length - 1;
 
   return (
     <div className="fixed inset-0 z-50">
@@ -49,10 +77,38 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
         className="absolute right-0 top-0 flex h-full w-full max-w-lg flex-col border-l border-border bg-card animate-drawer-slide-in transition-[background-color,border-color,color] duration-200"
       >
         <header className="flex items-start justify-between border-b border-border px-5 py-4 bg-muted/20">
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="text-base font-semibold truncate text-foreground">{trace.function}</div>
             <div className="mt-0.5 text-xs text-muted-foreground">{trace.id}</div>
           </div>
+          {/* Prev/next trace navigation — lets you triage a list of traces
+              without closing the drawer. J/K and ArrowLeft/ArrowRight also
+              work (handler above). */}
+          {currentIdx >= 0 && allTraces.length > 1 && (
+            <div className="flex items-center gap-1 ml-3 shrink-0">
+              <button
+                onClick={() => hasPrev && onJump(allTraces[currentIdx - 1])}
+                disabled={!hasPrev}
+                aria-label="Previous trace (K or ←)"
+                title="Previous trace (K or ←)"
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronLeft className="w-4 h-4" />
+              </button>
+              <span className="text-[10px] font-mono text-muted-foreground tabular-nums px-1">
+                {currentIdx + 1}/{allTraces.length}
+              </span>
+              <button
+                onClick={() => hasNext && onJump(allTraces[currentIdx + 1])}
+                disabled={!hasNext}
+                aria-label="Next trace (J or →)"
+                title="Next trace (J or →)"
+                className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              >
+                <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
           <button onClick={onClose} aria-label="Close detail drawer" className="rounded-lg p-1.5 text-muted-foreground hover:bg-muted hover:text-foreground transition-colors ml-3 shrink-0">
             <X className="w-4 h-4" />
           </button>
