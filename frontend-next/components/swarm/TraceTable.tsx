@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import type { Trace } from "@/lib/trace-types";
 import { formatTraceTime as formatTime } from "@/lib/format-time";
-import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Copy, Check } from "lucide-react";
 
 const PAGE_SIZES = [25, 50, 100];
 
@@ -12,6 +12,42 @@ type SortKey = "id" | "function" | "latency_sec" | "input_tokens" | "output_toke
 function SortIcon({ active, asc }: { active: boolean; asc: boolean }) {
   if (!active) return <ArrowUpDown className="w-3 h-3 opacity-25" />;
   return asc ? <ArrowUp className="w-3 h-3 text-foreground" /> : <ArrowDown className="w-3 h-3 text-foreground" />;
+}
+
+function truncateId(id: string): string {
+  return id.length <= 10 ? id : `${id.slice(0, 4)}…${id.slice(-4)}`;
+}
+
+/** Copy-on-hover ID cell. The full UUID is shown in a title tooltip; the
+ *  visible text is truncated to 8 chars (matching CallTree/SpanRow). A
+ *  copy button appears on hover so the full ID can be grabbed without a
+ *  trip to the detail drawer. */
+function IdCell({ id }: { id: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <td className="px-4 py-3 text-[11px] text-muted-foreground">
+      <div className="flex items-center gap-1 group">
+        <span className="font-mono" title={id}>{truncateId(id)}</span>
+        <button
+          onClick={async (e) => {
+            e.stopPropagation();
+            try {
+              await navigator.clipboard.writeText(id);
+              setCopied(true);
+              setTimeout(() => setCopied(false), 1200);
+            } catch {
+              // clipboard may be blocked — non-fatal, the title attr has the full id
+            }
+          }}
+          title={copied ? "Copied!" : `Copy ${id}`}
+          aria-label={copied ? "Copied" : `Copy trace ID ${id}`}
+          className="opacity-0 group-hover:opacity-100 flex items-center justify-center w-5 h-5 rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-all"
+        >
+          {copied ? <Check className="w-3 h-3 text-emerald-600 dark:text-emerald-400" /> : <Copy className="w-3 h-3" />}
+        </button>
+      </div>
+    </td>
+  );
 }
 
 function SortableHeader({ k, sortKey, asc, onToggle, children }: {
@@ -114,7 +150,7 @@ export function TraceTable({ traces, onSelect, showErrors = false, newIds, selec
                       selected?.id === t.id ? "bg-muted/60 border-l-2 border-l-primary" : "hover:bg-muted/30"
                     } ${newIds?.has(t.id) ? "swarm-row-new" : ""}`}
                   >
-                    <td className="px-4 py-3 text-[11px] text-muted-foreground">{t.id}</td>
+                    <IdCell id={t.id} />
                     <td className="px-4 py-3 text-xs font-medium text-foreground">{t.function}</td>
                     <td className="px-4 py-3 text-xs tabular-nums text-foreground">{t.latency_sec.toFixed(2)}s</td>
                     <td className="px-4 py-3 text-xs tabular-nums text-foreground">{t.input_tokens}</td>

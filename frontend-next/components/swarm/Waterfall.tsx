@@ -21,9 +21,25 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
   const fnOrder: string[] = [];
   traces.forEach((t) => { if (!fnOrder.includes(t.function)) fnOrder.push(t.function); });
 
-  const rowH   = 36;
+  // Row height grows with the max number of overlapping traces per function
+  // so bars never fully overlap. Previously every function got a fixed 36px
+  // row and 50 overlapping bars stacked on the exact same line — now the
+  // row height scales (up to a cap) and bars are vertically distributed
+  // across the available space. The vertical offset per trace is computed
+  // from its index within the function's traces, so consecutive calls
+  // fan out instead of hiding each other.
+  const barH = 8;       // individual bar height
+  const barGap = 2;     // gap between stacked bars
   const labelW = 164;
   const ticks  = 5;
+
+  // Compute per-function trace counts to size rows.
+  const fnCounts = new Map<string, number>();
+  traces.forEach((t) => fnCounts.set(t.function, (fnCounts.get(t.function) ?? 0) + 1));
+
+  // Per-function running index — used to assign each trace a vertical slot
+  // within its row so overlapping calls fan out instead of stacking.
+  const fnIndex = new Map<string, number>();
 
   return (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
@@ -47,6 +63,10 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
 
           {fnOrder.map((fn) => {
             const rowTraces = traces.filter((t) => t.function === fn);
+            const count = fnCounts.get(fn) ?? 1;
+            // Row height scales with the number of traces, capped so a
+            // function with hundreds of calls doesn't dominate the chart.
+            const rowH = Math.min(36 + count * (barH + barGap), 200);
             return (
               <div key={fn} className="relative flex items-center border-t border-border/40" style={{ height: rowH }}>
                 <div className="shrink-0 pr-3 font-mono text-xs text-muted-foreground truncate" style={{ width: labelW }} title={fn}>
@@ -60,6 +80,12 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
                     const startOff = ((new Date(t.timestamp).getTime() - startMs) / totalMs) * 100;
                     const width    = Math.max(((t.latency_sec * 1000) / totalMs) * 100, 0.8);
                     const ok       = !t.error;
+                    // Assign a vertical slot within the row. The index resets
+                    // per function so each function's traces fan out from top
+                    // to bottom of its row.
+                    const idx = fnIndex.get(fn) ?? 0;
+                    fnIndex.set(fn, idx + 1);
+                    const top = 4 + idx * (barH + barGap);
                     return (
                       <button
                         key={t.id}
@@ -68,10 +94,10 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
                         onMouseLeave={() => setHover(null)}
                         aria-label={`${t.function}, ${t.latency_sec.toFixed(2)} seconds, ${ok ? "ok" : "error"}. ${t.id}`}
                         title={`${t.function} — ${t.latency_sec.toFixed(2)}s`}
-                        className={`absolute top-1/2 -translate-y-1/2 rounded transition-all hover:brightness-110 hover:scale-y-125 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${
+                        className={`absolute rounded transition-all hover:brightness-110 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring ${
                           ok ? "bg-primary" : "bg-destructive"
                         }`}
-                        style={{ left: `${startOff}%`, width: `${width}%`, height: rowH - 16, minWidth: 4 }}
+                        style={{ left: `${startOff}%`, width: `${width}%`, height: barH, minWidth: 4, top }}
                       />
                     );
                   })}
