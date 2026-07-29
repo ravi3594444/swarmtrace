@@ -13,6 +13,18 @@ export function AnimatedWave() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    // Respect prefers-reduced-motion: render one static frame, no rAF loop.
+    const reducedMotion = typeof window !== "undefined"
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    // Theme-aware color (same pattern as AnimatedSphere/Tetrahedron — the
+    // old rgba(0,0,0,...) was invisible in dark mode).
+    const colorRef = { current: typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "255,255,255" : "0,0,0" };
+    const observer = new MutationObserver(() => {
+      colorRef.current = document.documentElement.classList.contains("dark") ? "255,255,255" : "0,0,0";
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+
     const chars = "·∘○◯◌●◉";
     let time = 0;
 
@@ -54,13 +66,15 @@ export function AnimatedWave() {
           const charIndex = Math.floor(normalized * (chars.length - 1));
           const alpha = 0.15 + normalized * 0.5;
 
-          ctx.fillStyle = `rgba(0, 0, 0, ${alpha})`;
+          ctx.fillStyle = `rgba(${colorRef.current}, ${alpha})`;
           ctx.fillText(chars[charIndex], px, py);
         }
       }
 
       time += 0.03;
-      frameRef.current = requestAnimationFrame(render);
+      if (!reducedMotion) {
+        frameRef.current = requestAnimationFrame(render);
+      }
     };
 
     render();
@@ -68,6 +82,7 @@ export function AnimatedWave() {
     return () => {
       window.removeEventListener("resize", resize);
       cancelAnimationFrame(frameRef.current);
+      observer.disconnect();
     };
   }, []);
 

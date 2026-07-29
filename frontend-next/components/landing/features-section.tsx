@@ -1,31 +1,34 @@
-"use client"
+"use client";
 
 import { Card } from "@/components/ui/card"
+import { Activity, DollarSign, AlertTriangle, Zap } from "lucide-react"
 
+// Landing page now uses the same monochrome palette as the dashboard —
+// no indigo/amber/red/emerald. Feature identity comes from the Lucide icon
+// (Lucide is already bundled; the old Tabler CDN <link> is removed from
+// layout.tsx), with a tonal background tint that follows the app's
+// surface tokens. The dashboard is strictly achromatic per DESIGN.md, so
+// the landing page no longer feels like a different product.
 const features = [
   {
     title: "Real-time Tracing",
     description: "Capture every step of your AI agent's execution in real-time with zero overhead.",
-    icon: "ti-timeline-event",
-    color: "#6366f1",
+    icon: Activity,
   },
   {
     title: "Cost Monitoring",
     description: "Track token usage, API calls, and infrastructure costs across all your agents.",
-    icon: "ti-coin",
-    color: "#f59e0b",
+    icon: DollarSign,
   },
   {
     title: "Failure Detection",
     description: "Automatically detect and alert on anomalies, errors, and unexpected behavior.",
-    icon: "ti-alert-triangle",
-    color: "#ef4444",
+    icon: AlertTriangle,
   },
   {
     title: "Performance Insights",
     description: "Identify bottlenecks and optimize your agent's performance with detailed metrics.",
-    icon: "ti-bolt",
-    color: "#10b981",
+    icon: Zap,
   },
 ]
 
@@ -41,19 +44,20 @@ export function FeaturesSection() {
         </div>
 
         <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-8">
-          {features.map((feature, index) => (
-            <Card key={index} className="p-6 hover:shadow-lg transition-shadow">
-              <div className="mb-4">
-                <i
-                  className={`ti ${feature.icon}`}
-                  style={{ fontSize: "28px", color: feature.color }}
-                  aria-hidden="true"
-                />
-              </div>
-              <h3 className="text-xl font-semibold mb-3">{feature.title}</h3>
-              <p className="text-muted-foreground">{feature.description}</p>
-            </Card>
-          ))}
+          {features.map((feature, index) => {
+            const Icon = feature.icon
+            return (
+              <Card key={index} interactive className="p-6">
+                <div className="mb-4">
+                  <div className="w-12 h-12 rounded-xl border border-border bg-muted/60 flex items-center justify-center">
+                    <Icon className="w-6 h-6 text-foreground" aria-hidden />
+                  </div>
+                </div>
+                <h3 className="text-xl font-semibold mb-3">{feature.title}</h3>
+                <p className="text-muted-foreground">{feature.description}</p>
+              </Card>
+            )
+          })}
         </div>
       </div>
     </section>

@@ -47,7 +47,12 @@ function JsonNode({ value, depth, keyName }: { value: unknown; depth: number; ke
   return (
     <div>
       <div className="flex items-start gap-1">
-        <button onClick={() => setOpen(!open)} className="mt-0.5 inline-flex h-3 w-3 shrink-0 items-center justify-center text-muted-foreground hover:text-foreground">
+        <button
+          onClick={() => setOpen(!open)}
+          aria-expanded={open}
+          aria-label={open ? "Collapse" : "Expand"}
+          className="mt-0.5 inline-flex h-5 w-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground hover:bg-muted transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
+        >
           {open ? "▾" : "▸"}
         </button>
         <div className="flex-1">

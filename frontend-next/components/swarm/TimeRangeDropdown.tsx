@@ -101,7 +101,7 @@ export function TimeRangeDropdown({
         aria-haspopup="listbox"
         aria-expanded={open}
         title="Filter dashboard by time range"
-        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-zinc-300 transition-colors shadow-sm"
+        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs font-medium text-muted-foreground hover:text-foreground hover:border-zinc-300 transition-colors"
       >
         <Calendar className="w-3.5 h-3.5" />
         {current.short}
@@ -111,7 +111,7 @@ export function TimeRangeDropdown({
       {open && (
         <div
           role="listbox"
-          className="absolute right-0 top-full mt-1 z-40 w-44 rounded-xl border border-border bg-card shadow-lg overflow-hidden"
+          className="absolute right-0 top-full mt-1 z-40 w-44 rounded-xl border border-border bg-card overflow-hidden"
         >
           {TIME_RANGES.map((r) => {
             const active = r.key === value

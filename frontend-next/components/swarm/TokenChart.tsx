@@ -20,7 +20,7 @@ export function TokenChart({ traces }: { traces: Trace[] }) {
   const ticks = [0, max * 0.25, max * 0.5, max * 0.75, max];
 
   return (
-    <div className="rounded-xl border border-border bg-card overflow-hidden shadow-sm">
+    <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3">
         <h3 className="text-sm font-semibold text-foreground">Token Burn by Function</h3>
         <div className="flex items-center gap-4 text-[10px] text-muted-foreground font-mono">
@@ -59,7 +59,15 @@ export function TokenChart({ traces }: { traces: Trace[] }) {
                 const inPct  = (d.input  / max) * 100;
                 const outPct = (d.output / max) * 100;
                 return (
-                  <div key={d.function} className="flex items-center gap-3 group">
+                  <div
+                    key={d.function}
+                    className="flex items-center gap-3 group"
+                    // Give screen readers a single readable label per row
+                    // instead of announcing the raw bar widths. The bars
+                    // themselves are decorative (aria-hidden via the span).
+                    role="img"
+                    aria-label={`${d.function}: ${d.input.toLocaleString()} input, ${d.output.toLocaleString()} output, ${total.toLocaleString()} total tokens`}
+                  >
                     <span className="w-32 shrink-0 truncate font-mono text-xs text-muted-foreground group-hover:text-foreground transition-colors">
                       {d.function}
                     </span>

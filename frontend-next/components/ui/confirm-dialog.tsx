@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useId, useRef, useState } from 'react'
+import { useFocusTrap } from '@/lib/use-focus-trap'
 
 interface ConfirmDialogProps {
   open: boolean
@@ -40,8 +41,14 @@ function ConfirmDialogContent({
 }: ConfirmDialogProps) {
   const [typed, setTyped] = useState('')
   const inputRef = useRef<HTMLInputElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const descId = useId()
+
+  // Focus trap: keeps Tab inside the dialog and restores focus to the
+  // trigger button when it closes. Previously Tab could escape to the
+  // background page.
+  useFocusTrap(dialogRef, true)
 
   useEffect(() => {
     inputRef.current?.focus()
@@ -58,11 +65,12 @@ function ConfirmDialogContent({
       onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel() }}
     >
       <div
+        ref={dialogRef}
         role="alertdialog"
         aria-modal="true"
         aria-labelledby={titleId}
         aria-describedby={descId}
-        className="w-full max-w-sm rounded-xl border border-border bg-card p-6 shadow-xl"
+        className="w-full max-w-sm rounded-xl border border-border bg-card p-6"
       >
         <h2 id={titleId} className="text-base font-semibold text-foreground">{title}</h2>
         <p id={descId} className="mt-2 text-sm text-muted-foreground">{description}</p>
