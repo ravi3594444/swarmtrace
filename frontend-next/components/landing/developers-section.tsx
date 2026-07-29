@@ -38,14 +38,14 @@ export function DevelopersSection() {
           <div className="bg-muted/20 rounded-lg p-8 border border-border/20">
             <div className="font-mono text-sm space-y-4">
               <div className="text-muted-foreground"># Instrument your agent</div>
-              <div className="text-green-400">from swarmtrace import trace_agent</div>
+              <div className="text-green-400">from swarmtrace import observe</div>
               <div className="text-green-400"></div>
-              <div className="text-muted-foreground">@trace_agent</div>
+              <div className="text-muted-foreground">@observe</div>
               <div className="text-blue-400">def</div> <div className="text-yellow-300">your_agent_function</div>(<div className="text-orange-400">context</div>):
               <div className="ml-4 text-muted-foreground"># Your agent logic here</div>
               <div className="ml-4 text-blue-400">return</div> <div className="text-green-300">result</div>
 
-              <div className="text-muted-foreground pt-4"># That&apos;s it! 🎉</div>
+              <div className="text-muted-foreground pt-4"># That&apos;s it!</div>
               <div className="text-muted-foreground"># All traces are automatically captured</div>
             </div>
           </div>

@@ -69,6 +69,21 @@ export function useAgentGraph(range: TimeRangeKey, pollMs = TOPOLOGY_POLL_MS) {
   const agentIds = useMemo(() => graph.nodes.map((node) => node.id), [graph.nodes])
   const presence = useAgentPresence(isLive ? agentIds : [])
 
+  // Derive a stable "status signature" from presence so the liveGraph
+  // memo doesn't recompute on every presence object identity change.
+  // Previously `presence` was a new object on every realtime event, so
+  // the memo recomputed the entire nodes array even when no visible
+  // status actually changed. The signature is a string of
+  // "agentId:status" pairs — only changes when a node's status actually
+  // flips, which is rare. This keeps the memo stable across high-frequency
+  // presence heartbeats while still updating instantly on real status changes.
+  const presenceSignature = useMemo(() => {
+    if (!isLive) return ''
+    return agentIds
+      .map((id) => `${id}:${presence[id]?.status ?? ''}`)
+      .join('|')
+  }, [agentIds, presence, isLive])
+
   const liveGraph = useMemo<AgentNetworkGraph>(() => {
     if (!isLive) return graph
     let changed = false
@@ -79,7 +94,8 @@ export function useAgentGraph(range: TimeRangeKey, pollMs = TOPOLOGY_POLL_MS) {
       return { ...node, status: p.status, lastActive: p.lastEventAt ?? node.lastActive }
     })
     return changed ? { ...graph, nodes } : graph
-  }, [graph, presence, isLive])
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- presenceSignature is the stable proxy for presence changes
+  }, [graph, presenceSignature, isLive])
 
   return {
     graph: liveGraph,
