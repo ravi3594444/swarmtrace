@@ -264,8 +264,27 @@ class SwarmTraceMcpGateway:
             self._server = self._make_server()
         mcp = _ensure_mcp()
 
-        self._server.request_handlers[mcp.types.ListToolsRequest] = self._handle_list_tools
-        self._server.request_handlers[mcp.types.CallToolRequest] = self._handle_call_tool
+        # mcp 1.x exposes `request_handlers` (a dict keyed by request type).
+        # mcp 2.x made it private (`_request_handlers`) and switched to a
+        # method-string keyed registry with params-type validation — a
+        # breaking, incompatible dispatch protocol. pyproject pins
+        # `mcp>=1,<2`; this guard turns an mcp 2.x accidental install into a
+        # clear error instead of an obscure AttributeError.
+        request_handlers = getattr(self._server, "request_handlers", None)
+        if request_handlers is None:
+            from importlib.metadata import PackageNotFoundError, version
+
+            try:
+                installed = version("mcp")
+            except PackageNotFoundError:
+                installed = "unknown"
+            raise RuntimeError(
+                "swarmtrace's MCP gateway requires mcp 1.x "
+                f"(installed: mcp {installed}). "
+                "Install a compatible version with: pip install 'mcp>=1,<2'"
+            )
+        request_handlers[mcp.types.ListToolsRequest] = self._handle_list_tools
+        request_handlers[mcp.types.CallToolRequest] = self._handle_call_tool
 
         for upstream in self._upstreams.values():
             await upstream.connect()
