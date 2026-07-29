@@ -329,7 +329,7 @@ function TourOverlay({
         width: rect.width + SPOTLIGHT_PADDING * 2,
         height: rect.height + SPOTLIGHT_PADDING * 2,
         borderRadius: 12,
-        boxShadow: '0 0 0 9999px rgba(9, 9, 11, 0.55)',
+        boxShadow: '0 0 0 9999px rgba(10, 10, 10, 0.55)',
         zIndex: 1000,
         pointerEvents: 'none',
         transition: 'top 0.2s ease, left 0.2s ease, width 0.2s ease, height 0.2s ease',
@@ -343,7 +343,7 @@ function TourOverlay({
       ) : (
         // No target: plain dim backdrop for the centred welcome/finish cards.
         <div
-          className="fixed inset-0 z-[1000] bg-zinc-950/55"
+          className="fixed inset-0 z-[1000] bg-[rgba(10,10,10,0.55)]"
           aria-hidden
           onClick={onFinish}
         />
