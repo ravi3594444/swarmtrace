@@ -7,110 +7,130 @@
 // Every helper below still returns null/false on failure (unchanged
 // contract for existing callers) but now also surfaces the failure via
 // reportFetchError() so it isn't indistinguishable from "no data".
+//
+// All helpers accept an optional AbortSignal so callers can cancel stale
+// requests when the user navigates away or a newer request supersedes an
+// older one. Aborted requests are silently ignored (no error toast) —
+// the AbortError is caught and treated as a no-op rather than a failure.
 import { reportFetchError } from './report-fetch-error'
 
-export async function fetchOverview() {
+/** Returns true if an error is an AbortError (request was cancelled). */
+function isAbortError(e: unknown): boolean {
+  return e instanceof DOMException && e.name === 'AbortError'
+}
+
+export async function fetchOverview(signal?: AbortSignal) {
   try {
-    const res = await fetch('/api/overview')
+    const res = await fetch('/api/overview', { signal })
     if (!res.ok) { reportFetchError('overview', () => { fetchOverview() }); return null }
     return res.json()
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return null
     reportFetchError('overview', () => { fetchOverview() })
     return null
   }
 }
 
-export async function fetchAgents(since?: number | null) {
+export async function fetchAgents(since?: number | null, signal?: AbortSignal) {
   try {
     const url = since != null ? `/api/agents?since=${since}` : '/api/agents'
-    const res = await fetch(url)
+    const res = await fetch(url, { signal })
     if (!res.ok) { reportFetchError('agents', () => { fetchAgents(since) }); return null }
     return res.json()
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return null
     reportFetchError('agents', () => { fetchAgents(since) })
     return null
   }
 }
 
-export async function fetchTraces() {
+export async function fetchTraces(signal?: AbortSignal) {
   try {
-    const res = await fetch('/api/traces')
+    const res = await fetch('/api/traces', { signal })
     if (!res.ok) { reportFetchError('traces', () => { fetchTraces() }); return null }
     return res.json()
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return null
     reportFetchError('traces', () => { fetchTraces() })
     return null
   }
 }
 
-export async function fetchGraph(since?: number | null) {
+export async function fetchGraph(since?: number | null, signal?: AbortSignal) {
   try {
     const url = since != null ? `/api/graph?since=${since}` : '/api/graph'
-    const res = await fetch(url, { cache: 'no-store' })
+    const res = await fetch(url, { cache: 'no-store', signal })
     if (!res.ok) { reportFetchError('agent graph', () => { fetchGraph(since) }); return null }
     return res.json()
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return null
     reportFetchError('agent graph', () => { fetchGraph(since) })
     return null
   }
 }
 
-export async function fetchMetrics() {
+export async function fetchMetrics(signal?: AbortSignal) {
   try {
     // cache: 'no-store' — always fresh. Staleness is managed by the
     // visibility-aware Realtime subscription in metrics/page.tsx.
-    const res = await fetch('/api/metrics', { cache: 'no-store' })
+    const res = await fetch('/api/metrics', { cache: 'no-store', signal })
     if (!res.ok) { reportFetchError('metrics', () => { fetchMetrics() }); return null }
     return res.json()
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return null
     reportFetchError('metrics', () => { fetchMetrics() })
     return null
   }
 }
 
-export async function fetchApiKeys() {
+export async function fetchApiKeys(signal?: AbortSignal) {
   try {
-    const res = await fetch('/api/settings/api-keys')
+    const res = await fetch('/api/settings/api-keys', { signal })
     if (!res.ok) { reportFetchError('API keys', () => { fetchApiKeys() }); return null }
     return res.json()
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return null
     reportFetchError('API keys', () => { fetchApiKeys() })
     return null
   }
 }
 
-export async function createApiKey(name: string) {
+export async function createApiKey(name: string, signal?: AbortSignal) {
   try {
     const res = await fetch('/api/settings/api-keys', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name }),
+      signal,
     })
     if (!res.ok) { reportFetchError('API keys'); return null }
     return res.json()
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return null
     reportFetchError('API keys')
     return null
   }
 }
 
-export async function revokeApiKey(id: string) {
+export async function revokeApiKey(id: string, signal?: AbortSignal) {
   try {
-    const res = await fetch(`/api/settings/api-keys/${id}`, { method: 'DELETE' })
+    const res = await fetch(`/api/settings/api-keys/${id}`, { method: 'DELETE', signal })
     if (!res.ok) reportFetchError('API keys')
     return res.ok
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return false
     reportFetchError('API keys')
     return false
   }
 }
 
-export async function fetchBillingInfo() {
+export async function fetchBillingInfo(signal?: AbortSignal) {
   try {
-    const res = await fetch('/api/settings/billing')
+    const res = await fetch('/api/settings/billing', { signal })
     if (!res.ok) { reportFetchError('billing info', () => { fetchBillingInfo() }); return null }
     return res.json()
-  } catch {
+  } catch (e) {
+    if (isAbortError(e)) return null
     reportFetchError('billing info', () => { fetchBillingInfo() })
     return null
   }
