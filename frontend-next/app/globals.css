@@ -202,6 +202,16 @@
   --color-chart-3: var(--chart-3);
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
+  /* Radius scale — use these tokens consistently:
+     • rounded-md    → small controls (selects, compact buttons in toolbars)
+     • rounded-lg    → standard buttons, inputs
+     • rounded-xl    → cards, panels, drawers, tables (the default card radius)
+     • rounded-2xl   → the Card primitive (matches shadcn base-nova)
+     • rounded-full  → pills, chips, badges, status dots, icon-only buttons
+     • rounded-[2rem] → NodeNetworkMap container only (deliberate cinematic depth)
+     Avoid mixing radii within a single visual group — if a card uses
+     rounded-xl, its child elements should use rounded-lg or rounded-md,
+     not rounded-2xl. */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);

@@ -619,7 +619,7 @@ export default function SettingsPage() {
                     <div>
                       <label className="block text-sm font-medium text-foreground mb-2">
                         Email
-                        <span className="ml-2 text-[10px] font-normal text-muted-foreground/70 uppercase tracking-wider">
+                        <span className="ml-2 text-[11px] font-normal text-muted-foreground/70 uppercase tracking-wider">
                           Managed by Clerk
                         </span>
                       </label>

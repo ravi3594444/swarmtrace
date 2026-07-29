@@ -16,7 +16,14 @@ const navLinks = [
 function scrollTo(e: React.MouseEvent<HTMLAnchorElement>, href: string) {
   e.preventDefault()
   const el = document.querySelector(href)
-  if (el) el.scrollIntoView({ behavior: "smooth" })
+  if (!el) return
+  // Respect prefers-reduced-motion: jump instantly instead of smooth-
+  // scrolling. The global CSS @media (prefers-reduced-motion: reduce)
+  // rule kills CSS transitions/animations, but scrollIntoView's behavior
+  // is a JS API that isn't covered by that CSS rule, so we check it
+  // explicitly here.
+  const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  el.scrollIntoView({ behavior: reducedMotion ? 'auto' : 'smooth' })
 }
 
 export function Navigation() {

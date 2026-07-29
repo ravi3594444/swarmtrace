@@ -4,18 +4,25 @@ import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 
 /**
- * DashboardSkeleton — skeleton loading state for dashboard pages.
+ * DashboardSkeleton — skeleton loading state for ALL dashboard pages.
  *
- * Replaces the full-page SwarmLoadingScreen (Lottie animation) with a
- * skeleton layout that matches the page structure. This avoids a jarring
- * full-page spinner and instead shows the sidebar + header immediately,
- * with only the content area showing animated placeholders. The user
- * sees the page "taking shape" rather than a blank screen with a spinner.
+ * Standardized loading pattern: every dashboard page (Overview, Agents,
+ * Network, Traces, Threads, Metrics, Compare, Failures) uses this
+ * skeleton instead of the full-page Lottie spinner. The skeleton shows
+ * the sidebar + header instantly, with only the content area showing
+ * animated placeholders — the user sees the page "taking shape" rather
+ * than a blank screen with a spinner. This is faster perceived perf and
+ * avoids the layout shift that happens when the Lottie is replaced by
+ * the real content.
  *
- * The layout matches Overview (the most complex page) — other pages
- * (Traces, Agents, Metrics) will have fewer skeletons than they need,
- * but the header + sidebar render instantly and the content area is
- * visually occupied, which is the main goal.
+ * The Lottie (SwarmLoadingScreen) is now reserved for branded moments
+ * only (e.g. the first-paint splash) — not for page-level loading.
+ *
+ * The skeleton layout is modeled on Overview (the most complex page).
+ * Other pages have fewer panels than the skeleton shows, but the header
+ * + sidebar render instantly and the content area is visually occupied,
+ * which is the main goal. The brief mismatch is less jarring than a
+ * full-page spinner.
  */
 export function DashboardSkeleton({ title = 'Loading…', description = 'Loading…' }: { title?: string; description?: string }) {
   return (

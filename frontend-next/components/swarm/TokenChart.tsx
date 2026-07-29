@@ -2,6 +2,8 @@
 
 import type { Trace } from "@/lib/trace-types";
 import { useState } from "react";
+import { Activity } from "lucide-react";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 
 function fmtTick(n: number): string {
   if (n >= 1000) return `${(n / 1000).toFixed(n % 1000 === 0 ? 0 : 1)}k`;
@@ -33,7 +35,7 @@ export function TokenChart({ traces, onSelect }: { traces: Trace[]; onSelect?: (
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3">
         <h3 className="text-sm font-semibold text-foreground">Token Burn by Function</h3>
-        <div className="flex items-center gap-4 text-[10px] text-muted-foreground font-mono">
+        <div className="flex items-center gap-4 text-[11px] text-muted-foreground font-mono">
           <span className="flex items-center gap-1.5">
             <span className="h-2 w-3 rounded-sm bg-primary" /> INPUT
           </span>
@@ -44,13 +46,19 @@ export function TokenChart({ traces, onSelect }: { traces: Trace[]; onSelect?: (
       </div>
       <div className="p-4">
         {data.length === 0 ? (
-          <div className="py-8 text-center text-sm text-muted-foreground">No token data</div>
+          <Empty className="py-8 border-0">
+            <EmptyMedia variant="icon">
+              <Activity className="w-5 h-5" />
+            </EmptyMedia>
+            <EmptyTitle>No token data</EmptyTitle>
+            <EmptyDescription>Token usage will appear here once traces flow in.</EmptyDescription>
+          </Empty>
         ) : (
           <>
             {/* Scale ruler — gives every row a fixed reference, so a tiny bar still reads
                 against the same axis as the dominant one instead of looking like zero. */}
             <div className="flex pl-32 pr-16 mb-1.5">
-              <div className="relative flex-1 h-3.5 text-[10px] font-mono text-muted-foreground/70">
+              <div className="relative flex-1 h-3.5 text-[11px] font-mono text-muted-foreground/70">
                 {ticks.map((t, i) => (
                   <span
                     key={i}

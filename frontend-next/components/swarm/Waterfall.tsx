@@ -2,14 +2,22 @@
 
 import type { Trace } from "@/lib/trace-types";
 import { useState } from "react";
+import { GitBranch } from "lucide-react";
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from "@/components/ui/empty";
 
 export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t: Trace) => void }) {
   const [hover, setHover] = useState<{ t: Trace; x: number; y: number } | null>(null);
 
   if (traces.length === 0) {
     return (
-      <div className="rounded-xl border border-border bg-card p-8 text-center text-sm text-muted-foreground">
-        No traces to plot.
+      <div className="rounded-xl border border-border bg-card">
+        <Empty className="py-8 border-0">
+          <EmptyMedia variant="icon">
+            <GitBranch className="w-5 h-5" />
+          </EmptyMedia>
+          <EmptyTitle>No traces to plot</EmptyTitle>
+          <EmptyDescription>Traces will appear here once your agents run.</EmptyDescription>
+        </Empty>
       </div>
     );
   }
@@ -45,7 +53,7 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
     <div className="rounded-xl border border-border bg-card overflow-hidden">
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3">
         <h3 className="text-sm font-semibold text-foreground">Waterfall</h3>
-        <span className="font-mono text-[10px] text-muted-foreground">
+        <span className="font-mono text-[11px] text-muted-foreground">
           {(totalMs / 1000).toFixed(2)}s total span
         </span>
       </div>
@@ -53,7 +61,7 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
       <div className="relative overflow-x-auto p-4">
         <div style={{ minWidth: 560 }}>
           {/* Tick header */}
-          <div className="relative mb-2 h-5 font-mono text-[10px] text-muted-foreground" style={{ marginLeft: labelW }}>
+          <div className="relative mb-2 h-5 font-mono text-[11px] text-muted-foreground" style={{ marginLeft: labelW }}>
             {Array.from({ length: ticks + 1 }).map((_, i) => (
               <div key={i} className="absolute top-0 -translate-x-1/2" style={{ left: `${(i / ticks) * 100}%` }}>
                 {((totalMs * i) / ticks / 1000).toFixed(2)}s
@@ -102,7 +110,7 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
                     );
                   })}
                 </div>
-                <div className="w-8 shrink-0 pl-2 text-right font-mono text-[10px] text-muted-foreground">
+                <div className="w-8 shrink-0 pl-2 text-right font-mono text-[11px] text-muted-foreground">
                   {rowTraces.length}×
                 </div>
               </div>

@@ -19,7 +19,7 @@ function NetworkStat({ label, value, accent = 'neutral' }: { label: string; valu
   }[accent]
   return (
     <div className={`rounded-2xl border bg-gradient-to-br ${color} px-4 py-3 shadow-[0_18px_50px_rgba(0,0,0,0.25)]`}>
-      <div className="text-[10px] font-bold uppercase tracking-[0.24em] text-muted-foreground">{label}</div>
+      <div className="text-[11px] font-bold uppercase tracking-[0.24em] text-muted-foreground">{label}</div>
       <div className="mt-1 font-mono text-2xl font-bold text-foreground">{value}</div>
     </div>
   )
@@ -39,7 +39,7 @@ export default function NetworkPage() {
         <div className="border-b border-border bg-surface/95 px-6 py-5 shadow-[0_18px_70px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
             <div>
-              <div className="mb-2 flex items-center gap-3 text-[10px] font-bold uppercase tracking-[0.28em] text-muted-foreground">
+              <div className="mb-2 flex items-center gap-3 text-[11px] font-bold uppercase tracking-[0.28em] text-muted-foreground">
                 <Radio className="h-4 w-4" /> Swarm topology
               </div>
               <h1 className="text-3xl font-semibold tracking-tight text-foreground md:text-4xl">

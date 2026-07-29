@@ -77,7 +77,7 @@ function ConfirmDialogContent({
 
         {confirmationPhrase && (
           <div className="mt-4">
-            <label className="mb-1.5 block text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
+            <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-wider text-muted-foreground">
               Type <span className="font-mono normal-case text-foreground">{confirmationPhrase}</span> to confirm
             </label>
             <input
