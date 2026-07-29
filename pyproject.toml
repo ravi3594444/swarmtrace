@@ -29,8 +29,8 @@ scraper    = ["scrapling"]
 tools      = ["sentence-transformers", "faiss-cpu", "numpy"]
 budget     = ["tiktoken"]
 fov        = ["playwright", "watchdog"]
-gateway    = ["mcp", "uvicorn"]
-all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken", "playwright", "watchdog", "mcp", "uvicorn"]
+gateway    = ["mcp>=1,<2", "uvicorn"]
+all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken", "playwright", "watchdog", "mcp>=1,<2", "uvicorn"]
 
 [project.scripts]
 swarmtrace = "swarmtrace.cli:view"
