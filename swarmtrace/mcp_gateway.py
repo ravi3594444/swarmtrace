@@ -168,7 +168,7 @@ def _result_to_output(result: Any) -> str:
             content = result.get("content", [])
             return _content_to_text(content) or "upstream error"
         return _content_to_text(result.get("content", [])) or str(result)
-    return str(result)[:4000]
+    return str(result)[:32000]
 
 
 def _content_to_text(content: Any) -> str:
@@ -185,7 +185,7 @@ def _content_to_text(content: Any) -> str:
             text = getattr(block, "text", None)
             if text is not None:
                 parts.append(str(text))
-    return "\n".join(parts)[:4000]
+    return "\n".join(parts)[:32000]
 
 
 def _extract_context_from_meta(meta: Any) -> Optional[TraceContext]:
@@ -391,9 +391,9 @@ class SwarmTraceMcpGateway:
                 end_time=datetime.now(timezone.utc),
                 status="error" if error else "ok",
                 latency_sec=latency,
-                args=(redact(str(arguments)) or "")[:4000] if arguments else None,
-                output=(redact(output) or "")[:4000] if (error is None and output) else None,
-                error=(redact(error) or "")[:4000] if error else None,
+                args=(redact(str(arguments)) or "")[:32000] if arguments else None,
+                output=(redact(output) or "")[:32000] if (error is None and output) else None,
+                error=(redact(error) or "")[:32000] if error else None,
                 agent_id=trace_ctx.agent_id,
                 agent_name=trace_ctx.agent_name,
                 session_id=trace_ctx.session_id,

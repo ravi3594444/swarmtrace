@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "swarmtrace"
-version = "0.6.5"
+version = "0.6.6"
 description = "pytest for AI agents — trace, debug and catch regressions in LLM swarms"
 readme = "README.md"
 authors = [{ name = "Ravi" }]
@@ -54,3 +54,10 @@ target-version = "py310"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+# Integration tests require a live Postgres (POSTGRES_TEST_URL) and are run
+# by the dedicated CI job. Unit CI and bare `pytest` skip them by default.
+norecursedirs = [".git", ".venv", "dist", "build", "*.egg", "frontend-next", "node_modules"]
+addopts = ["--ignore=tests/integration"]
+markers = [
+  "integration: tests that need a live Postgres (deselected by default)",
+]

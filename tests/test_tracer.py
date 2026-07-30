@@ -672,18 +672,18 @@ def test_api_agents_filter_contract(records):
 #
 # Before the fix, _flush did:
 #     args_repr = str(args[:2])           # no cap
-#     output    = _safe_str(result)       # capped at 4000
+#     output    = _safe_str(result)       # capped at 32000
 # This asymmetry meant a function called with one big argument (large string,
 # dataframe repr, etc.) produced a trace whose args field was unbounded while
-# output was exactly 4000 chars. Downstream: the oversized row could push its
+# output was exactly 32000 chars. Downstream: the oversized row could push its
 # batch over the server's MAX_BODY_BYTES = 64KB → 413 → resync() retries the
 # row forever (it never fits), never marks it synced=1, and it silently leaks
 # in the local SQLite DB forever while burning retry time on every resync run.
 #
-# The fix routes args_repr through _safe_str too, so both fields cap at 4000.
+# The fix routes args_repr through _safe_str too, so both fields cap at 32000.
 # These tests guard the cap directly.
 
-def test_args_repr_capped_at_4000_chars(records):
+def test_args_repr_capped_at_32000_chars(records):
     """A single huge argument must not produce an unbounded args field."""
     @tracer.observe
     def f(big_arg):
@@ -694,19 +694,19 @@ def test_args_repr_capped_at_4000_chars(records):
 
     assert len(records) == 1
     args_repr = records[0][3]   # save_trace(trace_id, parent_id, func_name, args_repr, ...)
-    # Cap is 4000, matching _safe_str's default. We don't assert exact equality
+    # Cap is 32000, matching _safe_str's default. We don't assert exact equality
     # because redact() may add/remove a few chars after the cap is applied —
     # but it must be in the same order of magnitude as the output cap, NOT
     # the unbounded 200,005 chars the bug produced.
-    assert len(args_repr) <= 4100, \
-        f"args_repr not capped: {len(args_repr)} chars (expected <= ~4100)"
-    assert len(args_repr) >= 3900, \
-        f"args_repr suspiciously short: {len(args_repr)} chars (expected ~4000)"
+    assert len(args_repr) <= 33000, \
+        f"args_repr not capped: {len(args_repr)} chars (expected <= ~33000)"
+    assert len(args_repr) >= 31000, \
+        f"args_repr suspiciously short: {len(args_repr)} chars (expected ~32000)"
 
 
 def test_args_and_output_caps_are_symmetric(records):
     """The whole point of finding #3: args and output must cap at the same
-    length. Before the fix, args was unbounded and output was 4000 — that
+    length. Before the fix, args was unbounded and output was 32000 — that
     asymmetry is the bug."""
     @tracer.observe
     def f(big_arg):
@@ -718,8 +718,8 @@ def test_args_and_output_caps_are_symmetric(records):
     assert len(records) == 1
     args_repr = records[0][3]
     output    = records[0][4]
-    # Both should be capped to ~4000 — within a small tolerance for redact()
-    # post-processing. The bug would show args at ~200,005 and output at 4,000.
+    # Both should be capped to ~32000 — within a small tolerance for redact()
+    # post-processing. The bug would show args at ~200,005 and output at 32,000.
     assert abs(len(args_repr) - len(output)) <= 200, \
         f"asymmetry! args={len(args_repr)}, output={len(output)} " \
         f"(diff={len(args_repr) - len(output)})"
@@ -738,9 +738,9 @@ def test_kwargs_keys_appended_after_args_cap(records):
 
     assert len(records) == 1
     args_repr = records[0][3]
-    # Cap (4000) + " kwargs=['alpha', 'beta', 'gamma']" suffix is well under 5KB.
+    # Cap (32000) + " kwargs=['alpha', 'beta', 'gamma']" suffix is well under 34KB.
     # Before the fix this would have been 200,005 + suffix.
-    assert len(args_repr) < 5000, \
+    assert len(args_repr) < 34000, \
         f"args_repr with kwargs not capped: {len(args_repr)} chars"
     # The kwargs names should still be visible (they're metadata, not PII).
     assert "alpha" in args_repr
@@ -953,3 +953,10 @@ def test_normalize_base_url_short_strings_do_not_crash():
     assert _normalize_base_url("api") == "api"  # no leading slash — not the suffix
     assert _normalize_base_url("/api") == ""
     assert _normalize_base_url("/API") == ""
+
+
+def test_normalize_base_url_whitespace_only_returns_empty():
+    """Whitespace-only URLs must not IndexError on the trailing-/api slice."""
+    assert _normalize_base_url("   ") == ""
+    assert _normalize_base_url("\t\n") == ""
+    assert _normalize_base_url("///") == ""

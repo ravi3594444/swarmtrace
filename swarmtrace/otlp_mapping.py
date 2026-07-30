@@ -186,9 +186,9 @@ def otlp_span_to_span_record(
 
     args_raw = _pick(span_attrs, resource_attrs, "swarmtrace.args", default="")
     output_raw = _pick(span_attrs, resource_attrs, "swarmtrace.output", default="")
-    args = redact(str(args_raw))[:4000] if args_raw else None
-    output = redact(str(output_raw))[:4000] if output_raw else None
-    error = redact(str(error_message))[:4000] if error_message else None
+    args = redact(str(args_raw))[:32000] if args_raw else None
+    output = redact(str(output_raw))[:32000] if output_raw else None
+    error = redact(str(error_message))[:32000] if error_message else None
 
     return SpanRecord(
         span_id=span_id,

@@ -26,16 +26,16 @@
  * OLD backend (which only accepts single-object) would 400.
  */
 
-const MAX_TEXT_LEN = 4000
+export const MAX_TEXT_LEN = 32000
 
 import { redact } from './redact'
 import { decodeGzipBody } from './decode-body'
 
 // Bound on the DECOMPRESSED body size. The route already caps the wire
-// (compressed) bytes at 64 KB, but gzip can expand ~1000x, so a small
+// (compressed) bytes at 1 MB, but gzip can expand ~1000x, so a small
 // malicious payload could balloon after inflation. 1 MB comfortably fits
-// the largest legitimate batch (50 traces × ~8 KB of text fields).
-export const MAX_DECOMPRESSED_BYTES = 1024 * 1024
+// the largest legitimate batch (50 traces × ~64 KB of text fields).
+export const MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
 
 export const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function', 'retrieval'])
 

@@ -11,7 +11,7 @@
 // with /api/events and /api/mcp without copy-paste drift.
 import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '@/lib/api-auth'
 
-const MAX_BODY_BYTES  = 64 * 1024
+const MAX_BODY_BYTES  = 1024 * 1024
 const MAX_BATCH_SIZE = 50
 const SUPA_TIMEOUT_MS = 5000
 
@@ -118,16 +118,13 @@ export async function POST(req: Request) {
       })
     }
 
-    // Fresh Supabase lookup on every request — no in-process cache.
-    // The previous version cached key_hash → user_id in a per-isolate Map
-    // for 5 min, but on Vercel each /api route is its own serverless
-    // function with its own memory, so the cache (a) couldn't be
-    // invalidated by the DELETE route in another function, and (b) gave
-    // per-instance stale reads across warm instances. Removing the cache
-    // makes revocation take effect in 0s on every route, matching /api/mcp.
-    // The key_hash column has a unique index, so this is a sub-ms point-read.
-    // See lib/api-auth.ts for the load trade-off note (ingest ~30 calls/min
-    // per active key vs mcp's occasional calls).
+    // Tenant isolation is enforced inside Postgres (migration 0010):
+    // upsert_trace_for_key resolves key_hash → user_id via a SECURITY
+    // DEFINER helper and stamps user_id itself. The app never chooses
+    // the tenant id for the write path, so a buggy or compromised
+    // service-role caller cannot insert under an arbitrary user_id.
+    // We still do a cheap existence probe here so revoked/unknown keys
+    // return 401 (not a 500 from the RPC) before we parse the body.
     const keyRes = await supa(
       `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
       { headers: { Prefer: 'return=representation' } }
@@ -135,7 +132,6 @@ export async function POST(req: Request) {
     const keyRows: Array<{ user_id: string }> = await keyRes.json()
     if (!keyRows || keyRows.length === 0)
       return jsonResponse(401, { error: 'Invalid or revoked API key' })
-    const user_id = keyRows[0].user_id
 
     // The SDK's batch path gzips the body and sets Content-Encoding: gzip.
     // Request bodies are NOT auto-decompressed by the runtime, so inflate
@@ -192,9 +188,10 @@ export async function POST(req: Request) {
     // idempotency in a "faster" batch RPC would turn a currently-safe
     // retry into duplicate metrics on every retried batch.
     for (const row of rows as TraceRow[]) {
-      await supaRpc('upsert_trace_with_metrics', {
+      // p_key_hash (not p_user_id) — tenant stamped inside Postgres.
+      await supaRpc('upsert_trace_for_key', {
+        p_key_hash:      keyHash,
         p_id:            row.id,
-        p_user_id:       user_id,
         p_parent_id:     row.parent_id ?? null,
         p_trace_id:      row.trace_id ?? row.id,
         p_function:      row.function,
@@ -213,14 +210,7 @@ export async function POST(req: Request) {
         p_attributes:    row.attributes ?? null,
       })
     }
-
-    // ── 2. Update last_used (non-fatal) ───────────────────────────────────
-    try {
-      await supa(`api_keys?key_hash=eq.${encodeURIComponent(keyHash)}`, {
-        method: 'PATCH',
-        body: JSON.stringify({ last_used: new Date().toISOString() }),
-      })
-    } catch { /* cosmetic only */ }
+    // last_used is updated inside upsert_trace_for_key.
 
     return new Response(null, { status: 204 })
   } catch (err) {
