@@ -98,10 +98,10 @@ export default function MetricsPage() {
     a.click(); URL.revokeObjectURL(a.href)
   }
 
+  // DashboardSkeleton already renders DashboardLayout itself — don't wrap
+  // it again or the sidebar renders twice while loading.
   if (loading) return (
-    <DashboardLayout>
-      <DashboardSkeleton title="Metrics" description="Latency, token, and cost trends over time" />
-    </DashboardLayout>
+    <DashboardSkeleton title="Metrics" description="Latency, token, and cost trends over time" />
   )
 
   const chart = (data?.chart ?? []).map((d) => ({ ...d, day: dayLabel(d.date) }))
