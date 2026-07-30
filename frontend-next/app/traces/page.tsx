@@ -16,6 +16,7 @@ import { buildSpanTree, countDescendants, hasTreeError, type SpanNode } from '@/
 import { tracesToCsv, downloadCsv, downloadJson } from '@/lib/csv-export'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import {
   ChevronRight, ChevronDown, X, Clock, Activity, Coins,
   AlertTriangle, Search, Pause, Play, GitBranch, Table2, BarChart2, Wrench, Globe,
@@ -789,9 +790,22 @@ export default function TracesPage() {
 
                   <div className="flex-1 overflow-y-auto">
                     {roots.length === 0 ? (
-                      <div className="flex items-center justify-center py-24 text-sm text-muted-foreground">
-                        {traces.length === 0 ? 'No spans yet.' : 'No spans match your filters.'}
-                      </div>
+                      <Empty className="py-16 border-0">
+                        <EmptyMedia variant="icon">
+                          <GitBranch className="w-5 h-5" />
+                        </EmptyMedia>
+                        {traces.length === 0 ? (
+                          <>
+                            <EmptyTitle>No spans yet</EmptyTitle>
+                            <EmptyDescription>Spans will appear here once your agents run.</EmptyDescription>
+                          </>
+                        ) : (
+                          <>
+                            <EmptyTitle>No spans match your filters</EmptyTitle>
+                            <EmptyDescription>Try clearing them to see all spans.</EmptyDescription>
+                          </>
+                        )}
+                      </Empty>
                     ) : (
                       roots.map((root) => (
                         <SpanRow key={root.id} node={root} depth={0} selected={selected} onSelect={setSelected} maxLatency={maxLatency} />
