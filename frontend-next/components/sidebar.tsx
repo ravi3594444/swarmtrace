@@ -21,7 +21,7 @@ function TakeTourButton({ collapsed }: { collapsed: boolean }) {
       onClick={startTour}
       title="Take a tour"
       aria-label="Take a tour"
-      className={`group flex items-center gap-3 rounded-lg text-sm font-medium text-sidebar-foreground transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
+      className={`group flex items-center gap-3 rounded-xl text-sm font-medium text-sidebar-foreground transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
         collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'
       }`}
     >
@@ -88,7 +88,7 @@ function NavItem({
         data-tour={`nav-${label.toLowerCase()}`}
         title={collapsed ? label : undefined}
         className={`
-          group relative flex items-center gap-3 rounded-lg text-sm font-medium
+          group relative flex items-center gap-3 rounded-xl text-sm font-medium
           transition-all duration-150 cursor-pointer
           ${collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'}
           ${isActive
@@ -97,7 +97,7 @@ function NavItem({
         `}
       >
         <Icon
-          className={`shrink-0 transition-colors ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'} ${isActive ? 'text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground'}`}
+          className={`shrink-0 transition-colors w-[18px] h-[18px] ${isActive ? 'text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground'}`}
           strokeWidth={isActive ? 2.2 : 1.7}
         />
         {!collapsed && <span className="truncate">{label}</span>}
@@ -344,7 +344,7 @@ export function Sidebar() {
       {/* User footer */}
       {open ? (
         <div className="px-3 pt-3 pb-5 border-t border-sidebar-border space-y-2">
-          <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg bg-sidebar-accent">
+          <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl bg-sidebar-accent">
             <UserButton appearance={{ elements: { avatarBox: 'w-7 h-7 shrink-0' } }} />
             <div className="min-w-0 flex-1">
               <div className="text-xs font-medium text-sidebar-foreground truncate">{email}</div>
