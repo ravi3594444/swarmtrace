@@ -11,7 +11,7 @@ export function DashboardLayout({ children }: { children: React.ReactNode }) {
   return (
     <RealtimeProvider>
       <OnboardingTourProvider>
-        <div className="flex h-screen bg-background transition-colors duration-200">
+        <div className="flex h-screen bg-background transition-colors duration-200 lg:p-3 lg:gap-3">
           <CommandPalette />
           <KeyboardShortcutHelp />
           <Sidebar />

@@ -272,10 +272,12 @@ export function Sidebar() {
           On desktop: sticky, width controlled by `open` state. */}
       <aside
         className={`
-          shrink-0 flex flex-col h-screen bg-sidebar border-r border-sidebar-border
+          shrink-0 flex flex-col h-screen lg:h-[calc(100vh-1.5rem)] bg-sidebar border-r border-sidebar-border lg:border lg:rounded-2xl
           transition-[width,background-color,border-color,color,transform] duration-200 ease-in-out overflow-hidden
-          /* Mobile: fixed drawer, slides in from the left */
-          fixed lg:sticky top-0 z-50 lg:z-auto
+          /* Mobile: fixed drawer, slides in from the left, flush to the edge.
+             Desktop: sticky, inset from the top by the shell's lg:p-3 gutter
+             so it reads as a floating rounded card next to the content. */
+          fixed lg:sticky top-0 lg:top-3 z-50 lg:z-auto
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
         style={{ width: open ? 224 : 56 }}
