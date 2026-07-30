@@ -21,12 +21,12 @@ function TakeTourButton({ collapsed }: { collapsed: boolean }) {
       onClick={startTour}
       title="Take a tour"
       aria-label="Take a tour"
-      className={`group flex items-center gap-3 rounded-lg text-sm font-medium text-sidebar-foreground transition-all duration-150 hover:bg-sidebar-border/60 hover:text-foreground ${
+      className={`group flex items-center gap-3 rounded-lg text-sm font-medium text-sidebar-foreground transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
         collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'
       }`}
     >
       <Compass
-        className={`shrink-0 text-muted-foreground group-hover:text-foreground ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'}`}
+        className={`shrink-0 text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'}`}
         strokeWidth={1.7}
       />
       {!collapsed && <span className="truncate">Take a tour</span>}
@@ -92,17 +92,16 @@ function NavItem({
           transition-all duration-150 cursor-pointer
           ${collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'}
           ${isActive
-            ? 'text-primary'
-            : 'text-sidebar-foreground hover:bg-sidebar-border/60 hover:text-foreground'}
+            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
+            : 'text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'}
         `}
-        style={isActive ? { background: 'color-mix(in oklch, var(--primary) 8%, transparent)', borderRadius: 8 } : {}}
       >
         <Icon
-          className={`shrink-0 transition-colors ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'} ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-foreground'}`}
+          className={`shrink-0 transition-colors ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'} ${isActive ? 'text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground'}`}
           strokeWidth={isActive ? 2.2 : 1.7}
         />
         {!collapsed && <span className="truncate">{label}</span>}
-        {!collapsed && isActive && <ChevronRight className="w-3.5 h-3.5 ml-auto text-primary/50" />}
+        {!collapsed && isActive && <ChevronRight className="w-3.5 h-3.5 ml-auto text-sidebar-accent-foreground/60" />}
 
         {collapsed && (
           <span className="pointer-events-none absolute left-full ml-2 z-50 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150">
@@ -163,7 +162,7 @@ function LogoutButton() {
         aria-label="Log out"
         aria-haspopup="dialog"
         aria-expanded={confirmOpen}
-        className="w-7 h-7 rounded-lg border border-border bg-card flex items-center justify-center text-muted-foreground hover:bg-red-50 dark:hover:bg-red-950/30 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-900/60 transition-colors shrink-0"
+        className="w-7 h-7 rounded-lg border border-sidebar-border bg-sidebar flex items-center justify-center text-sidebar-foreground/60 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/60 transition-colors shrink-0"
       >
         <LogOut className="w-3.5 h-3.5" />
       </button>
@@ -242,17 +241,17 @@ export function Sidebar() {
       <div className="lg:hidden fixed top-0 left-0 right-0 z-30 h-12 flex items-center justify-between px-4 bg-sidebar border-b border-sidebar-border">
         <button
           onClick={() => setMobileOpen(true)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors"
+          className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
           aria-label="Open navigation menu"
         >
           <Menu className="w-5 h-5" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-primary flex items-center justify-center shrink-0">
-            <Zap className="w-3.5 h-3.5 text-white" strokeWidth={2.5} />
+          <div className="w-6 h-6 rounded-md bg-sidebar-primary flex items-center justify-center shrink-0">
+            <Zap className="w-3.5 h-3.5 text-sidebar-primary-foreground" strokeWidth={2.5} />
           </div>
-          <span className="text-sm font-bold tracking-tight text-foreground">
-            Swarm<span className="text-primary">Trace</span>
+          <span className="text-sm font-bold tracking-tight text-sidebar-foreground">
+            Swarm<span className="text-sidebar-primary">Trace</span>
           </span>
         </div>
         <div className="w-8" /> {/* spacer to center the logo */}
@@ -285,12 +284,12 @@ export function Sidebar() {
       <div className={`flex items-center border-b border-sidebar-border ${open ? 'px-4 py-4 gap-2.5 justify-between' : 'px-0 py-4 justify-center'}`}>
         {open && (
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shrink-0 shadow-sm">
-              <Zap className="w-4 h-4 text-white" strokeWidth={2.5} />
+            <div className="w-7 h-7 rounded-lg bg-sidebar-primary flex items-center justify-center shrink-0 shadow-sm">
+              <Zap className="w-4 h-4 text-sidebar-primary-foreground" strokeWidth={2.5} />
             </div>
             <div className="min-w-0">
-              <div className="text-sm font-bold tracking-tight text-foreground leading-none">
-                Swarm<span className="text-primary">Trace</span>
+              <div className="text-sm font-bold tracking-tight text-sidebar-foreground leading-none">
+                Swarm<span className="text-sidebar-primary">Trace</span>
               </div>
             </div>
           </div>
@@ -298,7 +297,7 @@ export function Sidebar() {
         {/* Desktop collapse toggle (hidden on mobile — the drawer has its own close button) */}
         <button
           onClick={() => setOpen((v) => !v)}
-          className={`hidden lg:flex w-7 h-7 rounded-lg items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0 ${!open ? 'mx-auto' : ''}`}
+          className={`hidden lg:flex w-7 h-7 rounded-lg items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors shrink-0 ${!open ? 'mx-auto' : ''}`}
           title={open ? 'Collapse sidebar' : 'Expand sidebar'}
           aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
         >
@@ -307,7 +306,7 @@ export function Sidebar() {
         {/* Mobile close button (hidden on desktop) */}
         <button
           onClick={() => setMobileOpen(false)}
-          className="lg:hidden w-7 h-7 rounded-lg flex items-center justify-center text-muted-foreground hover:bg-muted hover:text-foreground transition-colors shrink-0"
+          className="lg:hidden w-7 h-7 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors shrink-0"
           aria-label="Close navigation menu"
         >
           <X className="w-4 h-4" />
@@ -316,8 +315,8 @@ export function Sidebar() {
 
       {!open && (
         <div className="flex justify-center py-2 border-b border-sidebar-border">
-          <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center shadow-sm">
-            <Zap className="w-4 h-4 text-white" strokeWidth={2.5} />
+          <div className="w-7 h-7 rounded-lg bg-sidebar-primary flex items-center justify-center shadow-sm">
+            <Zap className="w-4 h-4 text-sidebar-primary-foreground" strokeWidth={2.5} />
           </div>
         </div>
       )}
@@ -326,7 +325,7 @@ export function Sidebar() {
         {navGroups.map((group, gi) => (
           <div key={group.label} className={open ? 'space-y-0.5' : 'space-y-1 flex flex-col items-center'}>
             {open && (
-              <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-muted-foreground/50">
+              <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
                 {group.label}
               </div>
             )}
@@ -345,11 +344,11 @@ export function Sidebar() {
       {/* User footer */}
       {open ? (
         <div className="px-3 pt-3 pb-5 border-t border-sidebar-border space-y-2">
-          <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg bg-muted/60">
+          <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-lg bg-sidebar-accent">
             <UserButton appearance={{ elements: { avatarBox: 'w-7 h-7 shrink-0' } }} />
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-foreground truncate">{email}</div>
-              <div className="text-[11px] text-muted-foreground">{initials}</div>
+              <div className="text-xs font-medium text-sidebar-foreground truncate">{email}</div>
+              <div className="text-[11px] text-sidebar-foreground/60">{initials}</div>
             </div>
             <LogoutButton />
           </div>
