@@ -7,6 +7,7 @@ import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
   MessagesSquare, GitCompareArrows, Compass, GitBranch,
+  HelpCircle, Sparkles, Plus, Search,
 } from 'lucide-react'
 import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 import { useOnboardingTour } from './onboarding/OnboardingTour'
@@ -21,12 +22,13 @@ function TakeTourButton({ collapsed }: { collapsed: boolean }) {
       onClick={startTour}
       title="Take a tour"
       aria-label="Take a tour"
-      className={`group flex items-center gap-3 rounded-xl text-sm font-medium text-sidebar-foreground transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
-        collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'
-      }`}
+      className={`group flex items-center gap-3 rounded-full text-sm font-medium transition-colors duration-150
+        ${collapsed
+          ? 'justify-center px-0 py-2.5 w-10 mx-auto text-sidebar-foreground/60 hover:bg-sidebar-accent'
+          : 'px-3 py-2.5 w-full text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'}`}
     >
       <Compass
-        className={`shrink-0 text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'}`}
+        className={`shrink-0 ${collapsed ? 'w-[18px] h-[18px]' : 'w-[18px] h-[18px]'}`}
         strokeWidth={1.7}
       />
       {!collapsed && <span className="truncate">Take a tour</span>}
@@ -36,114 +38,95 @@ function TakeTourButton({ collapsed }: { collapsed: boolean }) {
 
 const navGroups = [
   {
-    label: 'Monitor',
+    label: 'Workspace',
     items: [
-      { href: '/overview', label: 'Overview', icon: LayoutGrid },
-      { href: '/agents',   label: 'Agents',   icon: Users },
-      { href: '/network',  label: 'Network',  icon: GitBranch },
-      { href: '/traces',   label: 'Traces',   icon: ActivitySquare },
-      { href: '/threads',  label: 'Threads',  icon: MessagesSquare },
+      { href: '/overview', label: 'Dashboard', icon: LayoutGrid },
+      { href: '/agents',   label: 'Agents',   icon: Users, chevron: true },
+      { href: '/traces',   label: 'Traces',   icon: ActivitySquare, chevron: true },
+      { href: '/threads',  label: 'Threads',  icon: MessagesSquare, chevron: true },
     ],
   },
   {
     label: 'Analyze',
     items: [
+      { href: '/network',  label: 'Network',  icon: GitBranch },
       { href: '/metrics',  label: 'Metrics',  icon: BarChart3 },
       { href: '/compare',  label: 'Compare',  icon: GitCompareArrows },
       { href: '/failures', label: 'Failures', icon: AlertTriangle },
     ],
   },
-  {
-    label: 'Account',
-    items: [
-      { href: '/settings', label: 'Settings', icon: Settings },
-    ],
-  },
 ]
 
 function NavItem({
-  href, label, icon: Icon, collapsed, onNavigate,
+  href, label, icon: Icon, collapsed, onNavigate, chevron, disabled,
 }: {
   href: string
   label: string
   icon: React.ComponentType<{ className?: string; strokeWidth?: number }>
   collapsed: boolean
   onNavigate?: () => void
+  chevron?: boolean
+  disabled?: boolean
 }) {
   const pathname = usePathname()
-  // Use startsWith so sub-routes keep the parent nav item highlighted.
-  // Previously this was strict equality (pathname === href), which meant
-  // /traces/abc123 wouldn't highlight the Traces nav item. The Settings
-  // item also benefits: /settings?tab=api now highlights Settings.
-  // We guard against false positives (e.g. /over matching /overview) by
-  // requiring either an exact match or the next char after the prefix to
-  // be a path separator (/) or the end of the string.
   const isActive = pathname === href
     || pathname.startsWith(href + '/')
     || pathname.startsWith(href + '?')
 
+  const Wrapper: React.ElementType = disabled ? 'div' : Link
+  const wrapperProps = disabled ? {} : { href, onClick: onNavigate }
+
   return (
-    <Link href={href} onClick={onNavigate}>
+    <Wrapper {...wrapperProps}>
       <div
         data-tour={`nav-${label.toLowerCase()}`}
         title={collapsed ? label : undefined}
         className={`
-          group relative flex items-center gap-3 rounded-xl text-sm font-medium
-          transition-all duration-150 cursor-pointer
-          ${collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'}
+          group relative flex items-center gap-3 text-sm font-medium
+          transition-all duration-150 cursor-pointer select-none
+          ${collapsed
+            ? 'justify-center px-0 py-2.5 w-10 mx-auto rounded-full'
+            : 'px-3.5 py-2.5 w-full rounded-full'}
           ${isActive
-            ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'}
+            ? 'bg-[color:var(--sidebar-active)] text-[color:var(--sidebar-active-foreground)] shadow-sm'
+            : disabled
+              ? 'text-sidebar-foreground/40 cursor-not-allowed'
+              : 'text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground'}
         `}
       >
         <Icon
-          className={`shrink-0 transition-colors w-[18px] h-[18px] ${isActive ? 'text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground'}`}
-          strokeWidth={isActive ? 2.2 : 1.7}
+          className={`shrink-0 w-[18px] h-[18px] ${
+            isActive
+              ? 'text-[color:var(--sidebar-active-foreground)]'
+              : 'text-sidebar-foreground/55 group-hover:text-sidebar-foreground'
+          }`}
+          strokeWidth={isActive ? 2.1 : 1.7}
         />
-        {!collapsed && <span className="truncate">{label}</span>}
-        {!collapsed && isActive && <ChevronRight className="w-3.5 h-3.5 ml-auto text-sidebar-accent-foreground/60" />}
+        {!collapsed && (
+          <>
+            <span className="truncate">{label}</span>
+            {chevron && !isActive && (
+              <ChevronRight className="w-3.5 h-3.5 ml-auto text-sidebar-foreground/40" />
+            )}
+          </>
+        )}
 
         {collapsed && (
-          <span className="pointer-events-none absolute left-full ml-2 z-50 whitespace-nowrap rounded-md border border-border bg-card px-2 py-1 text-xs font-medium text-foreground shadow-md opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+          <span className="pointer-events-none absolute left-full ml-2 z-50 whitespace-nowrap rounded-lg border border-sidebar-border bg-sidebar px-2.5 py-1.5 text-xs font-medium text-sidebar-foreground shadow-lg opacity-0 group-hover:opacity-100 transition-opacity duration-150">
             {label}
           </span>
         )}
       </div>
-    </Link>
+    </Wrapper>
   )
 }
 
-/** Logout button with a confirm modal — "Are you sure you want to log out?"
- *
- * Why a confirm: logout is a session-ending action. A misclick on a direct
- * button would force the user back through the sign-in flow. The modal
- * gates the action behind an explicit "Log out" confirmation.
- *
- * Styling: the trigger button is neutral at rest, matching the rest of
- * the sidebar's icon buttons — a permanently red icon sitting in an
- * otherwise neutral UI for a routine, frequent action read as an alarm
- * that was always going off. It shifts to red on hover as a light hint
- * of intent, and the confirm button in the modal below is fully
- * destructive (red) styling, since that's the actual point of no return.
- *
- * Positioning: rendered as a `fixed` overlay centered in the viewport,
- * rather than an `absolute` popover anchored to the button. The button lives
- * inside the sidebar's `<aside>`, which has `overflow-hidden` — an anchored
- * popover got clipped by that boundary any time it extended past the
- * sidebar's edge. A fixed, centered modal escapes that clipping entirely
- * and gives the confirmation the visual weight a session-ending action
- * deserves, with a backdrop so it reads clearly as a modal rather than a
- * dropdown.
- *
- * Backdrop click and Escape close the modal without signing out.
- * The actual signout is performed by Clerk's <SignOutButton> wrapping the
- * confirm button, so it integrates with the existing Clerk auth flow. */
+/** Logout button with a confirm modal (same UX as before, restyled to match). */
 function LogoutButton() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const modalRef = useRef<HTMLDivElement>(null)
   useFocusTrap(modalRef, confirmOpen)
 
-  // Close on Escape so the modal doesn't get stranded.
   useEffect(() => {
     if (!confirmOpen) return
     const onKey = (e: KeyboardEvent) => {
@@ -162,14 +145,12 @@ function LogoutButton() {
         aria-label="Log out"
         aria-haspopup="dialog"
         aria-expanded={confirmOpen}
-        className="w-7 h-7 rounded-lg border border-sidebar-border bg-sidebar flex items-center justify-center text-sidebar-foreground/60 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/60 transition-colors shrink-0"
+        className="w-7 h-7 rounded-full flex items-center justify-center text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-red-500 transition-colors shrink-0"
       >
         <LogOut className="w-3.5 h-3.5" />
       </button>
 
       {confirmOpen && (
-        // Fixed overlay, centered in the viewport. Clicking the backdrop
-        // (but not the card itself) closes without signing out.
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[1px] p-4"
           onClick={() => setConfirmOpen(false)}
@@ -180,10 +161,10 @@ function LogoutButton() {
             aria-modal="true"
             aria-label="Confirm log out"
             onClick={(e) => e.stopPropagation()}
-            className="w-64 rounded-xl border border-border bg-card overflow-hidden"
+            className="w-64 rounded-2xl border border-sidebar-border bg-card overflow-hidden shadow-2xl"
           >
-            <div className="px-4 py-3 border-b border-border bg-muted/30">
-              <p className="text-sm font-medium text-foreground text-center">Log out?</p>
+            <div className="px-4 py-4 border-b border-border bg-muted/30">
+              <p className="text-sm font-semibold text-foreground text-center">Log out?</p>
               <p className="text-xs text-muted-foreground text-center mt-0.5">
                 You&apos;ll need to sign in again.
               </p>
@@ -192,14 +173,14 @@ function LogoutButton() {
               <button
                 type="button"
                 onClick={() => setConfirmOpen(false)}
-                className="h-8 rounded-md border border-border bg-card text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+                className="h-9 rounded-full border border-border bg-card text-xs font-semibold text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
               >
                 Cancel
               </button>
               <SignOutButton redirectUrl="/sign-in">
                 <button
                   type="button"
-                  className="w-full h-8 rounded-md bg-red-600 text-xs font-semibold text-white hover:bg-red-700 transition-colors"
+                  className="w-full h-9 rounded-full bg-[color:var(--sidebar-active)] text-xs font-semibold text-[color:var(--sidebar-active-foreground)] hover:opacity-90 transition-opacity"
                 >
                   Log out
                 </button>
@@ -212,6 +193,61 @@ function LogoutButton() {
   )
 }
 
+/**
+ * IconRail — the narrow dark dock on the far left (matching the trypitch
+ * sidebar's leftmost strip with app-switcher icons + a "+" button to
+ * add new connections/workspaces).
+ */
+function IconRail({ onOpenSidebar }: { onOpenSidebar?: () => void }) {
+  return (
+    <div className="hidden lg:flex w-12 shrink-0 h-screen flex-col items-center py-3 gap-1.5 bg-[color:var(--sidebar-rail)] border-r border-[color:var(--sidebar-rail-border)] sticky top-0">
+      {/* App/menu icon (top-left grid icon in trypitch) */}
+      <button
+        type="button"
+        onClick={onOpenSidebar}
+        title="Menu"
+        aria-label="Toggle menu"
+        className="w-9 h-9 rounded-lg flex items-center justify-center text-[color:var(--sidebar-rail-foreground)] hover:bg-[color:var(--sidebar-rail-accent)] hover:text-[color:var(--sidebar-rail-accent-foreground)] transition-colors"
+      >
+        <Menu className="w-[18px] h-[18px]" strokeWidth={1.8} />
+      </button>
+
+      <div className="w-6 h-px bg-[color:var(--sidebar-rail-border)] my-1" />
+
+      {/* Search / EQ-style icon (second icon in the rail) */}
+      <button
+        type="button"
+        title="Search"
+        aria-label="Search"
+        className="w-9 h-9 rounded-lg flex items-center justify-center text-[color:var(--sidebar-rail-foreground)]/70 hover:bg-[color:var(--sidebar-rail-accent)] hover:text-[color:var(--sidebar-rail-accent-foreground)] transition-colors"
+      >
+        <Search className="w-[18px] h-[18px]" strokeWidth={1.8} />
+      </button>
+
+      {/* Quick-add buttons (the star / instagram-style icons in trypitch rail) */}
+      <button
+        type="button"
+        title="Quick actions"
+        className="w-9 h-9 rounded-lg flex items-center justify-center text-orange-400 hover:bg-[color:var(--sidebar-rail-accent)] transition-colors"
+      >
+        <Sparkles className="w-[18px] h-[18px]" strokeWidth={1.8} />
+      </button>
+
+      <div className="flex-1" />
+
+      {/* + New button at bottom of rail */}
+      <button
+        type="button"
+        title="New"
+        aria-label="New"
+        className="w-9 h-9 rounded-lg flex items-center justify-center text-[color:var(--sidebar-rail-foreground)]/80 hover:bg-[color:var(--sidebar-rail-accent)] hover:text-[color:var(--sidebar-rail-accent-foreground)] transition-colors border border-[color:var(--sidebar-rail-border)]"
+      >
+        <Plus className="w-[18px] h-[18px]" strokeWidth={1.8} />
+      </button>
+    </div>
+  )
+}
+
 export function Sidebar() {
   const [open, setOpen] = useState(true)            // desktop collapse state
   const [mobileOpen, setMobileOpen] = useState(false) // mobile drawer state
@@ -219,7 +255,7 @@ export function Sidebar() {
   const email = user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? 'Account'
   const initials = (user?.fullName ?? email).slice(0, 2).toUpperCase()
 
-  // Close the mobile drawer on Escape (matches the logout modal pattern).
+  // Close the mobile drawer on Escape.
   useEffect(() => {
     if (!mobileOpen) return
     const onKey = (e: KeyboardEvent) => {
@@ -229,36 +265,29 @@ export function Sidebar() {
     return () => document.removeEventListener('keydown', onKey)
   }, [mobileOpen])
 
-  // The sidebar <aside> is shared between desktop (persistent) and mobile
-  // (off-canvas drawer). On mobile it's translated off-screen by default
-  // and slides in when mobileOpen is true. On desktop it's always visible
-  // and the collapse toggle (open state) controls its width.
   return (
     <>
-      {/* ── Mobile top bar (lg:hidden) ────────────────────────────────────
-          A thin fixed bar with a hamburger to open the sidebar drawer.
-          Only visible on screens below the lg: breakpoint. */}
-      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 h-12 flex items-center justify-between px-4 bg-sidebar border-b border-sidebar-border">
+      {/* ── Mobile top bar (lg:hidden) ─────────────────────────────── */}
+      <div className="lg:hidden fixed top-0 left-0 right-0 z-30 h-14 flex items-center justify-between px-4 bg-sidebar border-b border-sidebar-border">
         <button
           onClick={() => setMobileOpen(true)}
-          className="w-8 h-8 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors"
+          className="w-9 h-9 rounded-full flex items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent transition-colors"
           aria-label="Open navigation menu"
         >
           <Menu className="w-5 h-5" />
         </button>
         <div className="flex items-center gap-2">
-          <div className="w-6 h-6 rounded-md bg-sidebar-primary flex items-center justify-center shrink-0">
-            <Zap className="w-3.5 h-3.5 text-sidebar-primary-foreground" strokeWidth={2.5} />
+          <div className="w-7 h-7 rounded-lg bg-[color:var(--sidebar-active)] flex items-center justify-center shrink-0">
+            <Zap className="w-4 h-4 text-[color:var(--sidebar-active-foreground)]" strokeWidth={2.5} />
           </div>
           <span className="text-sm font-bold tracking-tight text-sidebar-foreground">
-            Swarm<span className="text-sidebar-primary">Trace</span>
+            Swarm<span className="text-sidebar-foreground/60">Trace</span>
           </span>
         </div>
-        <div className="w-8" /> {/* spacer to center the logo */}
+        <UserButton appearance={{ elements: { avatarBox: 'w-8 h-8' } }} />
       </div>
 
-      {/* ── Mobile backdrop ───────────────────────────────────────────────
-          Click anywhere outside the sidebar to close. */}
+      {/* ── Mobile backdrop ────────────────────────────────────────── */}
       {mobileOpen && (
         <div
           className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
@@ -267,99 +296,129 @@ export function Sidebar() {
         />
       )}
 
-      {/* ── Sidebar (desktop persistent + mobile drawer) ──────────────────
-          On mobile: fixed, translated -100% when closed, 0 when open.
-          On desktop: sticky, width controlled by `open` state. */}
+      {/* ── Desktop: dark icon rail ────────────────────────────────── */}
+      <IconRail onOpenSidebar={() => setOpen(true)} />
+
+      {/* ── Desktop: collapsed-state "peek" handle when panel is closed */}
+      {!open && (
+        <button
+          type="button"
+          onClick={() => setOpen(true)}
+          className="hidden lg:flex w-8 shrink-0 h-screen items-center justify-center hover:bg-sidebar-accent/50 transition-colors group"
+          aria-label="Expand sidebar"
+          title="Expand sidebar"
+        >
+          <ChevronRight className="w-4 h-4 text-sidebar-foreground/40 group-hover:text-sidebar-foreground transition-colors" />
+        </button>
+      )}
+
+      {/* ── Sidebar panel (desktop persistent + mobile drawer) ─────── */}
       <aside
         className={`
-          shrink-0 flex flex-col h-screen bg-sidebar border-r border-sidebar-border
-          transition-[width,background-color,border-color,color,transform] duration-200 ease-in-out overflow-hidden
-          /* Mobile: fixed drawer, slides in from the left */
+          shrink-0 flex flex-col h-screen bg-sidebar
+          transition-[width,transform] duration-200 ease-in-out overflow-hidden
+          border-r border-sidebar-border
           fixed lg:sticky top-0 z-50 lg:z-auto
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
-        style={{ width: open ? 224 : 56 }}
+        style={{ width: open ? 240 : 0 }}
       >
-      {/* Logo + toggle */}
-      <div className={`flex items-center border-b border-sidebar-border ${open ? 'px-4 py-4 gap-2.5 justify-between' : 'px-0 py-4 justify-center'}`}>
-        {open && (
+        {/* Logo */}
+        <div className="flex items-center px-5 pt-5 pb-4 gap-2.5 justify-between">
           <div className="flex items-center gap-2.5 min-w-0">
-            <div className="w-7 h-7 rounded-lg bg-sidebar-primary flex items-center justify-center shrink-0 shadow-sm">
-              <Zap className="w-4 h-4 text-sidebar-primary-foreground" strokeWidth={2.5} />
+            <div className="w-8 h-8 rounded-xl bg-[color:var(--sidebar-active)] flex items-center justify-center shrink-0 shadow-sm">
+              <Zap className="w-[18px] h-[18px] text-[color:var(--sidebar-active-foreground)]" strokeWidth={2.5} />
             </div>
-            <div className="min-w-0">
-              <div className="text-sm font-bold tracking-tight text-sidebar-foreground leading-none">
-                Swarm<span className="text-sidebar-primary">Trace</span>
+            <div className="min-w-0 leading-tight">
+              <div className="text-base font-bold tracking-tight text-sidebar-foreground leading-none font-mono">
+                SWARM<span className="opacity-60">TRACE</span>
               </div>
             </div>
           </div>
-        )}
-        {/* Desktop collapse toggle (hidden on mobile — the drawer has its own close button) */}
-        <button
-          onClick={() => setOpen((v) => !v)}
-          className={`hidden lg:flex w-7 h-7 rounded-lg items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors shrink-0 ${!open ? 'mx-auto' : ''}`}
-          title={open ? 'Collapse sidebar' : 'Expand sidebar'}
-          aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
-        >
-          {open ? <X className="w-3.5 h-3.5" /> : <Menu className="w-4 h-4" />}
-        </button>
-        {/* Mobile close button (hidden on desktop) */}
-        <button
-          onClick={() => setMobileOpen(false)}
-          className="lg:hidden w-7 h-7 rounded-lg flex items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors shrink-0"
-          aria-label="Close navigation menu"
-        >
-          <X className="w-4 h-4" />
-        </button>
-      </div>
-
-      {!open && (
-        <div className="flex justify-center py-2 border-b border-sidebar-border">
-          <div className="w-7 h-7 rounded-lg bg-sidebar-primary flex items-center justify-center shadow-sm">
-            <Zap className="w-4 h-4 text-sidebar-primary-foreground" strokeWidth={2.5} />
-          </div>
+          <button
+            onClick={() => {
+              if (window.innerWidth < 1024) setMobileOpen(false)
+              else setOpen(false)
+            }}
+            className="lg:flex w-7 h-7 rounded-full items-center justify-center text-sidebar-foreground/50 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors shrink-0"
+            title="Collapse sidebar"
+            aria-label="Collapse sidebar"
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
-      )}
 
-      <nav aria-label="Dashboard navigation" className={`flex-1 overflow-y-auto overflow-x-hidden py-3 ${open ? 'px-3 space-y-3' : 'px-0 space-y-3 flex flex-col items-center'}`}>
-        {navGroups.map((group, gi) => (
-          <div key={group.label} className={open ? 'space-y-0.5' : 'space-y-1 flex flex-col items-center'}>
-            {open && (
-              <div className="px-2.5 pt-1.5 pb-1 text-[11px] font-semibold uppercase tracking-wider text-sidebar-foreground/40">
-                {group.label}
-              </div>
-            )}
-            {group.items.map((item) => (
-              <NavItem key={item.href} {...item} collapsed={!open} onNavigate={() => setMobileOpen(false)} />
-            ))}
-            {/* Separator between groups (not after the last group) */}
-            {gi < navGroups.length - 1 && open && (
-              <div className="mx-2.5 mt-1 border-t border-sidebar-border/50" />
-            )}
+        {/* Main nav */}
+        <nav
+          aria-label="Dashboard navigation"
+          className="flex-1 overflow-y-auto overflow-x-hidden pt-2 pb-4 px-3 space-y-4"
+        >
+          {navGroups.map((group, gi) => (
+            <div key={group.label} className="space-y-1">
+              {group.items.map((item) => (
+                <NavItem
+                  key={item.href}
+                  {...item}
+                  collapsed={false}
+                  onNavigate={() => setMobileOpen(false)}
+                />
+              ))}
+              {gi < navGroups.length - 1 && (
+                <div className="mx-3.5 mt-3 border-t border-sidebar-border/70" />
+              )}
+            </div>
+          ))}
+
+          <div className="pt-2">
+            <NavItem
+              href="/settings"
+              label="Settings"
+              icon={Settings}
+              collapsed={false}
+              onNavigate={() => setMobileOpen(false)}
+            />
+            <button
+              type="button"
+              className="flex items-center gap-3 px-3.5 py-2.5 w-full rounded-full text-sm font-medium text-sidebar-foreground/70 hover:bg-sidebar-accent hover:text-sidebar-foreground transition-colors"
+            >
+              <HelpCircle className="shrink-0 w-[18px] h-[18px] text-sidebar-foreground/55" strokeWidth={1.7} />
+              <span className="truncate">Support</span>
+            </button>
           </div>
-        ))}
-        <TakeTourButton collapsed={!open} />
-      </nav>
 
-      {/* User footer */}
-      {open ? (
-        <div className="px-3 pt-3 pb-5 border-t border-sidebar-border space-y-2">
-          <div className="flex items-center gap-2.5 px-2.5 py-2.5 rounded-xl bg-sidebar-accent">
-            <UserButton appearance={{ elements: { avatarBox: 'w-7 h-7 shrink-0' } }} />
-            <div className="min-w-0 flex-1">
-              <div className="text-xs font-medium text-sidebar-foreground truncate">{email}</div>
-              <div className="text-[11px] text-sidebar-foreground/60">{initials}</div>
+          <TakeTourButton collapsed={false} />
+        </nav>
+
+        {/* Footer: Upgrade CTA + user row */}
+        <div className="px-3 pb-4 pt-2 border-t border-sidebar-border/70 space-y-3">
+          {/* Upgrade Pro CTA — matches the dark pill in the screenshot */}
+          <Link
+            href="/contact"
+            onClick={() => setMobileOpen(false)}
+            className="group flex items-center gap-2.5 w-full px-4 py-2.5 rounded-full bg-[color:var(--sidebar-active)] text-[color:var(--sidebar-active-foreground)] hover:opacity-90 transition-opacity shadow-sm"
+          >
+            <Sparkles className="w-4 h-4" strokeWidth={2} />
+            <span className="text-sm font-semibold flex-1">Upgrade Pro</span>
+            <Zap className="w-4 h-4 opacity-80" strokeWidth={2} />
+          </Link>
+
+          {/* User row */}
+          <div className="flex items-center gap-2.5 px-2 py-1.5 rounded-full hover:bg-sidebar-accent transition-colors">
+            <UserButton
+              appearance={{
+                elements: {
+                  avatarBox: 'w-8 h-8 shrink-0 rounded-full ring-2 ring-sidebar-border',
+                },
+              }}
+            />
+            <div className="min-w-0 flex-1 leading-tight">
+              <div className="text-xs font-semibold text-sidebar-foreground truncate">{email}</div>
+              <div className="text-[11px] text-sidebar-foreground/50 truncate">{initials} · Free</div>
             </div>
             <LogoutButton />
           </div>
         </div>
-      ) : (
-        <div className="px-3 pt-3 pb-5 border-t border-sidebar-border flex flex-col items-center gap-2">
-          <UserButton appearance={{ elements: { avatarBox: 'w-7 h-7 shrink-0' } }} />
-          <LogoutButton />
-        </div>
-      )}
-    </aside>
+      </aside>
     </>
   )
 }

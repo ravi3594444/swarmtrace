@@ -40,20 +40,26 @@
   --chart-4: oklch(0.65 0 0);
   --chart-5: oklch(0.80 0 0);
   --radius: 1rem;
-  /* Sidebar is intentionally dark charcoal even in the light theme — this is
-     the "Pitch-style" split: a dark charcoal control rail against the
-     light/ivory content area, black CTAs. Values are pulled 1:1 from the
-     dark theme's charcoal palette below so the rail reads identically in
-     both themes; only the main content area switches between light and
-     dark. */
-  --sidebar: #131313;
-  --sidebar-foreground: #e5e2e1;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #2f3131;
-  --sidebar-accent: #262524;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #363534;
-  --sidebar-ring: #ffffff;
+  /* Pitch-style two-rail sidebar:
+     • --sidebar-rail: the narrow dark icon dock on the far left
+     • --sidebar: the wider white/light main nav panel
+     Active item is a dark charcoal pill with white text; inactive items
+     are gray with a subtle light-gray hover. CTAs are dark charcoal. */
+  --sidebar-rail: #0f172a;              /* slate-900 — dark app dock */
+  --sidebar-rail-foreground: #cbd5e1;   /* slate-300 */
+  --sidebar-rail-accent: #1e293b;       /* slate-800 */
+  --sidebar-rail-accent-foreground: #ffffff;
+  --sidebar-rail-border: #1e293b;
+  --sidebar: #f7f7f5;                  /* warm off-white panel (pitch-like) */
+  --sidebar-foreground: #1f2328;
+  --sidebar-primary: #0f172a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #e7e7e4;           /* subtle gray hover */
+  --sidebar-accent-foreground: #1f2328;
+  --sidebar-active: #1a1f2c;           /* dark pill for active item */
+  --sidebar-active-foreground: #ffffff;
+  --sidebar-border: #e7e7e4;
+  --sidebar-ring: #0f172a;
   /* NodeNetworkMap theme tokens — light mode. The map uses a light gradient
      background with dark grid lines and dark vignette glow so it reads as
      an integrated part of the page instead of a dark island. Values are
@@ -153,13 +159,21 @@
   --chart-3: #8e9192;
   --chart-4: #636565;
   --chart-5: #444748;
-  --sidebar: #131313;
+  /* Pitch-style two-rail sidebar (dark-mode) */
+  --sidebar-rail: #0a0e1a;
+  --sidebar-rail-foreground: #94a3b8;
+  --sidebar-rail-accent: #1e293b;
+  --sidebar-rail-accent-foreground: #ffffff;
+  --sidebar-rail-border: #1e293b;
+  --sidebar: #131315;
   --sidebar-foreground: #e5e2e1;
   --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #2f3131;
-  --sidebar-accent: #201f1f;
+  --sidebar-primary-foreground: #0f172a;
+  --sidebar-accent: #1f2227;
   --sidebar-accent-foreground: #e5e2e1;
-  --sidebar-border: #444748;
+  --sidebar-active: #ffffff;
+  --sidebar-active-foreground: #0f172a;
+  --sidebar-border: #26292f;
   --sidebar-ring: #ffffff;
   /* NodeNetworkMap theme tokens — dark mode. Matches the original hardcoded
      charcoal gradient so the dark-mode visual is unchanged. */
@@ -228,8 +242,15 @@
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-accent: var(--sidebar-accent);
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-active: var(--sidebar-active);
+  --color-sidebar-active-foreground: var(--sidebar-active-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
+  --color-sidebar-rail: var(--sidebar-rail);
+  --color-sidebar-rail-foreground: var(--sidebar-rail-foreground);
+  --color-sidebar-rail-accent: var(--sidebar-rail-accent);
+  --color-sidebar-rail-accent-foreground: var(--sidebar-rail-accent-foreground);
+  --color-sidebar-rail-border: var(--sidebar-rail-border);
   /* Material Design surface token mappings for Tailwind utilities */
   --color-surface: var(--surface);
   --color-surface-container: var(--surface-container);
