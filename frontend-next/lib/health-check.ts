@@ -68,6 +68,23 @@ export function runHealthCheck(): HealthCheckResult {
     )
   }
 
+  // Upstash is required for distributed rate limiting in production.
+  if (nodeEnv === 'production') {
+    const hasUpstash = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
+    if (!hasUpstash && process.env.SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT !== '1') {
+      warnings.push(
+        '⚠️  UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN missing in production. ' +
+        'Rate limiters fail closed (429) until Upstash is configured, or until ' +
+        'SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT=1 is set (weak per-isolate fallback).'
+      )
+    } else if (!hasUpstash) {
+      warnings.push(
+        '⚠️  SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT=1 is set without Upstash — rate limits ' +
+        'are per-isolate only and scale with the number of warm serverless instances.'
+      )
+    }
+  }
+
   // In production with fallback forced on, warn that RLS is being bypassed.
   if (nodeEnv === 'production' && process.env.SUPABASE_RLS_FALLBACK === '1') {
     warnings.push(

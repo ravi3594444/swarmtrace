@@ -146,9 +146,15 @@ def normalize_base_url(url: str) -> str:
     Callers append their own route (``/api/ingest``, ``/api/events``, etc.), so
     this function strips surrounding whitespace, trailing slashes, and one
     trailing ``/api`` segment case-insensitively.
+
+    Empty / whitespace-only input returns ``""`` (no crash on ``s[-4:]``).
     """
+    if not url:
+        return ""
     s = url.strip().rstrip("/")
-    if s[-4:].casefold() == "/api":
+    if not s:
+        return ""
+    if len(s) >= 4 and s[-4:].casefold() == "/api":
         s = s[:-4].rstrip("/")
     return s
 

@@ -1,15 +1,72 @@
+# Python
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
 *.egg-info/
+*.egg
+.eggs/
 dist/
 build/
-.pypirc
-*.db
-.env
-.env.local
+.Python
+pip-wheel-metadata/
 *.pyo
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+.venv/
+venv/
+ENV/
+env/
+
+# Packaging / publish
+.pypirc
+*.whl
+
+# Local DBs / exports
+*.db
+*.sqlite
+*.sqlite3
 swarmtrace_export.*
 *.zip
 upload/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+!.env*.example
+
+# Node / Next.js
+node_modules/
 .next/
-.venv/
+out/
+.turbo/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDEs / OS
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Vercel / Clerk local
+.vercel/
+.clerk/
+
+# Test / tooling artifacts
+.cache/
+coverage/
+playwright-report/
+test-results/

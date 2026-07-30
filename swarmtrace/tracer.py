@@ -276,7 +276,7 @@ def _resolve_kind(kind: str, enclosing_agent: Optional[Tuple[str, str]]) -> str:
     return "agent" if enclosing_agent is None else "function"
 
 
-def _safe_str(obj, max_len: int = 4000) -> str:
+def _safe_str(obj, max_len: int = 32000) -> str:
     """Convert *obj* to string safely using a thread-pool (not a new thread per call)."""
     if obj is None:
         return ""
@@ -388,7 +388,7 @@ def _flush(
     session_id: Optional[str] = None,
     distributed_trace_id: Optional[str] = None,
 ) -> None:
-    # Cap args_repr at the same 4000-char limit _safe_str applies to output.
+    # Cap args_repr at the same 32000-char limit _safe_str applies to output.
     # Without this, a single large argument (big string, dataframe repr, etc.)
     # produces an unbounded args field that:
     #   1. Bloats the local SQLite DB (the row never syncs — the server's

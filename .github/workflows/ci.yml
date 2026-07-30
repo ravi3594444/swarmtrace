@@ -21,7 +21,10 @@ jobs:
       - name: Lint (critical errors only)
         run: ruff check --select E9,F63,F7,F82 swarmtrace tests
       - name: Tests
-        run: pytest -q
+        # Exclude tests/integration/ — those need a real Postgres and run in
+        # the dedicated "integration" job below. Collecting them here either
+        # skips/errors on missing POSTGRES_TEST_URL or doubles runtime.
+        run: pytest -q --ignore=tests/integration
 
   frontend:
     name: Frontend typecheck
@@ -92,5 +95,6 @@ jobs:
           # Uses POSTGRES_TEST_URL (not DATABASE_URL) to avoid collision
           # with the SDK's own DB path env var.
           POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/test
-        run: pytest tests/integration/ -v
+        # Override pyproject addopts --ignore=tests/integration
+        run: pytest tests/integration/ -v -o addopts=
 

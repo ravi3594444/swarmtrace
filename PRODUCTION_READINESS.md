@@ -16,10 +16,12 @@
 - [x] Trace metadata (`trace_id`, `attributes`) propagated through SDK, ingest, MCP, and dashboard.
 
 ## Recommendations
-- [ ] Implement Clerk-Supabase RLS.
-- [ ] Configure Upstash Redis.
+- [x] Implement Clerk-Supabase RLS (dashboard via `supaUserRequest`; ingest/events/mcp via key-bound SECURITY DEFINER RPCs in migration 0010).
+- [x] Configure Upstash Redis (required in production; fail-closed without it).
+- [x] Raise ingest body / field truncation limits (1 MB wire, 32k text fields).
 - [x] Add pricing fallback.
 - [x] Implement trace retention policy.
   - `SWARMTRACE_RETENTION_DAYS` (default 30) purges synced rows older than N days.
   - `SWARMTRACE_MAX_ROWS` (default 10,000) bounds total row count.
   - Unsynced rows are always preserved so the resync CLI can replay them.
+- [x] Ship MIT `LICENSE`, tighten CI unit/integration split, compress logo, harden `normalize_base_url`.

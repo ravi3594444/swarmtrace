@@ -72,6 +72,25 @@ async function supa(path: string, opts: RequestInit = {}) {
   return res
 }
 
+
+async function supaRpc(fn: string, params: Record<string, unknown>) {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${fn}`, {
+    method: 'POST',
+    signal: AbortSignal.timeout(SUPA_TIMEOUT_MS),
+    headers: {
+      apikey: SUPABASE_KEY,
+      Authorization: `Bearer ${SUPABASE_KEY}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(params),
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => '')
+    throw new Error(`Supabase RPC ${fn} ${res.status}: ${text}`)
+  }
+  return res
+}
+
 function json(status: number, body: unknown) {
   return new Response(JSON.stringify(body), {
     status,
@@ -147,15 +166,14 @@ export async function POST(req: Request) {
       return new Response(null, { status: 429, headers: { 'Retry-After': '60' } })
     }
 
-    // Fresh Supabase lookup on every request — no in-process cache.
-    // See ingest/route.ts for the full reasoning.
+    // Existence probe for a clean 401; tenant is stamped inside Postgres
+    // by insert_agent_event_for_key (migration 0010) from the key hash.
     const res = await supa(
       `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
       { headers: { Prefer: 'return=representation' } }
     )
     const rows: Array<{ user_id: string }> = await res.json()
     if (!rows?.length) return json(401, { error: 'Invalid or revoked API key' })
-    const user_id = rows[0].user_id
 
     let payload: unknown
     try {
@@ -165,9 +183,17 @@ export async function POST(req: Request) {
     const { row, error } = validate(payload)
     if (!row) return json(400, { error })
 
-    await supa('agent_events', {
-      method: 'POST',
-      body: JSON.stringify({ ...row, user_id }),
+    // Key-bound insert — user_id comes from the API key inside Postgres,
+    // never from the request body or an app-layer variable.
+    await supaRpc('insert_agent_event_for_key', {
+      p_key_hash:   keyHash,
+      p_id:         row.id,
+      p_agent_id:   row.agent_id,
+      p_event_type: row.event_type,
+      p_status:     row.status,
+      p_agent_name: row.agent_name,
+      p_data:       row.data ?? null,
+      p_timestamp:  row.timestamp,
     })
 
     return new Response(null, { status: 204 })

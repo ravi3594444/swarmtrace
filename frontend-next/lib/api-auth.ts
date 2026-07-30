@@ -1,6 +1,6 @@
 /**
  * Shared API authentication primitives — sha256 + rate limiter
- * (Upstash Redis with per-isolate fallback).
+ * (Upstash Redis required in production; per-isolate fallback in dev/test).
  *
  * Used by /api/ingest, /api/events, and /api/mcp so they don't each
  * re-implement (and drift on) the same logic.
@@ -242,12 +242,37 @@ export function createRateLimiter(opts: {
     return true
   }
 
+  // Production without Upstash is a misconfiguration: per-isolate fallback
+  // multiplies the effective limit by the number of warm isolates, which is
+  // exactly the "rate limits weak without Upstash" audit finding. Fail closed
+  // on the first check() so a missing UPSTASH_* pair surfaces as 503s rather
+  // than silently under-protecting the fleet. Dev/test keep the local map.
+  // Operators can opt back into the weak fallback with
+  // SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT=1 (emergency only).
+  let missingUpstashLogged = false
+
   return {
     async check(keyHash: string): Promise<boolean> {
       const limiter = getUpstash()
       if (limiter) {
         const { success } = await limiter.limit(keyHash)
         return success
+      }
+      const allowLocal =
+        process.env.NODE_ENV !== 'production' ||
+        process.env.SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT === '1'
+      if (!allowLocal) {
+        if (!missingUpstashLogged) {
+          missingUpstashLogged = true
+          console.error(
+            `[rate-limit] Upstash not configured in production (prefix=${prefix}). ` +
+            'Set UPSTASH_REDIS_REST_URL + UPSTASH_REDIS_REST_TOKEN, or explicitly ' +
+            'set SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT=1 to permit the weak per-isolate fallback.'
+          )
+        }
+        // Fail closed: treat as rate-limited rather than allowing unbounded traffic.
+        // Routes map false → 429. Prefer 429 over 503 so clients back off.
+        return false
       }
       return checkLocal(keyHash)
     },

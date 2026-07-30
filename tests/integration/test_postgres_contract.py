@@ -4,9 +4,9 @@ These tests spin up against a real Postgres instance (CI service container)
 and verify that:
 
 1. All `supabase/migrations/*.sql` apply cleanly in order.
-2. The `upsert_trace_with_metrics` RPC — the one `/api/ingest` and
-   `/api/mcp` both call — accepts the exact payload shape the Python SDK
-   sends (`tracer.py::_enqueue_remote`).
+2. The legacy `upsert_trace_with_metrics` RPC and the key-bound
+   `upsert_trace_for_key` RPC (migration 0010 — used by `/api/ingest` and
+   `/api/mcp`) accept the payload shape the Python SDK sends.
 3. The RPC's `xmax = 0` idempotency trick actually works: retrying the
    same trace ID does NOT double-count `daily_metrics`. This is the
    atomic-ingest fix from migration 0007 — without it, SDK retries would
@@ -157,8 +157,11 @@ def db_conn():
         DROP TABLE IF EXISTS public.daily_metrics CASCADE;
         DROP TABLE IF EXISTS public.api_keys CASCADE;
         DROP TABLE IF EXISTS public.traces CASCADE;
-        DROP FUNCTION IF EXISTS public.upsert_trace_with_metrics;
-        DROP FUNCTION IF EXISTS public.upsert_trace;
+        DROP FUNCTION IF EXISTS public.upsert_trace_with_metrics CASCADE;
+        DROP FUNCTION IF EXISTS public.upsert_trace_for_key CASCADE;
+        DROP FUNCTION IF EXISTS public.insert_agent_event_for_key CASCADE;
+        DROP FUNCTION IF EXISTS public.resolve_api_key_user_id CASCADE;
+        DROP FUNCTION IF EXISTS public.upsert_trace CASCADE;
         DROP PUBLICATION IF EXISTS supabase_realtime;
         DROP FUNCTION IF EXISTS auth.jwt();
         DROP FUNCTION IF EXISTS auth.uid();
@@ -184,10 +187,14 @@ def clean_db(db_conn):
     cur = db_conn.cursor(cursor_factory=RealDictCursor)
     cur.execute("DELETE FROM public.traces;")
     cur.execute("DELETE FROM public.daily_metrics;")
+    cur.execute("DELETE FROM public.agent_events;")
+    cur.execute("DELETE FROM public.api_keys;")
     db_conn.commit()
     yield cur
     cur.execute("DELETE FROM public.traces;")
     cur.execute("DELETE FROM public.daily_metrics;")
+    cur.execute("DELETE FROM public.agent_events;")
+    cur.execute("DELETE FROM public.api_keys;")
     db_conn.commit()
     cur.close()
 
@@ -263,7 +270,7 @@ def _call_rpc(cur, payload: dict) -> bool:
 # ---------------------------------------------------------------------------
 
 def test_migrations_apply_cleanly(db_conn):
-    """All 9 migrations (0000 → 0008) apply without error.
+    """All migrations (0000 → latest) apply without error.
 
     If this fails, a new migration has a syntax error or references a
     table/column that doesn't exist yet. The fixture applies them in
@@ -489,3 +496,131 @@ def test_session_id_persists(clean_db):
     row = cur.fetchone()
     assert row is not None
     assert row["session_id"] == "conv-123"
+
+
+# ---------------------------------------------------------------------------
+# Migration 0010 — key-bound tenant isolation
+# ---------------------------------------------------------------------------
+
+def _seed_api_key(cur, *, key_hash: str = "a" * 64, user_id: str = "user-a") -> None:
+    """Insert a non-revoked API key row for key-bound RPC tests."""
+    cur.execute(
+        """
+        INSERT INTO public.api_keys (id, key_hash, key_prefix, user_id, name, revoked)
+        VALUES (%s, %s, %s, %s, %s, false)
+        ON CONFLICT (id) DO UPDATE SET
+          key_hash = EXCLUDED.key_hash,
+          user_id = EXCLUDED.user_id,
+          revoked = false;
+        """,
+        (f"key-{key_hash[:8]}", key_hash, key_hash[:8], user_id, "test"),
+    )
+
+
+def _call_rpc_for_key(cur, payload: dict) -> bool:
+    """Call upsert_trace_for_key (the production ingest/mcp path)."""
+    cur.execute(
+        "SELECT public.upsert_trace_for_key("
+        "  %(p_key_hash)s, %(p_id)s, %(p_parent_id)s, %(p_function)s, "
+        "  %(p_args)s, %(p_output)s, %(p_latency_sec)s, %(p_error)s, "
+        "  %(p_timestamp)s, %(p_input_tokens)s, %(p_output_tokens)s, "
+        "  %(p_cost_usd)s, %(p_kind)s, %(p_agent_id)s, %(p_agent_name)s,"
+        "  %(p_session_id)s, %(p_trace_id)s, %(p_attributes)s"
+        ") AS was_insert;",
+        payload,
+    )
+    return cur.fetchone()["was_insert"]
+
+
+def test_upsert_for_key_stamps_user_from_api_key(clean_db):
+    """Tenant id comes from the API key inside Postgres — not from the caller."""
+    cur = clean_db
+    key_hash = "b" * 64
+    _seed_api_key(cur, key_hash=key_hash, user_id="owner-42")
+
+    payload = {
+        "p_key_hash": key_hash,
+        "p_id": "t-key-1",
+        "p_parent_id": None,
+        "p_function": "agent",
+        "p_args": "()",
+        "p_output": "ok",
+        "p_latency_sec": 0.1,
+        "p_error": None,
+        "p_timestamp": datetime.now(timezone.utc).isoformat(),
+        "p_input_tokens": 1,
+        "p_output_tokens": 1,
+        "p_cost_usd": 0.0,
+        "p_kind": "agent",
+        "p_agent_id": "t-key-1",
+        "p_agent_name": "agent",
+        "p_session_id": None,
+        "p_trace_id": "t-key-1",
+        "p_attributes": None,
+    }
+    assert _call_rpc_for_key(cur, payload) is True
+
+    cur.execute("SELECT user_id FROM public.traces WHERE id = 't-key-1';")
+    row = cur.fetchone()
+    assert row is not None
+    assert row["user_id"] == "owner-42"
+
+
+def test_upsert_for_key_rejects_unknown_key(clean_db):
+    """Unknown / revoked key_hash must fail — no orphan writes."""
+    cur = clean_db
+    payload = {
+        "p_key_hash": "c" * 64,
+        "p_id": "t-missing",
+        "p_parent_id": None,
+        "p_function": "agent",
+        "p_args": "",
+        "p_output": "",
+        "p_latency_sec": 0.0,
+        "p_error": None,
+        "p_timestamp": datetime.now(timezone.utc).isoformat(),
+        "p_input_tokens": 0,
+        "p_output_tokens": 0,
+        "p_cost_usd": 0.0,
+        "p_kind": "agent",
+        "p_agent_id": "t-missing",
+        "p_agent_name": "agent",
+        "p_session_id": None,
+        "p_trace_id": None,
+        "p_attributes": None,
+    }
+    try:
+        _call_rpc_for_key(cur, payload)
+        raised = False
+    except Exception:
+        raised = True
+    assert raised, "expected invalid_api_key exception for unknown key"
+    cur.execute("SELECT count(*) AS n FROM public.traces WHERE id = 't-missing';")
+    assert cur.fetchone()["n"] == 0
+
+
+def test_insert_agent_event_for_key_binds_tenant(clean_db):
+    """FOV event inserts also stamp user_id from the API key."""
+    cur = clean_db
+    key_hash = "d" * 64
+    _seed_api_key(cur, key_hash=key_hash, user_id="fov-user")
+    cur.execute(
+        "SELECT public.insert_agent_event_for_key("
+        "  %s, %s, %s, %s, %s, %s, %s::jsonb, %s"
+        ") AS id;",
+        (
+            key_hash,
+            "evt-1",
+            "agent-1",
+            "browser",
+            "info",
+            "Agent",
+            '{"url":"https://example.com"}',
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    assert cur.fetchone()["id"] == "evt-1"
+    cur.execute("SELECT user_id, event_type FROM public.agent_events WHERE id = 'evt-1';")
+    row = cur.fetchone()
+    assert row["user_id"] == "fov-user"
+    assert row["event_type"] == "browser"

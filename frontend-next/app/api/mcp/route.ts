@@ -95,7 +95,7 @@ async function resolveApiKeyByKeyHash(keyHash: string): Promise<string | null> {
 
 // ── MCP server factory ────────────────────────────────────────────────────────
 // Stateless — a new McpServer instance per request (perfect for serverless).
-function buildMcpServer(userId: string): McpServer {
+function buildMcpServer(userId: string, keyHash: string): McpServer {
   const server = new McpServer({
     name:    'swarmtrace',
     version: '1.0.0',
@@ -113,9 +113,9 @@ function buildMcpServer(userId: string): McpServer {
       input_tokens:  z.number().int().min(0).default(0).describe('Tokens sent to the model'),
       output_tokens: z.number().int().min(0).default(0).describe('Tokens returned by the model'),
       cost_usd:      z.number().min(0).default(0).describe('Cost in USD for this call'),
-      args:          z.string().max(4000).optional().describe('Serialised function arguments'),
-      output:        z.string().max(4000).optional().describe('Serialised function return value'),
-      error:         z.string().max(4000).optional().describe('Error message if the call failed'),
+      args:          z.string().max(32000).optional().describe('Serialised function arguments'),
+      output:        z.string().max(32000).optional().describe('Serialised function return value'),
+      error:         z.string().max(32000).optional().describe('Error message if the call failed'),
       parent_id:     z.string().max(64).optional().describe('Parent trace ID for nested spans'),
       kind:          z.enum(['agent', 'tool', 'llm', 'function', 'retrieval']).default('agent').describe(
         'Span type. Nested steps (tool/llm/function/retrieval) must pass agent_id explicitly — MCP calls are stateless, there is no enclosing-agent context to infer it from the way the Python SDK\'s contextvars can.'
@@ -163,9 +163,10 @@ function buildMcpServer(userId: string): McpServer {
         }
         const { kind, agentId, agentName } = identity
 
-        await supaRpc('upsert_trace_with_metrics', {
+        // Tenant stamped from API key inside Postgres (migration 0010).
+        await supaRpc('upsert_trace_for_key', {
+          p_key_hash:      keyHash,
           p_id:            params.id,
-          p_user_id:       userId,
           p_parent_id:     params.parent_id ?? null,
           p_trace_id:      params.trace_id ?? params.id,
           p_function:      params.function,
@@ -381,7 +382,7 @@ async function handleMcp(req: Request): Promise<Response> {
     sessionIdGenerator: undefined, // stateless mode
   })
 
-  const server = buildMcpServer(userId)
+  const server = buildMcpServer(userId, keyHash)
 
   try {
     await server.connect(transport)

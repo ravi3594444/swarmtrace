@@ -4,6 +4,20 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.6] — 2026-03-24
+
+### Security
+- **Multi-tenant isolation (ingest path):** new migration `0010_tenant_isolation_ingest.sql` adds `resolve_api_key_user_id`, `upsert_trace_for_key`, and `insert_agent_event_for_key`. `/api/ingest`, `/api/events`, and `/api/mcp` now bind tenant identity to the API key inside Postgres instead of trusting an app-layer `user_id` with the service-role key.
+- **Rate limits:** production requires Upstash Redis. Missing `UPSTASH_REDIS_REST_*` fails closed (429) unless `SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT=1` is set. Health-check surfaces the misconfiguration.
+
+### Fixed
+- Raised SDK/ingest/MCP free-text caps from 4 000 → **32 000** chars and ingest wire body from 64 KB → **1 MB** (8 MB decompressed) so complex agent traces keep detail.
+- Unit CI no longer collects `tests/integration/` (pyproject `addopts` + workflow `--ignore`); integration job overrides `addopts`.
+- Added MIT `LICENSE` (badge and packaging already claimed MIT).
+- Expanded root `.gitignore` (venv, coverage, Next/Node, IDE, env files).
+- `normalize_base_url` no longer errors on empty/whitespace-only input.
+- Compressed `assets/logo.png` (~1.5 MB → ~29 KB).
+
 ## [0.6.5] — 2026-07-12
 
 ### Changed
