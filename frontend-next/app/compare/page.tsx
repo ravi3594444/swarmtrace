@@ -94,10 +94,10 @@ export default function ComparePage() {
     [traceA, traceB]
   )
 
+  // DashboardSkeleton already renders DashboardLayout itself — don't wrap
+  // it again or the sidebar renders twice while loading.
   if (loading) return (
-    <DashboardLayout>
-      <DashboardSkeleton title="Compare" description="Side-by-side trace comparison" />
-    </DashboardLayout>
+    <DashboardSkeleton title="Compare" description="Side-by-side trace comparison" />
   )
 
   const regressed = score !== null && score < REGRESSION_THRESHOLD
