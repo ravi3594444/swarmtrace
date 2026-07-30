@@ -28,10 +28,10 @@ export default function FailuresPage() {
     [traces, range],
   )
 
+  // DashboardSkeleton already renders DashboardLayout itself — don't wrap
+  // it again or the sidebar renders twice while loading.
   if (loading) return (
-    <DashboardLayout>
-      <DashboardSkeleton title="Failures" description="Clustered errors from your agents" />
-    </DashboardLayout>
+    <DashboardSkeleton title="Failures" description="Clustered errors from your agents" />
   )
 
   const failed = filteredTraces.filter((t) => t.error)

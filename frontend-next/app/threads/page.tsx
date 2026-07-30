@@ -137,11 +137,11 @@ export default function ThreadsPage() {
   const totalTurns = useMemo(() => threads.reduce((sum, thread) => sum + thread.turnCount, 0), [threads])
   const totalErrors = useMemo(() => threads.filter((thread) => thread.hasError).length, [threads])
 
+  // DashboardSkeleton already renders DashboardLayout itself — don't wrap
+  // it again or the sidebar renders twice while loading.
   if (loading) {
     return (
-      <DashboardLayout>
-        <DashboardSkeleton title="Threads" description="Multi-turn agent conversations" />
-      </DashboardLayout>
+      <DashboardSkeleton title="Threads" description="Multi-turn agent conversations" />
     )
   }
 
