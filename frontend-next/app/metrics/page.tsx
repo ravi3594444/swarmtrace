@@ -6,9 +6,10 @@ import { PageHeader } from '@/components/page-header'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { fetchMetrics } from '@/lib/api'
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts'
-import { Download, TrendingDown, CheckCircle2 } from 'lucide-react'
+import { Download, TrendingDown, CheckCircle2, BarChart3 } from 'lucide-react'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
 import { chartTooltip } from '@/lib/chart-tooltip'
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 
 type ChartPoint = { date: string; cost: number; input: number; output: number; traces: number }
 type MetricsTotals = { cost: number; tokens_in: number; tokens_out: number; traces: number }
@@ -141,7 +142,13 @@ export default function MetricsPage() {
           </div>
           <div className="p-4 h-52">
             {chart.length === 0 ? (
-              <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No metrics yet</div>
+              <Empty className="h-full p-0 md:p-0 border-0 gap-2">
+                <EmptyMedia variant="icon">
+                  <BarChart3 className="w-5 h-5" />
+                </EmptyMedia>
+                <EmptyTitle>No metrics yet</EmptyTitle>
+                <EmptyDescription>Token usage will appear here once traces start flowing in.</EmptyDescription>
+              </Empty>
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <BarChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
@@ -165,7 +172,13 @@ export default function MetricsPage() {
             </div>
             <div className="p-4 h-48">
               {chart.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No metrics yet</div>
+                <Empty className="h-full p-0 md:p-0 border-0 gap-2">
+                  <EmptyMedia variant="icon">
+                    <BarChart3 className="w-5 h-5" />
+                  </EmptyMedia>
+                  <EmptyTitle>No metrics yet</EmptyTitle>
+                  <EmptyDescription>Daily cost will appear here once traces start flowing in.</EmptyDescription>
+                </Empty>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <LineChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
@@ -186,7 +199,13 @@ export default function MetricsPage() {
             </div>
             <div className="p-4 h-48">
               {chart.length === 0 ? (
-                <div className="flex items-center justify-center h-full text-sm text-muted-foreground">No metrics yet</div>
+                <Empty className="h-full p-0 md:p-0 border-0 gap-2">
+                  <EmptyMedia variant="icon">
+                    <BarChart3 className="w-5 h-5" />
+                  </EmptyMedia>
+                  <EmptyTitle>No metrics yet</EmptyTitle>
+                  <EmptyDescription>Trace volume will appear here once traces start flowing in.</EmptyDescription>
+                </Empty>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>

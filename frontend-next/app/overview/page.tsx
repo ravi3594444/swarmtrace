@@ -17,6 +17,7 @@ import { tracesToCsv, downloadCsv, downloadJson } from '@/lib/csv-export'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { fetchOverview } from '@/lib/api'
 import { TruncationBanner } from '@/components/truncation-banner'
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
 import {
   Activity, ChevronDown, ChevronUp, Info, Coins, TrendingDown,
@@ -643,10 +644,17 @@ export default function OverviewPage() {
         actions={
           <div className="flex items-center gap-3">
             <TimeRangeDropdown value={range} onChange={setRange} />
-            <span className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{filteredTraces.length - errorCount} ok</span>
-              <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{errorCount} errors</span>
-            </span>
+            {/* Only shown when there's real data to summarize. With zero
+                traces, the liveStatus badge above (OFFLINE) is the single
+                source of truth for "is anything happening" — pairing it with
+                "0 ok" here made it look like a second, contradictory signal
+                that things were fine. */}
+            {filteredTraces.length > 0 && (
+              <span className="flex items-center gap-3 text-xs font-medium text-muted-foreground">
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" />{filteredTraces.length - errorCount} ok</span>
+                <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-red-400" />{errorCount} errors</span>
+              </span>
+            )}
             <ExportMenu traces={filteredTraces} />
           </div>
         }
@@ -669,21 +677,32 @@ export default function OverviewPage() {
             </div>
             <div className="p-4 h-44">
               {activity.length === 0 ? (
-                <div className="flex h-full items-center justify-center text-sm text-muted-foreground">No activity yet</div>
+                <Empty className="h-full p-0 md:p-0 border-0 gap-2">
+                  <EmptyMedia variant="icon">
+                    <Activity className="w-5 h-5" />
+                  </EmptyMedia>
+                  <EmptyTitle>No requests yet</EmptyTitle>
+                  <EmptyDescription>Activity will appear here once your agents start running.</EmptyDescription>
+                </Empty>
               ) : (
                 <ResponsiveContainer width="100%" height="100%">
                   <AreaChart data={activity} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
+                    {/* Reserved accent: this blue is spent nowhere else in the
+                        dashboard chrome. It's the one moment the palette
+                        breaks from achromatic — when real trace data starts
+                        drawing here — so it reads as a distinct, earned
+                        signal instead of matching every other button/border. */}
                     <defs>
                       <linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--primary)" stopOpacity={0.18} />
-                        <stop offset="95%" stopColor="var(--primary)" stopOpacity={0} />
+                        <stop offset="5%" stopColor="var(--chart-activity-accent)" stopOpacity={0.22} />
+                        <stop offset="95%" stopColor="var(--chart-activity-accent)" stopOpacity={0} />
                       </linearGradient>
                     </defs>
                     <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                     <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} interval={3} />
                     <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
                     <Tooltip {...chartTooltip} />
-                    <Area type="monotone" dataKey="requests" stroke="var(--primary)" strokeWidth={2} fill="url(#colorReq)" dot={false} activeDot={{ r: 4, fill: 'var(--primary)', stroke: 'var(--card)', strokeWidth: 2 }} />
+                    <Area type="monotone" dataKey="requests" stroke="var(--chart-activity-accent)" strokeWidth={2} fill="url(#colorReq)" dot={false} activeDot={{ r: 4, fill: 'var(--chart-activity-accent)', stroke: 'var(--card)', strokeWidth: 2 }} />
                   </AreaChart>
                 </ResponsiveContainer>
               )}
@@ -728,7 +747,13 @@ export default function OverviewPage() {
                   <EventRow key={`${e.timestamp}-${i}`} type={e.type} message={e.message} />
                 ))}
                 {filteredEvents.length === 0 && filteredTraces.length === 0 && (
-                  <div className="px-4 py-8 text-center text-xs text-muted-foreground">No events in this time range</div>
+                  <Empty className="py-8 border-0">
+                    <EmptyMedia variant="icon">
+                      <Info className="w-5 h-5" />
+                    </EmptyMedia>
+                    <EmptyTitle>No events in this time range</EmptyTitle>
+                    <EmptyDescription>Try a wider range, like This Week or All Time, above.</EmptyDescription>
+                  </Empty>
                 )}
               </div>
             )}

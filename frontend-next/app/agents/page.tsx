@@ -10,7 +10,8 @@ import { fetchSwarmAgents } from '@/lib/swarm-api'
 import type { Agent } from '@/lib/trace-types'
 import { formatRelativeTime } from '@/lib/api'
 import { TruncationBanner } from '@/components/truncation-banner'
-import { Activity, Clock, CheckCircle2, XCircle, Pause, RefreshCw, Search } from 'lucide-react'
+import { Activity, Clock, CheckCircle2, XCircle, Pause, RefreshCw, Search, Users } from 'lucide-react'
+import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 
 function StatusBadge({ status }: { status: Agent['status'] }) {
   if (status === 'RUNNING') return (
@@ -179,11 +180,22 @@ export default function AgentsPage() {
         </div>
 
         {filtered.length === 0 && (
-          <div className="rounded-xl border border-border bg-card py-16 text-center text-sm text-muted-foreground shadow-sm">
-            {agents.length === 0
-              ? `No agents active in this time range. Try switching to "This Week" or "All Time" above.`
-              : 'No agents match your filters.'}
-          </div>
+          <Empty className="border border-solid border-border bg-card rounded-xl py-16 shadow-sm">
+            <EmptyMedia variant="icon">
+              <Users className="w-5 h-5" />
+            </EmptyMedia>
+            {agents.length === 0 ? (
+              <>
+                <EmptyTitle>No agents active in this time range</EmptyTitle>
+                <EmptyDescription>Try switching to &quot;This Week&quot; or &quot;All Time&quot; above.</EmptyDescription>
+              </>
+            ) : (
+              <>
+                <EmptyTitle>No agents match your filters</EmptyTitle>
+                <EmptyDescription>Try adjusting or clearing them to see all agents.</EmptyDescription>
+              </>
+            )}
+          </Empty>
         )}
       </div>
     </DashboardLayout>
