@@ -4,6 +4,30 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.8] — 2026-08-02
+
+### Security
+- **MCP `record_trace` now redacts at the boundary (audit pass 2, finding 1):**
+  `/api/mcp` previously passed `args`/`output`/`error`/`attributes` straight
+  into `upsert_trace_for_key` — and MCP is the one path where non-SDK clients
+  (Hermes, Claude Desktop, Cursor) never run the Python SDK's client-side
+  redaction, so API keys embedded in tool-call arguments landed unredacted in
+  the database. `lib/sanitize-mcp-trace.ts` now truncates to 32 000 chars and
+  PII-redacts text fields (same rules as the ingest boundary), validates
+  `attributes` as a plain object capped at 64 KB JSON (mirroring ingest), and
+  rejects invalid attributes with `isError`. 9 unit tests in
+  `scripts/test-mcp-sanitize.mjs`.
+
+### Fixed
+- **Clerk-authenticated read routes return 401 (not 500) when RLS
+  enforcement fails** (audit pass 2, finding 2): `agents`, `traces`, `graph`,
+  `metrics`, `overview`, `billing`, and `settings/api-keys` GET now convert
+  `RlsEnforcementError` to 401, matching the settings write routes. Fail-closed
+  either way — this aligns semantics, logs, and client errors.
+- **CHANGELOG `[0.6.6]` date corrected** from 2026-03-24 to 2026-08-02
+  (audit pass 2, finding 3) — restores newest-first ordering.
+- Full pass-2 audit notes in `AUDIT_REPORT.md`.
+
 ## [0.6.7] — 2026-08-02
 
 ### Added
@@ -35,7 +59,7 @@ adheres to [Semantic Versioning](https://semver.org/).
   path, redaction/truncation, failure isolation, fresh run ids) and
   `scripts/test-regression.mjs` (17 cases covering the payload contract).
 
-## [0.6.6] — 2026-03-24
+## [0.6.6] — 2026-08-02
 
 ### Security
 - **Multi-tenant isolation (ingest path):** new migration `0010_tenant_isolation_ingest.sql` adds `resolve_api_key_user_id`, `upsert_trace_for_key`, and `insert_agent_event_for_key`. `/api/ingest`, `/api/events`, and `/api/mcp` now bind tenant identity to the API key inside Postgres instead of trusting an app-layer `user_id` with the service-role key.

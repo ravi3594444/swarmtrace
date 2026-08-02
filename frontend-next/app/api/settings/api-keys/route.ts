@@ -41,6 +41,9 @@ export async function GET() {
       }))
     })
   } catch (error) {
+    if (error instanceof RlsEnforcementError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     console.error('[api/settings/api-keys] GET failed:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }
