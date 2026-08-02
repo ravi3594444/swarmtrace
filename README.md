@@ -342,6 +342,32 @@ What is an API?          0.12         🔴 YES
 Result: 3/3 regressions detected
 ```
 
+### Report runs to the dashboard
+
+Pass `report_to_dashboard=True` (with `SWARMTRACE_API_KEY` set) to upload the
+run — per-input similarity scores and latencies — to the **Regression** page
+of your SwarmTrace dashboard instead of only printing to the console:
+
+```python
+from swarmtrace.regression import compare
+
+compare(
+    my_agent,
+    inputs=["What is ML?"],
+    version_a_prompt="You are a helpful assistant.",
+    version_b_prompt="Reply only in emojis.",
+    threshold=0.6,
+    report_to_dashboard=True,
+    run_name="emoji-test-2026-08",   # optional display name
+)
+```
+
+The report is best-effort: a missing key, unreachable dashboard, or HTTP
+error is logged as a warning and never raises or changes the comparison
+result. Prompts, inputs, and outputs are truncated to 32 000 chars and
+PII-redacted (emails, API keys, card numbers, JWTs) before transmission,
+and the dashboard redacts again at the ingest boundary.
+
 ---
 
 ## Tool Attention

@@ -896,7 +896,9 @@ This is realistic and useful without making false claims about every arbitrary a
 
 ### `swarmtrace.regression.compare()`
 
-`regression.py` is a higher-level prompt-regression testing API that uses an LLM to score output similarity. It is **not** part of the generic tracing core. It remains a public API under `from swarmtrace.regression import compare` and the `[regression]` optional dependency. Future work may expose it via a dashboard API route, but the refactor does not remove or merge it into the tracing core.
+`regression.py` is a higher-level prompt-regression testing API that uses an LLM to score output similarity. It is **not** part of the generic tracing core. It remains a public API under `from swarmtrace.regression import compare` and the `[regression]` optional dependency.
+
+**Dashboard exposure (shipped in 0.6.7):** `compare(..., report_to_dashboard=True)` uploads the run to `POST /api/regression` (authenticated with the SwarmTrace API key; tenant stamped inside Postgres via the `insert_regression_run_for_key` SECURITY DEFINER function, migration `0011_regression_runs.sql`). The dashboard **Regression** page lists runs with per-input similarity scores, latencies, and regression flags via `GET /api/regression` (Clerk JWT + RLS). The report is best-effort (never raises), idempotent per `run_id`, and redacted/truncated before transmission. The refactor does not remove or merge `regression.py` into the tracing core.
 
 ### `swarmtrace.scraper.scrape()` and `ToolAttention`
 

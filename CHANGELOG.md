@@ -4,6 +4,37 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.7] — 2026-08-02
+
+### Added
+- **Dashboard exposure for prompt-regression runs** — the item docs/PRD.md §17
+  flagged as unfinished. `swarmtrace.regression.compare()` can now report runs
+  to the dashboard:
+  - `compare(..., report_to_dashboard=True, run_name="...")` uploads the run
+    (per-input similarity scores, latencies, and redacted prompt/output text)
+    to the new `POST /api/regression` route, authenticated with the SwarmTrace
+    API key. New public `report_run()` does the same without `compare()`.
+  - New dashboard **Regression** page (sidebar → Analyze → Regression) lists
+    reported runs with per-input similarity bars, regression flags, and
+    latency comparison; new `GET /api/regression` serves it (Clerk JWT +
+    Postgres RLS).
+  - New migration `0011_regression_runs.sql`: `regression_runs` table +
+    `insert_regression_run_for_key` SECURITY DEFINER function, following the
+    migration 0010 tenant-isolation pattern (key_hash → user_id stamped inside
+    Postgres; the app never chooses the tenant on the write path).
+- Reports are **best-effort and safe by construction**: a missing/unconfigured
+  key, network failure, or HTTP error is logged and returns `False` — it never
+  raises and never changes `compare()`'s return value. Text is truncated to
+  32 000 chars and PII-redacted client-side before transmission, and redacted
+  again at the ingest boundary (`lib/validate-regression.ts`).
+- Payload contract: `run_id` (1–64 chars `[A-Za-z0-9_-]`) is the per-user
+  idempotency key (`ON CONFLICT DO NOTHING` — SDK retries can't duplicate a
+  run), max 200 result entries per run, 1 MB body cap, per-key + per-IP rate
+  limits on the write route, per-user rate limit on the read route.
+- New tests: `tests/test_regression.py` (9 new cases covering the upload
+  path, redaction/truncation, failure isolation, fresh run ids) and
+  `scripts/test-regression.mjs` (17 cases covering the payload contract).
+
 ## [0.6.6] — 2026-03-24
 
 ### Security

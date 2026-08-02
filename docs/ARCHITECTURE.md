@@ -74,7 +74,7 @@ handle `ImportError` as "feature unavailable", not as a process failure.
 | Delivery | `delivery/sender.py` | Bounded background queue, batching, retry, fork-safe sender state. |
 | Instrumentation | `auto_instrument.py`, `fov.py`, `scraper.py` | Optional capture around LLM SDKs, browser/network/filesystem events, scraping/retrieval. Must degrade safely. |
 | Protocol ingress | `mcp_gateway.py`, `gateway_config.py`, `gateway_cli.py`, `otlp.py`, `otlp_mapping.py` | Generic MCP and OTLP paths. No Firecrawl/LangGraph/CrewAI-specific core code. |
-| Local analysis | `budget.py`, `alerts.py`, `replay.py`, `export.py`, `regression.py`, `tool_attention.py` | Features that consume recorded spans/events. |
+| Local analysis | `budget.py`, `alerts.py`, `replay.py`, `export.py`, `regression.py`, `tool_attention.py` | Features that consume recorded spans/events. `regression.py` also reports prompt-comparison runs to the dashboard via `POST /api/regression` (`report_to_dashboard=True`, 0.6.7+). |
 | Persistence | `storage.py` | SQLite schema, migrations, retention, and row-shaped compatibility API. |
 
 ## 4. Frontend/dashboard map
@@ -84,7 +84,7 @@ handle `ImportError` as "feature unavailable", not as a process failure.
 | API ingestion | `frontend-next/app/api/ingest/*`, `frontend-next/lib/validate-ingest.ts`, `decode-body.ts` | Accept SDK/MCP/OTLP trace payloads, validate and redact. |
 | Identity contract | `frontend-next/lib/resolve-trace-identity.ts`, `stable-agent-id.ts`, `derive-agent-cards.ts` | Keep `kind` and `agent_id` semantics synchronized with Python. See `docs/SDK_DASHBOARD_CONTRACT.md`. |
 | Trace querying | `frontend-next/lib/trace-query.ts`, `trace-types.ts`, `span-tree.ts`, `thread-grouping.ts` | Fetch, type, group, and tree spans for dashboard views. |
-| UI shell | `frontend-next/app/*`, `components/dashboard-*`, `components/sidebar.tsx` | Pages, layout, error boundaries, navigation. |
+| UI shell | `frontend-next/app/*`, `components/dashboard-*`, `components/sidebar.tsx` | Pages, layout, error boundaries, navigation. |\n| Regression reporting | `frontend-next/app/api/regression/*`, `lib/validate-regression.ts`, `app/regression/*`, `supabase/migrations/0011_regression_runs.sql` | Prompt-regression runs from `swarmtrace.regression.compare(report_to_dashboard=True)`: API-key POST (tenant stamped via `insert_regression_run_for_key`), Clerk/RLS GET, Regression page UI. |
 | Trace visualization | `frontend-next/components/swarm/*` | Trace table, call tree, waterfall, detail drawer, JSON views. |
 
 ## 5. Canonical data model
