@@ -1,6 +1,6 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
-import { supaUserRequest } from '../../../../lib/supabase'
+import { supaUserRequest, RlsEnforcementError } from '../../../../lib/supabase'
 import type { DailyMetricRow } from '../../../../lib/trace-types'
 import { createUserRateLimiter, rateLimitResponse } from '../../../../lib/api-auth'
 
@@ -76,6 +76,9 @@ export async function GET() {
       next_billing,
     })
   } catch (error) {
+    if (error instanceof RlsEnforcementError) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
     console.error('[api/settings/billing] request failed:', error)
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 })
   }

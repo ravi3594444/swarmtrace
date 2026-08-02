@@ -24,6 +24,7 @@ import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/
 import { z } from 'zod'
 import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '@/lib/api-auth'
 import { resolveTraceIdentity } from '@/lib/resolve-trace-identity'
+import { sanitizeMcpTraceFields } from '@/lib/sanitize-mcp-trace'
 
 // ── Supabase helpers ──────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL!
@@ -163,6 +164,27 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
         }
         const { kind, agentId, agentName } = identity
 
+        // Redaction at the MCP boundary (audit pass 2, finding 1): MCP
+        // clients bypass the Python SDK entirely, so the SDK's client-side
+        // redaction never runs here. args/output/error are truncated to
+        // MAX_TEXT_LEN then PII-redacted (emails, API keys, card numbers,
+        // JWTs) before persistence, and attributes is capped at 64 KB JSON
+        // — mirroring the /api/ingest boundary rules exactly. Invalid
+        // attributes reject the call (isError), consistent with identity
+        // validation.
+        const sanitized = sanitizeMcpTraceFields({
+          args: params.args,
+          output: params.output,
+          error: params.error,
+          attributes: params.attributes,
+        })
+        if (!sanitized.ok) {
+          return {
+            content: [{ type: 'text', text: sanitized.error }],
+            isError: true,
+          }
+        }
+
         // Tenant stamped from API key inside Postgres (migration 0010).
         await supaRpc('upsert_trace_for_key', {
           p_key_hash:      keyHash,
@@ -170,10 +192,10 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
           p_parent_id:     params.parent_id ?? null,
           p_trace_id:      params.trace_id ?? params.id,
           p_function:      params.function,
-          p_args:          params.args    ?? '',
-          p_output:        params.output  ?? '',
+          p_args:          sanitized.value.args,
+          p_output:        sanitized.value.output,
           p_latency_sec:   params.latency_sec,
-          p_error:         params.error   ?? null,
+          p_error:         sanitized.value.error,
           p_timestamp:     params.timestamp,
           p_input_tokens:  params.input_tokens  ?? 0,
           p_output_tokens: params.output_tokens ?? 0,
@@ -182,7 +204,7 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
           p_agent_id:      agentId,
           p_agent_name:    agentName,
           p_session_id:    params.session_id ?? null,
-          p_attributes:    params.attributes ?? null,
+          p_attributes:    sanitized.value.attributes,
         })
 
         return {
