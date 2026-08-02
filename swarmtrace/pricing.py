@@ -154,13 +154,26 @@ def _fetch_live() -> dict:
 
 
 def _lookup_pricing_entry(table: dict, model: str) -> dict | None:
-    """Look up pricing by exact, raw, then normalized model name."""
+    """Look up pricing by exact, raw, then normalized model name.
+
+    Last resort: strip an undashed YYYYMMDD suffix (e.g. Anthropic's real
+    IDs like 'claude-3-5-sonnet-20241022' — `_normalize_model()` only
+    strips dashed 'YYYY-MM-DD' dates, by design, since some providers'
+    dated snapshots are priced separately). This candidate is tried last
+    so an exact dated entry in the live table always wins first.
+    """
     candidates = []
     for candidate in (model, model.lower(), _normalize_model(model)):
         if candidate and candidate not in candidates:
             candidates.append(candidate)
     for candidate in candidates:
         entry = table.get(candidate)
+        if entry is not None:
+            return entry
+    normalized = _normalize_model(model)
+    undated = re.sub(r'-\d{8}$', '', normalized)
+    if undated and undated != normalized:
+        entry = table.get(undated)
         if entry is not None:
             return entry
     return None
@@ -207,26 +220,46 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     number is worse than no number for a cost-tracking product. Users
     who want a specific model tracked can call set_model_pricing().
     """
-    if not model or (input_tokens == 0 and output_tokens == 0):
+    if not model:
         return 0.0
 
-    key = model.lower()
+    # Callers pass token counts straight from duck-typed third-party usage
+    # objects (None, strings, custom numeric-ish types). Coerce defensively
+    # here rather than trusting the type hint — this is invoked from
+    # ``finally`` blocks that must never raise, so a bad token value should
+    # degrade to a 0.0 cost, not lose the whole trace.
+    try:
+        input_tokens = int(input_tokens) if input_tokens else 0
+    except (TypeError, ValueError):
+        input_tokens = 0
+    try:
+        output_tokens = int(output_tokens) if output_tokens else 0
+    except (TypeError, ValueError):
+        output_tokens = 0
 
-    # Custom overrides first (no network, no lock needed).
-    if key in _CUSTOM:
-        inp, out = _CUSTOM[key]
-        return round((input_tokens * inp + output_tokens * out) / 1_000_000, 8)
+    if input_tokens == 0 and output_tokens == 0:
+        return 0.0
 
-    # Live pricing table (single fetch per hour, thread-safe).
-    entry = _lookup_pricing_entry(_fetch_live(), model)
-    if entry is not None:
-        return _price_from_entry(entry, input_tokens, output_tokens)
+    try:
+        key = model.lower()
 
-    entry = _lookup_pricing_entry(_BUNDLED_MODEL_PRICING, model)
-    if entry is not None:
-        return _price_from_entry(entry, input_tokens, output_tokens)
+        # Custom overrides first (no network, no lock needed).
+        if key in _CUSTOM:
+            inp, out = _CUSTOM[key]
+            return round((input_tokens * inp + output_tokens * out) / 1_000_000, 8)
 
-    return 0.0
+        # Live pricing table (single fetch per hour, thread-safe).
+        entry = _lookup_pricing_entry(_fetch_live(), model)
+        if entry is not None:
+            return _price_from_entry(entry, input_tokens, output_tokens)
+
+        entry = _lookup_pricing_entry(_BUNDLED_MODEL_PRICING, model)
+        if entry is not None:
+            return _price_from_entry(entry, input_tokens, output_tokens)
+
+        return 0.0
+    except Exception:
+        return 0.0
 
 def warm_cache() -> None:
     """Kick off a background fetch so the cache is warm before the first agent call.

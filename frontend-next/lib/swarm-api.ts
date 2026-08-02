@@ -66,8 +66,8 @@ export interface TracesResult {
   truncated: boolean
 }
 
-export async function fetchSwarmTraces(): Promise<TracesResult> {
-  const data = await fetchTracesRaw()
+export async function fetchSwarmTraces(since?: number | null): Promise<TracesResult> {
+  const data = await fetchTracesRaw(since)
   return {
     traces: (data?.traces ?? []).map(toTrace),
     truncated: Boolean(data?.truncated),

@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest } from '../../../lib/supabase'
 import type { Trace } from '../../../lib/trace-types'
+import { createUserRateLimiter, rateLimitResponse } from '../../../lib/api-auth'
 import {
   buildTracesQuery,
   parseSinceParam,
@@ -10,9 +11,12 @@ import {
   DEFAULT_TRACE_LIMIT,
 } from '../../../lib/trace-query'
 
+const rateLimiter = createUserRateLimiter({ prefix: 'st_user_rl_traces' })
+
 export async function GET(request: Request) {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
     // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk

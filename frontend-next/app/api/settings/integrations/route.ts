@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest, RlsEnforcementError } from '@/lib/supabase'
+import { createUserRateLimiter, rateLimitResponse } from '@/lib/api-auth'
 
 const INTEGRATIONS_META = [
   { id: 'swarmtrace-observe', name: 'swarmtrace @observe',   description: 'Auto-traces all decorated functions',                             requires: null,                                                          default_connected: true  },
@@ -10,9 +11,13 @@ const INTEGRATIONS_META = [
   { id: 'regression-detector', name: 'Regression Detector', description: 'LLM-based output regression detection across agent runs',          requires: 'Optional: any LLM callable (or litai + LIGHTNING_API_KEY)',  default_connected: false },
 ]
 
+// Human-driven settings toggle, not a poller — 60/min is generous headroom.
+const rateLimiter = createUserRateLimiter({ limit: 60, prefix: 'st_user_rl_integrations' })
+
 export async function GET() {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   let savedRows: Array<{ integration_id: string; connected: boolean }> = []
   try {
@@ -43,6 +48,7 @@ export async function GET() {
 export async function PATCH(request: Request) {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
     const { id, connected } = await request.json()

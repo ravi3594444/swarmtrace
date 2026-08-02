@@ -1,6 +1,7 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest, RlsEnforcementError } from '../../../../lib/supabase'
+import { createUserRateLimiter, rateLimitResponse } from '../../../../lib/api-auth'
 import crypto from 'crypto'
 
 interface ApiKeyRow {
@@ -11,9 +12,15 @@ interface ApiKeyRow {
   key_prefix: string
 }
 
+const listRateLimiter = createUserRateLimiter({ limit: 60, prefix: 'st_user_rl_apikeys_list' })
+// Tighter limit on key creation specifically — this is the sensitive
+// operation (also already guarded by the MAX_KEYS_HOBBY plan check below).
+const createRateLimiter = createUserRateLimiter({ limit: 10, prefix: 'st_user_rl_apikeys_create' })
+
 export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await listRateLimiter.check(userId)) return rateLimitResponse()
 
   try {
     // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
@@ -42,6 +49,7 @@ export async function GET() {
 export async function POST(req: Request) {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await createRateLimiter.check(userId)) return rateLimitResponse()
 
   try {
     // Enforce plan limits before creating a new key. The Hobby plan

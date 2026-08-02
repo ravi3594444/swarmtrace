@@ -5,6 +5,7 @@ import type { AgentGraphNode, AgentNetworkGraph } from './agent-network'
 import { fetchSwarmGraph } from './swarm-api'
 import type { TimeRangeKey } from './trace-utils'
 import { useAgentPresence } from '@/contexts/RealtimeContext'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
 
 const EMPTY_GRAPH: AgentNetworkGraph = {
   nodes: [],
@@ -36,7 +37,6 @@ export function useAgentGraph(range: TimeRangeKey, pollMs = TOPOLOGY_POLL_MS) {
   const [truncated, setTruncated] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isLive, setIsLive] = useState(true)
-  const interval = useRef<ReturnType<typeof setInterval> | null>(null)
   const mounted = useRef(true)
   const reqId = useRef(0)
 
@@ -55,14 +55,17 @@ export function useAgentGraph(range: TimeRangeKey, pollMs = TOPOLOGY_POLL_MS) {
     return () => { mounted.current = false }
   }, [load])
 
+  // Re-fetch immediately when isLive flips back to true, so the user sees
+  // fresh data right away instead of waiting up to pollMs.
+  const wasLive = useRef(isLive)
   useEffect(() => {
-    if (interval.current) clearInterval(interval.current)
-    if (isLive) {
-      load()
-      interval.current = setInterval(load, pollMs)
-    }
-    return () => { if (interval.current) clearInterval(interval.current) }
-  }, [isLive, load, pollMs])
+    if (isLive && !wasLive.current) load()
+    wasLive.current = isLive
+  }, [isLive, load])
+
+  // Audit finding: this poller never paused on hidden tabs, so a
+  // backgrounded tab kept re-fetching the topology every pollMs all night.
+  useVisibleInterval(load, pollMs, isLive)
 
   // Patch node status instantly from the existing Supabase Realtime
   // channels, without waiting for the next topology poll above.

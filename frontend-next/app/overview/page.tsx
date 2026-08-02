@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect, useMemo, useRef } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
@@ -13,18 +13,27 @@ import { FirstRunEmptyState, isFirstRun, markHasTraces } from '@/components/firs
 import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
 import { filterTracesByRange, rangeStartMs } from '@/lib/trace-utils'
-import { tracesToCsv, downloadCsv, downloadJson } from '@/lib/csv-export'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
+import { ExportMenu } from '@/components/swarm/ExportMenu'
 import { fetchOverview } from '@/lib/api'
 import { TruncationBanner } from '@/components/truncation-banner'
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
-import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid } from 'recharts'
+import dynamic from 'next/dynamic'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
+import { useDismissibleDropdown } from '@/hooks/use-dismissible-dropdown'
 import {
   Activity, ChevronDown, ChevronUp, Info, Coins, TrendingDown,
-  Download, FileJson, FileText, TrendingUp, GitCompare, CheckCircle, AlertCircle,
+  TrendingUp, GitCompare, CheckCircle, AlertCircle,
 } from 'lucide-react'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
-import { chartTooltip } from '@/lib/chart-tooltip'
+
+// recharts is ~492 KB across 3 chunks (bundle audit) — split out of the
+// page's initial JS and only fetched when this chart actually renders.
+// ssr: false because recharts' ResponsiveContainer measures the DOM.
+const RequestActivityChart = dynamic(
+  () => import('@/components/swarm/RequestActivityChart').then((m) => m.RequestActivityChart),
+  { ssr: false, loading: () => <div className="h-full w-full animate-pulse rounded-lg bg-muted/30" /> },
+)
 
 type OverviewEvent = { timestamp: string; type: string; message: string }
 
@@ -60,22 +69,31 @@ function AgentPicker({ agents, selected, onSelect }: {
   onSelect: (id: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
   const current = agents.find((a) => a.id === selected)
 
+  useDismissibleDropdown(open, () => setOpen(false), wrapRef)
+
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapRef}>
       <button
+        type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
         className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
       >
         <span className="max-w-[120px] truncate">{current?.name ?? selected}</span>
         {open ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
       </button>
       {open && (
-        <div className="absolute right-0 top-full mt-1 z-20 w-48 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+        <div role="listbox" className="absolute right-0 top-full mt-1 z-20 w-48 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
           {agents.map((a) => (
             <button
               key={a.id}
+              type="button"
+              role="option"
+              aria-selected={a.id === selected}
               onClick={() => { onSelect(a.id); setOpen(false) }}
               className={`w-full px-3 py-2 text-left text-xs transition-colors hover:bg-muted/60
                 ${a.id === selected ? 'font-semibold text-foreground' : 'text-muted-foreground'}`}
@@ -89,61 +107,7 @@ function AgentPicker({ agents, selected, onSelect }: {
   )
 }
 
-// ── Export helpers ─────────────────────────────────────────────────────────────
-
-function exportJSON(traces: Trace[]) {
-  // Guard against empty data — without this, the user could download a
-  // file containing just "[]" (no traces). The menu button is also
-  // disabled when there's no data, but this is belt-and-suspenders.
-  if (traces.length === 0) return
-  downloadJson(JSON.stringify(traces, null, 2), `swarmtrace-export-${new Date().toISOString().slice(0, 10)}.json`)
-}
-
-function exportCSV(traces: Trace[]) {
-  // Guard against empty data — without this, the user could download a
-  // CSV containing only the header row (no data rows).
-  if (traces.length === 0) return
-  // tracesToCsv() in lib/csv-export.ts sanitizes every cell against
-  // formula injection (=, +, -, @, tab, CR prefixes) — see the audit
-  // finding documented there.
-  const csv = tracesToCsv(traces)
-  downloadCsv(csv, `swarmtrace-export-${new Date().toISOString().slice(0, 10)}.csv`)
-}
-
-function ExportMenu({ traces }: { traces: Trace[] }) {
-  const [open, setOpen] = useState(false)
-  const hasTraces = traces.length > 0
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        disabled={!hasTraces}
-        title={hasTraces ? 'Export traces' : 'No traces to export yet'}
-        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
-      >
-        <Download className="w-3.5 h-3.5" />
-        Export
-        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && hasTraces && (
-        <div className="absolute right-0 top-full mt-1 z-30 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
-          <button
-            onClick={() => { exportJSON(traces); setOpen(false) }}
-            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
-          >
-            <FileJson className="w-3.5 h-3.5 text-primary" /> Export JSON
-          </button>
-          <button
-            onClick={() => { exportCSV(traces); setOpen(false) }}
-            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
-          >
-            <FileText className="w-3.5 h-3.5 text-primary" /> Export CSV
-          </button>
-        </div>
-      )}
-    </div>
-  )
-}
+// ── (export helpers + ExportMenu moved to components/swarm/ExportMenu.tsx) ──
 
 // ── Cost Projection Widget ─────────────────────────────────────────────────────
 
@@ -534,9 +498,9 @@ export default function OverviewPage() {
   }
   useEffect(() => {
     loadOverview()
-    const id = setInterval(loadOverview, 30_000)
-    return () => clearInterval(id)
   }, [])
+  // Audit finding: this poller never paused on hidden tabs.
+  useVisibleInterval(loadOverview, 30_000)
 
   // Keep relative "live"/"idle" status current even if no new trace
   // arrives. This mirrors the polling cadence and avoids leaving an old
@@ -685,26 +649,7 @@ export default function OverviewPage() {
                   <EmptyDescription>Activity will appear here once your agents start running.</EmptyDescription>
                 </Empty>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <AreaChart data={activity} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                    {/* Reserved accent: this blue is spent nowhere else in the
-                        dashboard chrome. It's the one moment the palette
-                        breaks from achromatic — when real trace data starts
-                        drawing here — so it reads as a distinct, earned
-                        signal instead of matching every other button/border. */}
-                    <defs>
-                      <linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1">
-                        <stop offset="5%" stopColor="var(--chart-activity-accent)" stopOpacity={0.22} />
-                        <stop offset="95%" stopColor="var(--chart-activity-accent)" stopOpacity={0} />
-                      </linearGradient>
-                    </defs>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
-                    <XAxis dataKey="time" tick={{ fill: 'var(--muted-foreground)', fontSize: 10, fontWeight: 500 }} axisLine={false} tickLine={false} interval={3} />
-                    <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 11, fontWeight: 500 }} axisLine={false} tickLine={false} width={32} />
-                    <Tooltip {...chartTooltip} />
-                    <Area type="monotone" dataKey="requests" stroke="var(--chart-activity-accent)" strokeWidth={2} fill="url(#colorReq)" dot={false} activeDot={{ r: 4, fill: 'var(--chart-activity-accent)', stroke: 'var(--card)', strokeWidth: 2 }} />
-                  </AreaChart>
-                </ResponsiveContainer>
+                <RequestActivityChart activity={activity} />
               )}
             </div>
           </div>

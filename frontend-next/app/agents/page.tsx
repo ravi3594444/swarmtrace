@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
@@ -12,6 +12,7 @@ import { formatRelativeTime } from '@/lib/api'
 import { TruncationBanner } from '@/components/truncation-banner'
 import { Activity, Clock, CheckCircle2, XCircle, Pause, RefreshCw, Search, Users } from 'lucide-react'
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
+import { useVisibleInterval } from '@/hooks/use-visible-interval'
 
 function StatusBadge({ status }: { status: Agent['status'] }) {
   if (status === 'RUNNING') return (
@@ -95,25 +96,32 @@ export default function AgentsPage() {
   const [filter, setFilter] = useState<'ALL' | 'RUNNING' | 'IDLE' | 'ERROR'>('ALL')
   const [search, setSearch] = useState('')
   const { range, setRange } = useTimeRange()
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => { mounted.current = false }
+  }, [])
 
   // Refetch whenever the time range changes (Today/Week/Month/All). The
   // range is converted to a `since` timestamp client-side (in the user's
   // local TZ) and sent to /api/agents, which filters traces before grouping.
   // Default is 'today' so old agents don't clutter the view.
-  useEffect(() => {
-    let mounted = true
-    const load = () => {
-      fetchSwarmAgents(range).then((data) => {
-        if (!mounted) return
-        setAgents(data.agents)
-        setTruncated(data.truncated)
-        setLoading(false)
-      })
-    }
-    load()
-    const id = setInterval(load, 30_000)
-    return () => { mounted = false; clearInterval(id) }
+  const load = useCallback(() => {
+    fetchSwarmAgents(range).then((data) => {
+      if (!mounted.current) return
+      setAgents(data.agents)
+      setTruncated(data.truncated)
+      setLoading(false)
+    })
   }, [range])
+
+  useEffect(() => {
+    load()
+  }, [load])
+
+  // Audit finding: this poller never paused on hidden tabs, so a
+  // backgrounded tab kept re-fetching agents every 30s all night.
+  useVisibleInterval(load, 30_000)
 
   if (loading) return (
     <DashboardSkeleton title="Agents" description="Registered swarm agents and their health" />

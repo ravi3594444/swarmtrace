@@ -95,12 +95,19 @@ _JWT_RE = re.compile(
     r"\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b"
 )
 
-# Candidate credit card numbers — runs of 13–19 digits with optional
-# single space or dash separators between digits.  Each candidate is then
-# Luhn-checked; non-Luhn candidates pass through unchanged (this is what
-# keeps 16-digit trace IDs, UUID fragments, and numeric IDs safe).
+# Candidate credit card numbers — a solid run of 13-19 digits, OR digits
+# grouped with a single *uniform* separator (space or dash) in one of the
+# standard PAN groupings: 4-4-4-{1..7} (Visa/Mastercard/Discover/etc.,
+# covers 13-19 total digits) or 4-6-5 (Amex, 15 digits). Every alternative
+# starts and ends on a digit — never on a separator — so a match can never
+# eat a trailing space/dash or bleed into an adjacent unrelated digit
+# (previously `(?:\d[ -]?){13,19}` could consume one extra char past the
+# number, silently deleting data, and could fuse two space-separated cards
+# into a single match).
 _CC_CANDIDATE_RE = re.compile(
-    r"\b(?:\d[ -]?){13,19}\b"
+    r"\b\d{13,19}\b"
+    r"|\b\d{4}([ -])\d{6}\1\d{5}\b"
+    r"|\b\d{4}([ -])\d{4}\2\d{4}\2\d{1,7}\b"
 )
 
 

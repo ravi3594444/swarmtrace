@@ -44,14 +44,15 @@ export async function fetchAgents(since?: number | null, signal?: AbortSignal) {
   }
 }
 
-export async function fetchTraces(signal?: AbortSignal) {
+export async function fetchTraces(since?: number | null, signal?: AbortSignal) {
   try {
-    const res = await fetch('/api/traces', { signal })
-    if (!res.ok) { reportFetchError('traces', () => { fetchTraces() }); return null }
+    const url = since != null ? `/api/traces?since=${since}` : '/api/traces'
+    const res = await fetch(url, { signal })
+    if (!res.ok) { reportFetchError('traces', () => { fetchTraces(since) }); return null }
     return res.json()
   } catch (e) {
     if (isAbortError(e)) return null
-    reportFetchError('traces', () => { fetchTraces() })
+    reportFetchError('traces', () => { fetchTraces(since) })
     return null
   }
 }
