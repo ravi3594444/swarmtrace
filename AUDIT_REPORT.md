@@ -2,6 +2,22 @@
 
 ## Pass 2 — 2026-08-02 (post-regression-route re-scan)
 
+### Follow-up — external review findings (same day)
+
+An independent review pass (fresh clone, full toolchain run) surfaced two
+frontend issues beyond the pass-2 findings above. Both fixed:
+
+| # | Sev | Finding | Status |
+|---|---|---|---|
+| F4 | P2 | **`NodeNetworkMap.tsx` auto-select effect caused cascading re-renders.** An effect called `setSelectedId(nodes[0].id)` synchronously once the async layout resolved — flagged as an *error* by the React Compiler lint rule (`react-hooks/set-state-in-effect`). The effect was redundant: `selected` is already derived as `nodes.find(...) ?? nodes[0]`, so the fallback auto-selects the first node while an explicit user selection always wins. | **Fixed** — effect removed; behavior preserved (verified: `selectedId` is only consumed by the derived `selected`). |
+| F5 | P3 | **Two `aria-selected` attributes on `role="button"` elements** (`app/traces/page.tsx` trace tree rows, `components/swarm/TraceTable.tsx` table rows) — `aria-selected` is not supported by the `button` role (`jsx-a11y/role-supports-aria-props`). | **Fixed** — replaced with `aria-pressed`, the valid state attribute for toggle buttons. |
+
+Re-validation after fixes: eslint 0 errors (1 benign TanStack Virtual
+informational warning), `tsc --noEmit` clean, 249/249 frontend unit tests,
+production `next build` green.
+
+### Findings (original pass-2 scan)
+
 Re-audited after the original P0–P3 findings closed and the UI/route surface
 grew (regression reporting, MCP `record_trace` kind/identity work, new read
 routes). Scope: all 14 API routes, migrations/RLS, SDK collectors, XSS/secret
