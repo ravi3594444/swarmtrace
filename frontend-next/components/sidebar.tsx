@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
-  MessagesSquare, GitCompareArrows, Compass, GitBranch,
+  MessagesSquare, GitCompareArrows, Compass, GitBranch, TrendingDown,
 } from 'lucide-react'
 import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 import { useOnboardingTour } from './onboarding/OnboardingTour'
@@ -50,6 +50,7 @@ const navGroups = [
     items: [
       { href: '/metrics',  label: 'Metrics',  icon: BarChart3 },
       { href: '/compare',  label: 'Compare',  icon: GitCompareArrows },
+      { href: '/regression', label: 'Regression', icon: TrendingDown },
       { href: '/failures', label: 'Failures', icon: AlertTriangle },
     ],
   },

@@ -188,12 +188,14 @@ def clean_db(db_conn):
     cur.execute("DELETE FROM public.traces;")
     cur.execute("DELETE FROM public.daily_metrics;")
     cur.execute("DELETE FROM public.agent_events;")
+    cur.execute("DELETE FROM public.regression_runs;")
     cur.execute("DELETE FROM public.api_keys;")
     db_conn.commit()
     yield cur
     cur.execute("DELETE FROM public.traces;")
     cur.execute("DELETE FROM public.daily_metrics;")
     cur.execute("DELETE FROM public.agent_events;")
+    cur.execute("DELETE FROM public.regression_runs;")
     cur.execute("DELETE FROM public.api_keys;")
     db_conn.commit()
     cur.close()
@@ -624,3 +626,107 @@ def test_insert_agent_event_for_key_binds_tenant(clean_db):
     row = cur.fetchone()
     assert row["user_id"] == "fov-user"
     assert row["event_type"] == "browser"
+
+
+def test_insert_regression_run_for_key_binds_tenant_and_round_trips(clean_db):
+    """The /api/regression write path: key_hash → user_id stamped inside
+    Postgres, and the SDK payload round-trips (migration 0011)."""
+    cur = clean_db
+    key_hash = "e" * 64
+    _seed_api_key(cur, key_hash=key_hash, user_id="reg-user")
+
+    cur.execute(
+        "SELECT public.insert_regression_run_for_key("
+        "  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s"
+        ") AS id;",
+        (
+            key_hash,
+            "run-1",
+            "emoji test",
+            0.6,
+            "baseline prompt",
+            "candidate prompt",
+            3,
+            2,
+            12.5,
+            '[{"input": "What is ML?", "similarity": 0.1, "regressed": true}]',
+            datetime.now(timezone.utc).isoformat(),
+        ),
+    )
+    assert cur.fetchone()["id"] is not None
+
+    cur.execute(
+        "SELECT user_id, run_id, name, threshold, version_a_prompt, "
+        "       inputs_count, regressions_count, duration_sec, results "
+        "FROM public.regression_runs WHERE run_id = 'run-1';"
+    )
+    row = cur.fetchone()
+    assert row is not None
+    assert row["user_id"] == "reg-user"
+    assert row["run_id"] == "run-1"
+    assert row["name"] == "emoji test"
+    assert row["threshold"] == 0.6
+    assert row["version_a_prompt"] == "baseline prompt"
+    assert row["inputs_count"] == 3
+    assert row["regressions_count"] == 2
+    assert row["duration_sec"] == 12.5
+    assert row["results"] == [{"input": "What is ML?", "similarity": 0.1, "regressed": True}]
+
+
+def test_insert_regression_run_for_key_is_idempotent_per_run_id(clean_db):
+    """SDK retries (same run_id) must never duplicate a regression run —
+    ON CONFLICT DO NOTHING on (user_id, run_id)."""
+    cur = clean_db
+    key_hash = "f" * 64
+    _seed_api_key(cur, key_hash=key_hash, user_id="reg-user-2")
+
+    args = (
+        key_hash, "run-retry", None, 0.6, None, None,
+        1, 0, 3.0, '[{"input": "x", "similarity": 0.9}]',
+        datetime.now(timezone.utc).isoformat(),
+    )
+    cur.execute(
+        "SELECT public.insert_regression_run_for_key("
+        "  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s"
+        ") AS id;",
+        args,
+    )
+    first_id = cur.fetchone()["id"]
+    assert first_id is not None
+
+    # Retry — same run_id, same payload (the SDK's retry semantics).
+    cur.execute(
+        "SELECT public.insert_regression_run_for_key("
+        "  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s"
+        ") AS id;",
+        args,
+    )
+    assert cur.fetchone()["id"] is None  # no-op — returns NULL
+
+    cur.execute(
+        "SELECT count(*) AS n FROM public.regression_runs WHERE run_id = 'run-retry';"
+    )
+    assert cur.fetchone()["n"] == 1
+
+
+def test_insert_regression_run_for_key_rejects_unknown_key(clean_db):
+    """Unknown / revoked key_hash must fail — no orphan regression rows."""
+    cur = clean_db
+    try:
+        cur.execute(
+            "SELECT public.insert_regression_run_for_key("
+            "  %s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s"
+            ") AS id;",
+            (
+                "z" * 64, "run-unknown", None, 0.6, None, None,
+                0, 0, 0.0, '[]', datetime.now(timezone.utc).isoformat(),
+            ),
+        )
+        raised = False
+    except Exception:
+        raised = True
+    assert raised, "expected invalid_api_key exception for unknown key"
+    cur.execute(
+        "SELECT count(*) AS n FROM public.regression_runs WHERE run_id = 'run-unknown';"
+    )
+    assert cur.fetchone()["n"] == 0
