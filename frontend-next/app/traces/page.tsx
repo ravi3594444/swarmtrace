@@ -359,7 +359,7 @@ function SpanRow({ node, depth, selected, onSelect, maxLatency }: {
         }}
         role="button"
         tabIndex={0}
-        aria-selected={isSelected}
+        aria-pressed={isSelected}
         className={[
           'flex items-center gap-2 pr-4 cursor-pointer transition-colors border-l-2',
           'focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2',

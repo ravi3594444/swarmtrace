@@ -4,6 +4,26 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.6.9] — 2026-08-02
+
+### Fixed
+- **NodeNetworkMap cascading-render hazard (external review finding):** the
+  auto-select effect called `setSelectedId(nodes[0].id)` synchronously once
+  the layout resolved — flagged as an error by the React Compiler lint rule
+  (`react-hooks/set-state-in-effect`). The effect was fully redundant: the
+  component already derives `selected = nodes.find(...) ?? nodes[0]`, so the
+  first node is auto-selected by the fallback and an explicit user selection
+  always wins (preserved across graph refreshes). Effect removed; behavior
+  unchanged.
+- **Two jsx-a11y violations: `aria-selected` on `role="button"`** in
+  `app/traces/page.tsx` and `components/swarm/TraceTable.tsx` (external
+  review finding). `aria-selected` is not supported by the `button` role;
+  replaced with `aria-pressed`, which conveys the toggle/selected state to
+  assistive technology correctly.
+- Full frontend re-validation after the fixes: eslint 0 errors (1 benign
+  TanStack Virtual informational warning), `tsc --noEmit` clean, 249/249
+  unit tests pass, production build green.
+
 ## [0.6.8] — 2026-08-02
 
 ### Security
