@@ -1,9 +1,15 @@
 import { auth, clerkClient } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
+import { createUserRateLimiter, rateLimitResponse } from '../../../../lib/api-auth'
+
+// Tighter than the 120/min read default — this is a write endpoint with no
+// legitimate reason to be called more than a handful of times per minute.
+const rateLimiter = createUserRateLimiter({ limit: 20, prefix: 'st_user_rl_profile' })
 
 export async function PATCH(req: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
     const body = await req.json()

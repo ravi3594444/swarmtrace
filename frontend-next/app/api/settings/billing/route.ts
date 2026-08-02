@@ -2,6 +2,7 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest } from '../../../../lib/supabase'
 import type { DailyMetricRow } from '../../../../lib/trace-types'
+import { createUserRateLimiter, rateLimitResponse } from '../../../../lib/api-auth'
 
 /**
  * Plan definitions. Until Stripe billing is wired up, every signed-in user
@@ -28,9 +29,12 @@ const PLANS = {
   },
 } as const
 
+const rateLimiter = createUserRateLimiter({ prefix: 'st_user_rl_billing' })
+
 export async function GET() {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
     // Read from daily_metrics — pre-aggregated, tiny, never scans traces.

@@ -2,10 +2,14 @@ import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest } from '../../../lib/supabase'
 import type { DailyMetricRow } from '../../../lib/trace-types'
+import { createUserRateLimiter, rateLimitResponse } from '../../../lib/api-auth'
+
+const rateLimiter = createUserRateLimiter({ prefix: 'st_user_rl_metrics' })
 
 export async function GET() {
   const { userId } = (await auth())
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
     // One tiny table — one row per day per user. No scanning 5000 traces.

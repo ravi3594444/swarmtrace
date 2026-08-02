@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { supaUserRequest } from '../../../lib/supabase'
 import type { Trace } from '../../../lib/trace-types'
 import { deriveAgentNetworkGraph } from '../../../lib/agent-network'
+import { createUserRateLimiter, rateLimitResponse } from '../../../lib/api-auth'
 import {
   buildTracesQuery,
   parseSinceParam,
@@ -10,10 +11,12 @@ import {
 } from '../../../lib/trace-query'
 
 const GRAPH_TRACE_LIMIT = 2000
+const rateLimiter = createUserRateLimiter({ prefix: 'st_user_rl_graph' })
 
 export async function GET(request: Request) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
     const since = parseSinceParam(request.url)

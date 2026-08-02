@@ -5,11 +5,18 @@ import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { fetchMetrics } from '@/lib/api'
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend } from 'recharts'
+import dynamic from 'next/dynamic'
 import { Download, TrendingDown, CheckCircle2, BarChart3 } from 'lucide-react'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
-import { chartTooltip } from '@/lib/chart-tooltip'
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
+
+// recharts is ~492 KB across 3 chunks (bundle audit) — split out of the
+// page's initial JS and only fetched once a chart actually needs to render.
+// ssr: false because recharts' ResponsiveContainer measures the DOM.
+const chartLoading = <div className="h-full w-full animate-pulse rounded-lg bg-muted/30" />
+const TokenUsageChart = dynamic(() => import('@/components/swarm/MetricsCharts').then((m) => m.TokenUsageChart), { ssr: false, loading: () => chartLoading })
+const CostChart = dynamic(() => import('@/components/swarm/MetricsCharts').then((m) => m.CostChart), { ssr: false, loading: () => chartLoading })
+const TraceVolumeChart = dynamic(() => import('@/components/swarm/MetricsCharts').then((m) => m.TraceVolumeChart), { ssr: false, loading: () => chartLoading })
 
 type ChartPoint = { date: string; cost: number; input: number; output: number; traces: number }
 type MetricsTotals = { cost: number; tokens_in: number; tokens_out: number; traces: number }
@@ -150,17 +157,7 @@ export default function MetricsPage() {
                 <EmptyDescription>Token usage will appear here once traces start flowing in.</EmptyDescription>
               </Empty>
             ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                  <XAxis dataKey="day" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} width={42} tickFormatter={(v) => `${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip {...chartTooltip} />
-                  <Legend wrapperStyle={{ fontSize: 11, color: 'var(--muted-foreground)' }} />
-                  <Bar dataKey="input" name="Input tokens" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                  <Bar dataKey="output" name="Output tokens" fill="var(--chart-3)" radius={[4, 4, 0, 0]} maxBarSize={32} />
-                </BarChart>
-              </ResponsiveContainer>
+              <TokenUsageChart chart={chart} />
             )}
           </div>
         </div>
@@ -180,15 +177,7 @@ export default function MetricsPage() {
                   <EmptyDescription>Daily cost will appear here once traces start flowing in.</EmptyDescription>
                 </Empty>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <LineChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="day" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} width={46} tickFormatter={(v) => `$${v.toFixed(2)}`} />
-                    <Tooltip {...chartTooltip} formatter={(v) => [`$${Number(v ?? 0).toFixed(3)}`, 'Cost']} />
-                    <Line type="monotone" dataKey="cost" stroke="var(--primary)" strokeWidth={2} dot={{ fill: 'var(--primary)', strokeWidth: 0, r: 3 }} />
-                  </LineChart>
-                </ResponsiveContainer>
+                <CostChart chart={chart} />
               )}
             </div>
           </div>
@@ -207,15 +196,7 @@ export default function MetricsPage() {
                   <EmptyDescription>Trace volume will appear here once traces start flowing in.</EmptyDescription>
                 </Empty>
               ) : (
-                <ResponsiveContainer width="100%" height="100%">
-                  <BarChart data={chart} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" vertical={false} />
-                    <XAxis dataKey="day" tick={{ fill: 'var(--muted-foreground)', fontSize: 11 }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fill: 'var(--muted-foreground)', fontSize: 10 }} axisLine={false} tickLine={false} width={28} />
-                    <Tooltip {...chartTooltip} />
-                    <Bar dataKey="traces" name="Traces" fill="var(--primary)" radius={[4, 4, 0, 0]} maxBarSize={36} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <TraceVolumeChart chart={chart} />
               )}
             </div>
           </div>

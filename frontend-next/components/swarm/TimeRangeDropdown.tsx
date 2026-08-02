@@ -1,8 +1,9 @@
 'use client'
 
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
+import { useRef, useState, useSyncExternalStore } from 'react'
 import { Calendar, ChevronDown, Check } from 'lucide-react'
 import { TIME_RANGES, type TimeRangeKey } from '@/lib/trace-utils'
+import { useDismissibleDropdown } from '@/hooks/use-dismissible-dropdown'
 
 const STORAGE_KEY = 'swarmtrace:overview-time-range'
 
@@ -97,21 +98,7 @@ export function TimeRangeDropdown({
   const current = TIME_RANGES.find((r) => r.key === value) ?? TIME_RANGES[0]
 
   // Close on outside click / Escape so the menu doesn't get stranded open.
-  useEffect(() => {
-    if (!open) return
-    const onPointer = (e: PointerEvent) => {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setOpen(false)
-    }
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') setOpen(false)
-    }
-    document.addEventListener('pointerdown', onPointer)
-    document.addEventListener('keydown', onKey)
-    return () => {
-      document.removeEventListener('pointerdown', onPointer)
-      document.removeEventListener('keydown', onKey)
-    }
-  }, [open])
+  useDismissibleDropdown(open, () => setOpen(false), wrapRef)
 
   const select = (key: TimeRangeKey) => {
     setCustomActive(false)

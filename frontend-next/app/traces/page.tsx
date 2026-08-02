@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef } from 'react'
 import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
@@ -11,16 +11,17 @@ import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { Waterfall } from '@/components/swarm/Waterfall'
 import { TraceTable } from '@/components/swarm/TraceTable'
 import { ExecutionArchitecture } from '@/components/swarm/ExecutionArchitecture'
+import { ExportMenu } from '@/components/swarm/ExportMenu'
+import { useDismissibleDropdown } from '@/hooks/use-dismissible-dropdown'
 import type { Trace } from '@/lib/trace-types'
 import { buildSpanTree, countDescendants, hasTreeError, type SpanNode } from '@/lib/span-tree'
-import { tracesToCsv, downloadCsv, downloadJson } from '@/lib/csv-export'
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 import {
   ChevronRight, ChevronDown, X, Clock, Activity, Coins,
   AlertTriangle, Search, Pause, Play, GitBranch, Table2, BarChart2, Wrench, Globe,
-  Tag, Download, FileJson, FileText,
+  Tag,
 } from 'lucide-react'
 
 type ViewMode = 'tree' | 'architecture' | 'table' | 'waterfall'
@@ -74,6 +75,9 @@ function DateRangePicker({
   onToDate: (v: string) => void
 }) {
   const [open, setOpen] = useState(false)
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  useDismissibleDropdown(open, () => setOpen(false), wrapRef)
 
   const label =
     preset !== 'custom'
@@ -87,10 +91,13 @@ function DateRangePicker({
             : 'All time'
 
   return (
-    <div className="relative">
+    <div className="relative" ref={wrapRef}>
       <button
+        type="button"
         onClick={() => setOpen(v => !v)}
         title="Filter by date range"
+        aria-haspopup="menu"
+        aria-expanded={open}
         className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm"
       >
         <Clock className="w-3.5 h-3.5" />
@@ -98,103 +105,48 @@ function DateRangePicker({
         <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
-        <>
-          {/* Click-outside catcher so the panel closes without needing a dedicated button. */}
-          <div className="fixed inset-0 z-20" onClick={() => setOpen(false)} />
-          <div className="absolute right-0 top-full mt-1 z-30 w-56 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
-            {DATE_PRESETS.map(({ key, label: presetLabel }) => (
-              <button
-                key={key}
-                onClick={() => { onPreset(key); setOpen(false) }}
-                className={`flex items-center justify-between w-full px-3 py-2.5 text-xs transition-colors hover:bg-muted/60
-                  ${preset === key ? 'text-primary font-medium' : 'text-foreground'}`}
-              >
-                {presetLabel}
-                {preset === key && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
-              </button>
-            ))}
-            <div className="border-t border-border px-3 py-2.5">
-              <div className={`text-[11px] mb-1.5 ${preset === 'custom' ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
-                Custom range
-              </div>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="date" value={fromDate} max={toDate || undefined}
-                  onChange={(e) => onFromDate(e.target.value)}
-                  aria-label="From date"
-                  className="min-w-0 flex-1 bg-muted/40 rounded-md px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-                <span className="text-muted-foreground/60 text-xs">–</span>
-                <input
-                  type="date" value={toDate} min={fromDate || undefined}
-                  onChange={(e) => onToDate(e.target.value)}
-                  aria-label="To date"
-                  className="min-w-0 flex-1 bg-muted/40 rounded-md px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
-                />
-              </div>
+        <div role="menu" className="absolute right-0 top-full mt-1 z-30 w-56 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
+          {DATE_PRESETS.map(({ key, label: presetLabel }) => (
+            <button
+              key={key}
+              type="button"
+              role="menuitem"
+              onClick={() => { onPreset(key); setOpen(false) }}
+              className={`flex items-center justify-between w-full px-3 py-2.5 text-xs transition-colors hover:bg-muted/60
+                ${preset === key ? 'text-primary font-medium' : 'text-foreground'}`}
+            >
+              {presetLabel}
+              {preset === key && <span className="w-1.5 h-1.5 rounded-full bg-primary" />}
+            </button>
+          ))}
+          <div className="border-t border-border px-3 py-2.5">
+            <div className={`text-[11px] mb-1.5 ${preset === 'custom' ? 'text-primary font-medium' : 'text-muted-foreground'}`}>
+              Custom range
+            </div>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="date" value={fromDate} max={toDate || undefined}
+                onChange={(e) => onFromDate(e.target.value)}
+                aria-label="From date"
+                className="min-w-0 flex-1 bg-muted/40 rounded-md px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
+              <span className="text-muted-foreground/60 text-xs">–</span>
+              <input
+                type="date" value={toDate} min={fromDate || undefined}
+                onChange={(e) => onToDate(e.target.value)}
+                aria-label="To date"
+                className="min-w-0 flex-1 bg-muted/40 rounded-md px-1.5 py-1 text-xs text-foreground focus:outline-none focus:ring-1 focus:ring-ring"
+              />
             </div>
           </div>
-        </>
-      )}
-    </div>
-  )
-}
-
-// ── Export helpers ─────────────────────────────────────────────────────────────
-
-function exportJSON(traces: Trace[]) {
-  // Guard against empty data — without this, the user could download a
-  // file containing just "[]" (no traces). The menu button is also
-  // disabled when there's no data, but this is belt-and-suspenders.
-  if (traces.length === 0) return
-  downloadJson(JSON.stringify(traces, null, 2), `swarmtrace-traces-${new Date().toISOString().slice(0, 10)}.json`)
-}
-
-function exportCSV(traces: Trace[]) {
-  // Guard against empty data — without this, the user could download a
-  // CSV containing only the header row (no data rows).
-  if (traces.length === 0) return
-  // tracesToCsv() in lib/csv-export.ts sanitizes every cell against
-  // formula injection (=, +, -, @, tab, CR prefixes) — see the audit
-  // finding documented there.
-  const csv = tracesToCsv(traces)
-  downloadCsv(csv, `swarmtrace-traces-${new Date().toISOString().slice(0, 10)}.csv`)
-}
-
-function ExportMenu({ traces }: { traces: Trace[] }) {
-  const [open, setOpen] = useState(false)
-  const hasTraces = traces.length > 0
-  return (
-    <div className="relative">
-      <button
-        onClick={() => setOpen(v => !v)}
-        disabled={!hasTraces}
-        title={hasTraces ? 'Export traces' : 'No traces to export yet'}
-        className="flex items-center gap-1.5 h-8 rounded-lg border border-border bg-card px-3 text-xs text-muted-foreground hover:text-foreground transition-colors shadow-sm disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-muted-foreground"
-      >
-        <Download className="w-3.5 h-3.5" />
-        Export
-        <ChevronDown className={`w-3 h-3 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </button>
-      {open && hasTraces && (
-        <div className="absolute right-0 top-full mt-1 z-30 w-40 rounded-xl border border-border bg-card shadow-lg overflow-hidden">
-          <button
-            onClick={() => { exportJSON(traces); setOpen(false) }}
-            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
-          >
-            <FileJson className="w-3.5 h-3.5 text-primary" /> Export JSON
-          </button>
-          <button
-            onClick={() => { exportCSV(traces); setOpen(false) }}
-            className="flex items-center gap-2 w-full px-3 py-2.5 text-xs text-foreground hover:bg-muted/60 transition-colors"
-          >
-            <FileText className="w-3.5 h-3.5 text-primary" /> Export CSV
-          </button>
         </div>
       )}
     </div>
   )
 }
+
+// ── (export helpers + ExportMenu moved to components/swarm/ExportMenu.tsx) ──
+
 
 // ── Tag filter bar ─────────────────────────────────────────────────────────────
 
@@ -691,7 +643,7 @@ export default function TracesPage() {
               {isLive ? <Pause className="w-3 h-3" /> : <Play className="w-3 h-3" />}
               {isLive ? 'Pause' : 'Resume'}
             </button>
-            <ExportMenu traces={filtered} />
+            <ExportMenu traces={filtered} filenamePrefix="swarmtrace-traces" />
           </div>
         }
       />

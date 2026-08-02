@@ -1,6 +1,9 @@
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest, RlsEnforcementError } from '../../../../../lib/supabase'
+import { createUserRateLimiter, rateLimitResponse } from '../../../../../lib/api-auth'
+
+const rateLimiter = createUserRateLimiter({ limit: 20, prefix: 'st_user_rl_apikeys_delete' })
 
 export async function DELETE(
   _req: Request,
@@ -8,6 +11,7 @@ export async function DELETE(
 ) {
   const { userId } = await auth()
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   const { id } = await params
   if (!id || typeof id !== 'string') {

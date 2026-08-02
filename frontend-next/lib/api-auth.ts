@@ -311,3 +311,40 @@ export function createIpRateLimiter(opts?: Partial<{
     sweepEvery: opts?.sweepEvery,
   })
 }
+
+// ── Per-user rate limiter (audit fix: 9 of 12 API routes had none) ─────────
+//
+// The ingest/events/mcp routes (API-key auth) already rate-limit by
+// sha256(apiKey). Every Clerk-authed route (agents, graph, traces, metrics,
+// overview, settings/*) had none at all — backwards, since these are the
+// routes a signed-in user's own browser hits on every poll tick, and the
+// cheapest ones to hammer (no payload validation, just a DB read) if a
+// session token or tab leaks. Keyed by Clerk `userId` (not IP, since a
+// legitimate multi-tab user shares one userId but many IPs behind NAT are
+// still a red flag at the IP layer for the write endpoints above).
+//
+// Limit is generous — 120/min comfortably covers every current poller
+// (traces @8s, agents/overview @30s, graph @20s) across several open tabs
+// for one user, while still capping a runaway client or scripted abuse.
+export function createUserRateLimiter(opts?: Partial<{
+  limit: number
+  prefix: string
+  windowMs: number
+}>): RateLimiter {
+  return createRateLimiter({
+    limit: opts?.limit ?? 120,
+    prefix: opts?.prefix ?? 'st_user_rl',
+    windowMs: opts?.windowMs ?? 60_000,
+  })
+}
+
+/** Standard 429 response shape shared by all rate-limited routes. */
+export function rateLimitResponse(): Response {
+  return new Response(JSON.stringify({ error: 'Too many requests' }), {
+    status: 429,
+    headers: {
+      'Content-Type': 'application/json',
+      'Retry-After': '60',
+    },
+  })
+}
