@@ -10,7 +10,7 @@ from swarmtrace.run import run, span, current_span_attributes
 from swarmtrace import fov
 from swarmtrace import alerts
 
-__version__ = '0.6.5'
+__version__ = '0.6.9'
 __all__ = [
     'observe', 'init', 'session',
     'get_traces', 'save_trace',
