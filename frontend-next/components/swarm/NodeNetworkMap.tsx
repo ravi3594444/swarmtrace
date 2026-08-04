@@ -4,12 +4,17 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import {
   Flame,
+  Info,
   Move,
   Pause,
   Play,
   Radio,
   RefreshCw,
+  Search,
+  Shuffle,
   SlidersHorizontal,
+  Workflow,
+  X,
   ZoomIn,
   ZoomOut,
 } from 'lucide-react'
@@ -35,18 +40,23 @@ const HEIGHT = 760
    grayscale. */
 const ERROR_COLOR = '#ffb4ab' // DESIGN.md `error` token
 
-type PositionedNode = AgentGraphNode & {
-  x: number
-  y: number
+type DecoratedNode = AgentGraphNode & {
   r: number
   color: string
   heat: number
+}
+
+type PositionedNode = DecoratedNode & {
+  x: number
+  y: number
 }
 
 type PositionedEdge = AgentGraphEdge & {
   sourceNode: PositionedNode
   targetNode: PositionedNode
 }
+
+type LayoutMode = 'force' | 'hierarchical'
 
 // Node fill colors use CSS variables so they invert correctly between light
 // and dark themes. Previously these were hardcoded hex (#ffffff, #e5e2e1,
@@ -105,8 +115,23 @@ function nodeHeat(node: AgentGraphNode): number {
   return Math.log1p(node.tokens / 300 + node.cost * 120 + node.errors * 6 + node.ragSpans * 3)
 }
 
-function layoutGraph(graph: AgentNetworkGraph): { nodes: PositionedNode[]; edges: PositionedEdge[] } {
-  const nodes: PositionedNode[] = graph.nodes.map((node, index) => {
+function decorateNodes(graph: AgentNetworkGraph): DecoratedNode[] {
+  return graph.nodes.map((node) => {
+    const style = MODE_STYLE[node.collaborationMode]
+    return {
+      ...node,
+      r: nodeRadius(node),
+      color: node.errors > 0 ? ERROR_COLOR : style.color,
+      heat: nodeHeat(node),
+    }
+  })
+}
+
+// Force-directed layout — the original physics simulation. Good at showing
+// overall graph "shape" (clusters, density) but doesn't communicate call
+// order/direction on its own; that's what the arrowheads on edges are for.
+function forceLayout(decorated: DecoratedNode[], edgeList: AgentGraphEdge[]): PositionedNode[] {
+  const nodes: PositionedNode[] = decorated.map((node, index) => {
     const seed = hashNumber(node.id)
     const style = MODE_STYLE[node.collaborationMode]
     const angle = ((seed % 360) / 180) * Math.PI
@@ -115,9 +140,6 @@ function layoutGraph(graph: AgentNetworkGraph): { nodes: PositionedNode[]; edges
       ...node,
       x: style.target.x + Math.cos(angle) * ring + jitter(seed, 70),
       y: style.target.y + Math.sin(angle) * ring + jitter(seed >> 8, 70),
-      r: nodeRadius(node),
-      color: node.errors > 0 ? ERROR_COLOR : style.color,
-      heat: nodeHeat(node),
     }
   })
 
@@ -152,7 +174,7 @@ function layoutGraph(graph: AgentNetworkGraph): { nodes: PositionedNode[]; edges
       }
     }
 
-    for (const edge of graph.edges) {
+    for (const edge of edgeList) {
       const s = indexById.get(edge.source)
       const t = indexById.get(edge.target)
       if (s == null || t == null) continue
@@ -184,6 +206,85 @@ function layoutGraph(graph: AgentNetworkGraph): { nodes: PositionedNode[]; edges
     }
   }
 
+  return nodes
+}
+
+// Hierarchical (tree) layout — depth is derived from "orchestrates" edges
+// via BFS from root orchestrators, so orchestrator → sub-agent call order
+// reads top-to-bottom, matching how LangSmith/Langfuse lay out agent
+// graphs. Nodes with no incoming "orchestrates" edge (orchestrators,
+// solo agents, peer-only agents) become roots at depth 0. Peer edges don't
+// affect depth — they're drawn wherever their endpoints land.
+function hierarchicalLayout(decorated: DecoratedNode[], edgeList: AgentGraphEdge[]): PositionedNode[] {
+  const byId = new Map(decorated.map((node) => [node.id, node]))
+  const children = new Map<string, string[]>()
+  const hasIncoming = new Set<string>()
+  for (const edge of edgeList) {
+    if (edge.relation !== 'orchestrates') continue
+    if (!byId.has(edge.source) || !byId.has(edge.target)) continue
+    const list = children.get(edge.source) ?? []
+    list.push(edge.target)
+    children.set(edge.source, list)
+    hasIncoming.add(edge.target)
+  }
+
+  const depth = new Map<string, number>()
+  const queue: string[] = []
+  for (const node of decorated) {
+    if (!hasIncoming.has(node.id)) {
+      depth.set(node.id, 0)
+      queue.push(node.id)
+    }
+  }
+  while (queue.length > 0) {
+    const id = queue.shift() as string
+    const d = depth.get(id) ?? 0
+    for (const childId of children.get(id) ?? []) {
+      // A node can be reached via multiple orchestrators; keep the
+      // shallowest depth so the tree stays compact and cycles can't loop.
+      if (depth.has(childId) && (depth.get(childId) as number) <= d + 1) continue
+      depth.set(childId, d + 1)
+      queue.push(childId)
+    }
+  }
+  // Anything unreached (shouldn't normally happen) falls back to depth 0.
+  for (const node of decorated) {
+    if (!depth.has(node.id)) depth.set(node.id, 0)
+  }
+
+  const modeRank: Record<CollaborationMode, number> = { orchestrator: 0, sub_agent: 1, peer: 2, solo: 3 }
+  const byDepth = new Map<number, DecoratedNode[]>()
+  for (const node of decorated) {
+    const d = depth.get(node.id) as number
+    const list = byDepth.get(d) ?? []
+    list.push(node)
+    byDepth.set(d, list)
+  }
+
+  const depths = Array.from(byDepth.keys()).sort((a, b) => a - b)
+  const maxDepth = depths.length > 0 ? depths[depths.length - 1] : 0
+  const topMargin = 90
+  const rowGap = maxDepth > 0 ? (HEIGHT - topMargin - 90) / maxDepth : 0
+
+  const positioned: PositionedNode[] = []
+  for (const d of depths) {
+    const row = (byDepth.get(d) as DecoratedNode[]).sort(
+      (a, b) => modeRank[a.collaborationMode] - modeRank[b.collaborationMode] || a.id.localeCompare(b.id),
+    )
+    const colGap = WIDTH / (row.length + 1)
+    row.forEach((node, i) => {
+      positioned.push({ ...node, x: colGap * (i + 1), y: topMargin + d * rowGap })
+    })
+  }
+  return positioned
+}
+
+function layoutGraph(graph: AgentNetworkGraph, mode: LayoutMode): { nodes: PositionedNode[]; edges: PositionedEdge[] } {
+  const decorated = decorateNodes(graph)
+  const nodes = mode === 'hierarchical'
+    ? hierarchicalLayout(decorated, graph.edges)
+    : forceLayout(decorated, graph.edges)
+
   const byId = new Map(nodes.map((node) => [node.id, node]))
   const edges: PositionedEdge[] = graph.edges
     .map((edge) => {
@@ -195,6 +296,17 @@ function layoutGraph(graph: AgentNetworkGraph): { nodes: PositionedNode[]; edges
     .filter(Boolean) as PositionedEdge[]
 
   return { nodes, edges }
+}
+
+// Trims a point along the source→target line by `margin` so edges stop at
+// a node's visual boundary (plus arrowhead clearance) instead of running
+// into its center and disappearing under the circle.
+function trimToward(from: { x: number; y: number }, to: { x: number; y: number }, margin: number) {
+  const dx = to.x - from.x
+  const dy = to.y - from.y
+  const dist = Math.max(Math.sqrt(dx * dx + dy * dy), 1)
+  const t = Math.max(dist - margin, 0) / dist
+  return { x: from.x + dx * t, y: from.y + dy * t }
 }
 
 function formatCost(cost: number) {
@@ -248,6 +360,7 @@ export function NodeNetworkMap({
   // responsive — the map shows a "Layouting…" state for a frame, then
   // snaps to the laid-out nodes. For small graphs (<30 nodes) the layout
   // is fast enough that the loading state is never visible.
+  const [layoutMode, setLayoutMode] = useState<LayoutMode>('force')
   const [layout, setLayout] = useState<{ nodes: PositionedNode[]; edges: PositionedEdge[] } | null>(null)
   useEffect(() => {
     let cancelled = false
@@ -259,7 +372,7 @@ export function NodeNetworkMap({
       : (cb: () => void) => setTimeout(cb, 0)
     const handle = ric(() => {
       if (cancelled) return
-      setLayout(layoutGraph(graph))
+      setLayout(layoutGraph(graph, layoutMode))
     })
     return () => {
       cancelled = true
@@ -272,16 +385,31 @@ export function NodeNetworkMap({
         cic(handle)
       }
     }
-  }, [graph])
+  }, [graph, layoutMode])
 
   const { nodes, edges } = layout ?? { nodes: [], edges: [] }
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [hoveredId, setHoveredId] = useState<string | null>(null)
   const [showHeatmap, setShowHeatmap] = useState(true)
   const [showLines, setShowLines] = useState(true)
+  const [showLegend, setShowLegend] = useState(false)
+  const [searchQuery, setSearchQuery] = useState('')
   const [zoom, setZoom] = useState(1)
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
+
+  // Search matches are computed against the current node set and drive a
+  // dim/highlight pass over the graph — the same visual language already
+  // used for hover/selection, just triggered by typing instead of pointing.
+  const trimmedQuery = searchQuery.trim().toLowerCase()
+  const searchMatchIds = useMemo(() => {
+    if (!trimmedQuery) return null
+    return new Set(
+      nodes
+        .filter((node) => node.label.toLowerCase().includes(trimmedQuery) || node.id.toLowerCase().includes(trimmedQuery))
+        .map((node) => node.id),
+    )
+  }, [nodes, trimmedQuery])
 
   // Auto-select behavior: when the user hasn't selected a node, `selected`
   // falls back to nodes[0] below — no effect needed. (Previously an effect
@@ -350,24 +478,73 @@ export function NodeNetworkMap({
             <p className="mt-1 flex items-center gap-2 text-sm text-muted-foreground">
               <Move className="h-4 w-4" /> Drag to pan · scroll to zoom · click any agent node
             </p>
+            <div className="relative mt-3 w-60">
+              <Search className="pointer-events-none absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-muted-foreground" />
+              <input
+                value={searchQuery}
+                onChange={(event) => setSearchQuery(event.target.value)}
+                placeholder="Search agents…"
+                aria-label="Search agents by name"
+                className="w-full rounded-xl border border-border bg-muted/30 py-2 pl-8 pr-8 text-xs text-foreground placeholder:text-muted-foreground backdrop-blur-xl focus:border-primary/40 focus:outline-none"
+              />
+              {searchQuery && (
+                <button
+                  onClick={() => setSearchQuery('')}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded-full p-1 text-muted-foreground hover:text-foreground"
+                  title="Clear search"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+              {searchMatchIds && (
+                <div className="absolute left-0 top-full mt-1 text-[11px] text-muted-foreground">
+                  {searchMatchIds.size === 0
+                    ? 'No agents match'
+                    : `${searchMatchIds.size} of ${nodes.length} agent${searchMatchIds.size === 1 ? '' : 's'} match`}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 rounded-2xl border border-border bg-muted/40 p-1.5 backdrop-blur-xl">
-            <button onClick={() => setZoom((z) => clamp(z + 0.12, 0.55, 2.2))} className="rounded-xl border border-border bg-muted/30 p-2 text-foreground hover:bg-muted/50" title="Zoom in">
-              <ZoomIn className="h-4 w-4" />
-            </button>
-            <button onClick={() => setZoom((z) => clamp(z - 0.12, 0.55, 2.2))} className="rounded-xl border border-border bg-muted/30 p-2 text-foreground hover:bg-muted/50" title="Zoom out">
-              <ZoomOut className="h-4 w-4" />
-            </button>
-            <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} className="rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted/50">
-              Reset
-            </button>
-            <button onClick={onRefresh} className="rounded-xl border border-border bg-muted/30 p-2 text-foreground hover:bg-muted/50" title="Refresh graph">
-              <RefreshCw className="h-4 w-4" />
-            </button>
-            <button onClick={onToggleLive} className="rounded-xl border border-border bg-muted/30 p-2 text-foreground hover:bg-muted/50" title={isLive ? 'Pause live updates' : 'Resume live updates'}>
-              {isLive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
-            </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex items-center gap-1 rounded-2xl border border-border bg-muted/40 p-1.5 backdrop-blur-xl">
+              <button
+                onClick={() => setLayoutMode('force')}
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                  layoutMode === 'force' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                }`}
+                title="Force-directed layout"
+              >
+                <Shuffle className="h-3.5 w-3.5" /> Force
+              </button>
+              <button
+                onClick={() => setLayoutMode('hierarchical')}
+                className={`flex items-center gap-1.5 rounded-xl px-2.5 py-1.5 text-[11px] font-semibold transition ${
+                  layoutMode === 'hierarchical' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-muted/50 hover:text-foreground'
+                }`}
+                title="Hierarchical tree layout, ordered by orchestrator → sub-agent depth"
+              >
+                <Workflow className="h-3.5 w-3.5" /> Tree
+              </button>
+            </div>
+
+            <div className="flex items-center gap-2 rounded-2xl border border-border bg-muted/40 p-1.5 backdrop-blur-xl">
+              <button onClick={() => setZoom((z) => clamp(z + 0.12, 0.55, 2.2))} className="rounded-xl border border-border bg-muted/30 p-2 text-foreground hover:bg-muted/50" title="Zoom in">
+                <ZoomIn className="h-4 w-4" />
+              </button>
+              <button onClick={() => setZoom((z) => clamp(z - 0.12, 0.55, 2.2))} className="rounded-xl border border-border bg-muted/30 p-2 text-foreground hover:bg-muted/50" title="Zoom out">
+                <ZoomOut className="h-4 w-4" />
+              </button>
+              <button onClick={() => { setZoom(1); setPan({ x: 0, y: 0 }) }} className="rounded-xl border border-border bg-muted/30 px-3 py-2 text-xs font-semibold text-foreground hover:bg-muted/50">
+                Reset
+              </button>
+              <button onClick={onRefresh} className="rounded-xl border border-border bg-muted/30 p-2 text-foreground hover:bg-muted/50" title="Refresh graph">
+                <RefreshCw className="h-4 w-4" />
+              </button>
+              <button onClick={onToggleLive} className="rounded-xl border border-border bg-muted/30 p-2 text-foreground hover:bg-muted/50" title={isLive ? 'Pause live updates' : 'Resume live updates'}>
+                {isLive ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4" />}
+              </button>
+            </div>
           </div>
         </div>
 
@@ -394,6 +571,58 @@ export function NodeNetworkMap({
             </span>
             Connections
           </button>
+          <button
+            onClick={() => setShowLegend((value) => !value)}
+            className={`flex w-36 items-center gap-3 rounded-2xl border px-3 py-3 text-left text-xs font-semibold backdrop-blur-xl transition ${
+              showLegend ? 'border-primary/50 bg-primary/10 text-foreground ' : 'border-border bg-muted/40 text-muted-foreground'
+            }`}
+          >
+            <span className="flex h-9 w-9 items-center justify-center rounded-full border border-primary/30 bg-primary/10">
+              <Info className="h-4 w-4" />
+            </span>
+            Legend
+          </button>
+
+          {showLegend && (
+            <div className="w-56 space-y-3 rounded-2xl border border-border bg-muted/40 p-4 text-[11px] leading-5 text-muted-foreground backdrop-blur-xl">
+              <div className="text-[11px] font-bold uppercase tracking-[0.2em] text-foreground">Legend</div>
+              <div className="space-y-1.5">
+                {([
+                  ['orchestrator', MODE_STYLE.orchestrator.color],
+                  ['sub_agent', MODE_STYLE.sub_agent.color],
+                  ['peer', MODE_STYLE.peer.color],
+                  ['solo', MODE_STYLE.solo.color],
+                ] as [CollaborationMode, string][]).map(([mode, color]) => (
+                  <div key={mode} className="flex items-center gap-2">
+                    <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: color }} />
+                    {formatMode(mode)}
+                  </div>
+                ))}
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: ERROR_COLOR }} />
+                  Has errors
+                </div>
+              </div>
+              <div className="space-y-1.5 border-t border-border pt-3">
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full border border-emerald-400" /> Running now
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="h-2.5 w-2.5 shrink-0 rounded-full border-2 border-primary" /> Uses RAG
+                </div>
+              </div>
+              <div className="space-y-1.5 border-t border-border pt-3">
+                <div className="flex items-center gap-2">
+                  <svg width="20" height="8" className="shrink-0"><line x1="0" y1="4" x2="20" y2="4" stroke="var(--network-node-on-surface, #e5e2e1)" strokeWidth="2" /></svg>
+                  Orchestrates →
+                </div>
+                <div className="flex items-center gap-2">
+                  <svg width="20" height="8" className="shrink-0"><line x1="0" y1="4" x2="20" y2="4" stroke="var(--network-node-outline, #8e9192)" strokeWidth="2" strokeDasharray="3 4" /></svg>
+                  Peer hand-off →
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <svg
@@ -433,6 +662,24 @@ export function NodeNetworkMap({
               <stop offset="48%" stopColor="var(--network-node-on-surface, #e5e2e1)" stopOpacity="0.11" />
               <stop offset="100%" stopColor="var(--network-node-on-surface, #e5e2e1)" stopOpacity="0" />
             </radialGradient>
+            {/* Arrowheads communicate call direction (orchestrator → sub-agent,
+                earlier → later peer hand-off) — the one thing a pure
+                force-directed "blob" layout can't show on its own. Separate
+                active/dim variants per relation since a shared <marker> can't
+                take per-line opacity, and opacity is how this achromatic
+                design encodes emphasis. */}
+            <marker id="arrow-orchestrate-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,0 L10,5 L0,10 Z" fill="var(--network-node-on-surface, #e5e2e1)" fillOpacity="0.9" />
+            </marker>
+            <marker id="arrow-orchestrate-dim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+              <path d="M0,0 L10,5 L0,10 Z" fill="var(--network-node-on-surface, #e5e2e1)" fillOpacity="0.22" />
+            </marker>
+            <marker id="arrow-peer-active" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,0 L10,5 L0,10 Z" fill="var(--network-node-outline, #8e9192)" fillOpacity="0.8" />
+            </marker>
+            <marker id="arrow-peer-dim" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="5" markerHeight="5" orient="auto">
+              <path d="M0,0 L10,5 L0,10 Z" fill="var(--network-node-outline, #8e9192)" fillOpacity="0.2" />
+            </marker>
           </defs>
 
           <g transform={`translate(${pan.x} ${pan.y}) scale(${zoom})`}>
@@ -451,17 +698,25 @@ export function NodeNetworkMap({
               const isActive = connectedIds.has(edge.source) && connectedIds.has(edge.target)
               // orchestrates = brighter/solid (hierarchy), peer = dimmer/dashed (loose collaboration) — distinguished by tone + dash, not hue
               const stroke = edge.relation === 'orchestrates' ? 'var(--network-node-on-surface, #e5e2e1)' : 'var(--network-node-outline, #8e9192)'
+              // Trim both ends so the line — and its arrowhead — stop at the
+              // node's visual edge instead of running under the circle.
+              const start = trimToward(edge.sourceNode, edge.targetNode, edge.sourceNode.r + 2)
+              const end = trimToward(edge.targetNode, edge.sourceNode, edge.targetNode.r + 7)
+              const marker = edge.relation === 'orchestrates'
+                ? (isActive ? 'arrow-orchestrate-active' : 'arrow-orchestrate-dim')
+                : (isActive ? 'arrow-peer-active' : 'arrow-peer-dim')
               return (
                 <line
                   key={edge.id}
-                  x1={edge.sourceNode.x}
-                  y1={edge.sourceNode.y}
-                  x2={edge.targetNode.x}
-                  y2={edge.targetNode.y}
+                  x1={start.x}
+                  y1={start.y}
+                  x2={end.x}
+                  y2={end.y}
                   stroke={stroke}
                   strokeWidth={isActive ? 1.8 + Math.min(edge.calls, 6) * 0.15 : 0.8}
                   strokeOpacity={isActive ? 0.72 : 0.18}
                   strokeDasharray={edge.relation === 'peer' ? '4 7' : undefined}
+                  markerEnd={`url(#${marker})`}
                 />
               )
             })}
@@ -469,7 +724,9 @@ export function NodeNetworkMap({
             {nodes.map((node, nodeIndex) => {
               const active = selected?.id === node.id
               const hoveredNode = hoveredId === node.id
-              const dimmed = highlighted && !connectedIds.has(node.id)
+              const dimmed = searchMatchIds
+                ? !searchMatchIds.has(node.id)
+                : Boolean(highlighted && !connectedIds.has(node.id))
               const style = MODE_STYLE[node.collaborationMode]
               return (
                 <g
@@ -537,7 +794,7 @@ export function NodeNetworkMap({
                     filter="url(#nodeGlow)"
                   />
                   <circle cx={node.x - node.r * 0.28} cy={node.y - node.r * 0.28} r={Math.max(2, node.r * 0.22)} fill="var(--network-node-primary, #ffffff)" opacity="0.55" />
-                  {(active || hoveredNode || node.collaborationMode === 'orchestrator') && (
+                  {(active || hoveredNode || node.collaborationMode === 'orchestrator' || (searchMatchIds?.has(node.id) && searchMatchIds.size <= 12)) && (
                     <g>
                       <rect
                         x={node.x - 64}
