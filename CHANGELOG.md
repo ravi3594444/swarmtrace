@@ -4,6 +4,62 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+- **Root-caused "valid API key, zero traces on dashboard": unmigrated
+  Supabase projects now fail loudly with the remedy, end to end.** A
+  deployment whose Supabase project never had `supabase/migrations/` applied
+  (e.g. only `0000` was run — enough to create an API key in Settings)
+  failed every `POST /api/ingest` at the `upsert_trace_for_key` RPC with
+  PostgREST `PGRST202`; the route collapsed that to an opaque
+  `500 {"error":"Internal server error"}`, and the Python SDK discarded even
+  that body (`HTTPError` stringifies to `HTTP Error 500: Internal Server
+  Error`). The result was indistinguishable from an auth fault and
+  undiscoverable without Vercel function logs. Fixed at every layer:
+  - **Server:** new `lib/ingest-errors.ts` classifies Supabase/PostgREST
+    failures (`SCHEMA_NOT_MIGRATED` / `DB_UNAVAILABLE` / `DB_TIMEOUT` /
+    `DB_ERROR`); `/api/ingest` (key-lookup and trace-write stages
+    separately), `/api/events`, and `/api/regression` now return
+    `500 {error, code, hint}` where `hint` names the fix. Raw database error
+    text goes to server logs only — never to anonymous callers.
+  - **New `GET /api/health/db`:** public, read-only, per-IP rate-limited
+    schema self-check. Verifies every table/column group the app uses and
+    probes all four `*_for_key` RPCs by **full signature** with a fake key
+    hash (they answer `invalid_api_key` after signature matching, so the
+    check writes nothing). Returns `missingMigrations` with the exact files
+    to run. `200` ok / `503` degraded (`docs/SUPABASE_SETUP.md`).
+  - **One-command migrations:** `frontend-next/scripts/run-migrations.mjs`
+    (`npm run db:migrate`, `--status`, `--print [--all]`) applies
+    `supabase/migrations/*.sql` in order with a `public.schema_migrations`
+    ledger, one transaction per file. No new npm dependencies (uses `psql`;
+    `--print` emits a SQL-editor-pasteable bundle without any tooling).
+  - **All migrations are now strictly idempotent:** `0001/0002/0004/0005/
+    0006` gain `DROP POLICY IF EXISTS` guards, and `0002/0004/0005`
+    publication changes use `pg_publication_tables`-checked `DO` blocks —
+    pasting the bundle into a partially-migrated project converges instead
+    of erroring halfway.
+  - **SDK:** `swarmtrace.adapters.http_transport` now raises
+    `IngestHTTPError` (status + bounded server response body) instead of
+    raw `urllib.error.HTTPError`, so `remote ingest failed` logs actually
+    contain the server's `SCHEMA_NOT_MIGRATED` hint. Retry/keep-unsynced
+    semantics unchanged.
+  - Migration 0005 additionally drops `agent_events: owner only` before
+    recreating it (re-run safety fix).
+
+### Added
+- `docs/SUPABASE_SETUP.md` — dashboard backend setup: projects → migrations
+  → env vars → `/api/health/db` verification → API key, plus a
+  symptom→cause→fix troubleshooting table.
+- `frontend-next/scripts/e2e_migrations.py` — full-stack migration E2E on a
+  pristine local Postgres (`pgserver`): applies all files via the runner,
+  re-applies them raw, and exercises `upsert_trace_for_key` exactly as
+  `/api/ingest` does (named 18-arg call, tenant stamping, daily_metrics,
+  idempotent retry).
+- Tests: `test-ingest-errors.mjs`, `test-schema-health.mjs` (PostgREST
+  simulator covering fresh-project/healthy/stale-signature/permission/
+  unreachable shapes), `tests/test_http_transport_errors.py`.
+
 ## [0.6.9] — 2026-08-02
 
 ### Fixed

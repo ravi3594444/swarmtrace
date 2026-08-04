@@ -18,6 +18,9 @@ import { NextResponse } from 'next/server'
 import { supaUserRequest, RlsEnforcementError } from '@/lib/supabase'
 import { sha256Hex, createRateLimiter, createIpRateLimiter, createUserRateLimiter, getClientIp } from '@/lib/api-auth'
 import { validateRegressionRun } from '@/lib/validate-regression'
+// Same classified-error pattern as /api/ingest: without migration 0011 the
+// RPC fails PGRST202 — say so (with the fix), not "Internal server error".
+import { classifySupabaseError, ingestErrorBody } from '@/lib/ingest-errors'
 
 const MAX_BODY_BYTES = 1024 * 1024
 const SUPA_TIMEOUT_MS = 5000
@@ -152,8 +155,9 @@ export async function POST(req: Request) {
     // run_id, which is a no-op in the RPC (ON CONFLICT DO NOTHING).
     return new Response(null, { status: 204 })
   } catch (err) {
-    console.error('[api/regression] POST failed:', err)
-    return jsonResponse(500, { error: 'Internal server error' })
+    const classified = classifySupabaseError(err)
+    console.error('[api/regression] POST failed:', classified.code, err)
+    return jsonResponse(500, ingestErrorBody(classified))
   }
 }
 

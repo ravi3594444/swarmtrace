@@ -26,6 +26,10 @@
 import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '@/lib/api-auth'
 import { decodeGzipBody } from '@/lib/decode-body'
 import { redactEventData } from '@/lib/redact'
+// Same classified-error pattern as /api/ingest: a deployment missing
+// migration 0010 fails insert_agent_event_for_key with PGRST202 — the
+// response should say so (with the fix), not "Internal server error".
+import { classifySupabaseError, ingestErrorBody } from '@/lib/ingest-errors'
 
 const MAX_BODY_BYTES  = 32 * 1024   // 32 KB per event (screenshots compress well)
 // Decompressed-size bound (audit finding #6). No SDK version sends
@@ -198,7 +202,8 @@ export async function POST(req: Request) {
 
     return new Response(null, { status: 204 })
   } catch (err) {
-    console.error('[api/events] failed:', err)
-    return json(500, { error: 'Internal server error' })
+    const classified = classifySupabaseError(err)
+    console.error('[api/events] failed:', classified.code, err)
+    return json(500, ingestErrorBody(classified))
   }
 }

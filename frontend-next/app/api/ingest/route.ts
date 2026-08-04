@@ -10,6 +10,11 @@
 // sha256 + rate limiter live in lib/api-auth.ts so they can be shared
 // with /api/events and /api/mcp without copy-paste drift.
 import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '@/lib/api-auth'
+// Post-validation DB failures used to collapse into an opaque
+// "Internal server error" 500; classify them so the operator (and the
+// SDK, which now surfaces the response body) can tell "run the
+// migrations" apart from "Supabase is down". See lib/ingest-errors.ts.
+import { classifySupabaseError, ingestErrorBody } from '@/lib/ingest-errors'
 
 const MAX_BODY_BYTES  = 1024 * 1024
 const MAX_BATCH_SIZE = 50
@@ -125,11 +130,21 @@ export async function POST(req: Request) {
     // service-role caller cannot insert under an arbitrary user_id.
     // We still do a cheap existence probe here so revoked/unknown keys
     // return 401 (not a 500 from the RPC) before we parse the body.
-    const keyRes = await supa(
-      `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
-      { headers: { Prefer: 'return=representation' } }
-    )
-    const keyRows: Array<{ user_id: string }> = await keyRes.json()
+    let keyRows: Array<{ user_id: string }>
+    try {
+      const keyRes = await supa(
+        `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
+        { headers: { Prefer: 'return=representation' } }
+      )
+      keyRows = await keyRes.json()
+    } catch (err) {
+      // The probe failing (e.g. api_keys table missing because migration
+      // 0000 was never applied, or Supabase down) is NOT an auth failure —
+      // don't return 401 for it. Classify so the operator gets the fix.
+      const classified = classifySupabaseError(err)
+      console.error('[api/ingest] API-key lookup failed:', classified.code, err)
+      return jsonResponse(500, ingestErrorBody(classified))
+    }
     if (!keyRows || keyRows.length === 0)
       return jsonResponse(401, { error: 'Invalid or revoked API key' })
 
@@ -187,34 +202,49 @@ export async function POST(req: Request) {
     // idempotent as a unit (e.g. keyed by a batch id). Silently dropping
     // idempotency in a "faster" batch RPC would turn a currently-safe
     // retry into duplicate metrics on every retried batch.
-    for (const row of rows as TraceRow[]) {
-      // p_key_hash (not p_user_id) — tenant stamped inside Postgres.
-      await supaRpc('upsert_trace_for_key', {
-        p_key_hash:      keyHash,
-        p_id:            row.id,
-        p_parent_id:     row.parent_id ?? null,
-        p_trace_id:      row.trace_id ?? row.id,
-        p_function:      row.function,
-        p_args:          row.args,
-        p_output:        row.output,
-        p_latency_sec:   row.latency_sec,
-        p_error:         row.error ?? null,
-        p_timestamp:     row.timestamp,
-        p_input_tokens:  row.input_tokens,
-        p_output_tokens: row.output_tokens,
-        p_cost_usd:      row.cost_usd,
-        p_kind:          row.kind,
-        p_agent_id:      row.agent_id,
-        p_agent_name:    row.agent_name,
-        p_session_id:    row.session_id ?? null,
-        p_attributes:    row.attributes ?? null,
-      })
+    try {
+      for (const row of rows as TraceRow[]) {
+        // p_key_hash (not p_user_id) — tenant stamped inside Postgres.
+        await supaRpc('upsert_trace_for_key', {
+          p_key_hash:      keyHash,
+          p_id:            row.id,
+          p_parent_id:     row.parent_id ?? null,
+          p_trace_id:      row.trace_id ?? row.id,
+          p_function:      row.function,
+          p_args:          row.args,
+          p_output:        row.output,
+          p_latency_sec:   row.latency_sec,
+          p_error:         row.error ?? null,
+          p_timestamp:     row.timestamp,
+          p_input_tokens:  row.input_tokens,
+          p_output_tokens: row.output_tokens,
+          p_cost_usd:      row.cost_usd,
+          p_kind:          row.kind,
+          p_agent_id:      row.agent_id,
+          p_agent_name:    row.agent_name,
+          p_session_id:    row.session_id ?? null,
+          p_attributes:    row.attributes ?? null,
+        })
+      }
+      // last_used is updated inside upsert_trace_for_key.
+    } catch (err) {
+      // THE classic production failure: the Supabase project was never
+      // migrated past 0000, so upsert_trace_for_key doesn't exist and
+      // PostgREST answers PGRST202 on every batch. Previously this
+      // surfaced as an opaque 500 ("valid key, zero traces, no hints").
+      // Classify + hint; full error goes to the server logs only.
+      const classified = classifySupabaseError(err)
+      console.error('[api/ingest] trace write failed:', classified.code, err)
+      return jsonResponse(500, ingestErrorBody(classified))
     }
-    // last_used is updated inside upsert_trace_for_key.
 
     return new Response(null, { status: 204 })
   } catch (err) {
-    console.error('[api/ingest] request failed:', err)
-    return jsonResponse(500, { error: 'Internal server error' })
+    // Backstop for anything outside the two classified stages above
+    // (rate-limit store errors, unexpected bugs). Still classified, so
+    // even the generic path never returns a naked "Internal server error".
+    const classified = classifySupabaseError(err)
+    console.error('[api/ingest] request failed:', classified.code, err)
+    return jsonResponse(500, ingestErrorBody(classified))
   }
 }
