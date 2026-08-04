@@ -39,6 +39,8 @@ $$;
 -- ── RLS: same tenant-isolation pattern as traces / api_keys ──────────────────
 ALTER TABLE public.daily_metrics ENABLE ROW LEVEL SECURITY;
 
+-- Idempotent re-runs: DROP IF EXISTS first (no CREATE POLICY IF NOT EXISTS).
+DROP POLICY IF EXISTS "daily_metrics: owner only" ON public.daily_metrics;
 CREATE POLICY "daily_metrics: owner only"
   ON public.daily_metrics FOR ALL
   USING  (user_id = auth.jwt() ->> 'sub')
@@ -50,4 +52,15 @@ CREATE INDEX IF NOT EXISTS idx_daily_metrics_user_date
 
 -- ── Supabase Realtime: fire INSERT/UPDATE events to subscribed clients ────────
 -- Required for the visibility-aware live dashboard.
-ALTER PUBLICATION supabase_realtime ADD TABLE public.daily_metrics;
+-- Guarded so re-running this file doesn't error with "relation is already
+-- member of publication".
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public' AND tablename = 'daily_metrics'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.daily_metrics;
+  END IF;
+END $$;
