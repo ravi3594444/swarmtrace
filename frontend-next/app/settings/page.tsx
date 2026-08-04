@@ -462,6 +462,9 @@ export default function SettingsPage() {
         // Refresh list
         const list = await fetchApiKeys()
         if (list?.keys) setApiKeys(list.keys)
+      } else if (result?.error) {
+        // Specific reason from the API (plan limit, unauthorized, etc.)
+        setApiKeyError(result.error)
       } else {
         setApiKeyError('Failed to create API key. The API may be unavailable — check your backend connection.')
       }
