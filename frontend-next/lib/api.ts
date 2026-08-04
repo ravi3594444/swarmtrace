@@ -104,8 +104,15 @@ export async function createApiKey(name: string, signal?: AbortSignal) {
       body: JSON.stringify({ name }),
       signal,
     })
-    if (!res.ok) { reportFetchError('API keys'); return null }
-    return res.json()
+    // Parse the body even on failure — the route returns a specific
+    // { error } message (plan limit / unauthorized / server error) that's
+    // far more useful than a generic "API unavailable" fallback.
+    const data = await res.json().catch(() => null)
+    if (!res.ok) {
+      reportFetchError('API keys')
+      return { error: data?.error || `Request failed (${res.status})` }
+    }
+    return data
   } catch (e) {
     if (isAbortError(e)) return null
     reportFetchError('API keys')
