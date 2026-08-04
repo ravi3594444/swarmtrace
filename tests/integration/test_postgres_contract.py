@@ -152,19 +152,21 @@ def db_conn():
     # makes local iteration safe.)
     cleanup_cur = conn.cursor()
     cleanup_cur.execute("""
+        DROP TABLE IF EXISTS public.regression_runs CASCADE;
         DROP TABLE IF EXISTS public.user_integrations CASCADE;
         DROP TABLE IF EXISTS public.agent_events CASCADE;
         DROP TABLE IF EXISTS public.daily_metrics CASCADE;
         DROP TABLE IF EXISTS public.api_keys CASCADE;
         DROP TABLE IF EXISTS public.traces CASCADE;
+        DROP FUNCTION IF EXISTS public.insert_regression_run_for_key CASCADE;
         DROP FUNCTION IF EXISTS public.upsert_trace_with_metrics CASCADE;
         DROP FUNCTION IF EXISTS public.upsert_trace_for_key CASCADE;
         DROP FUNCTION IF EXISTS public.insert_agent_event_for_key CASCADE;
         DROP FUNCTION IF EXISTS public.resolve_api_key_user_id CASCADE;
         DROP FUNCTION IF EXISTS public.upsert_trace CASCADE;
         DROP PUBLICATION IF EXISTS supabase_realtime;
-        DROP FUNCTION IF EXISTS auth.jwt();
-        DROP FUNCTION IF EXISTS auth.uid();
+        DROP FUNCTION IF EXISTS auth.jwt() CASCADE;
+        DROP FUNCTION IF EXISTS auth.uid() CASCADE;
         DROP SCHEMA IF EXISTS auth CASCADE;
         DROP ROLE IF EXISTS service_role;
         DROP ROLE IF EXISTS authenticated;
