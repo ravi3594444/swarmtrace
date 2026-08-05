@@ -66,7 +66,15 @@ create or replace function auth.uid() returns uuid
   language sql stable as $$ select null::uuid $$;
 create role service_role nologin;
 create role authenticated nologin;
+create role anon nologin;
 create publication supabase_realtime;
+-- Supabase projects commonly carry default privileges that hand anon /
+-- authenticated a DIRECT execute grant on every newly created function.
+-- REVOKE ... FROM PUBLIC does not strip direct grants (this is what made
+-- 0011's insert_regression_run_for_key callable by anon in production), so
+-- simulate the condition to keep the 0010/0011 explicit revokes load-bearing.
+alter default privileges for role postgres in schema public
+  grant execute on functions to anon, authenticated, service_role;
 """
 
 
@@ -111,6 +119,50 @@ def main() -> None:
                      "-f", os.path.join(MIGRATIONS_DIR, f))
         assert r.returncode == 0, f"raw re-apply of {f} failed:\n{r.stderr}"
     print("✓ every migration file re-applies raw with zero errors (paste-safe)")
+
+    # ── 4b. grant hardening: only service_role may execute the *_for_key RPCs ─
+    # Supabase projects can carry ALTER DEFAULT PRIVILEGES that hand anon /
+    # authenticated a DIRECT execute grant on newly created functions, which
+    # REVOKE ... FROM PUBLIC does not strip. Migrations 0010/0011 must revoke
+    # those roles explicitly so the API-key RPCs stay service_role-only.
+    r = psql_cli(
+        "-AtX", "-c",
+        "with fns as ("
+        "  select p.oid, p.proname, p.proacl from pg_proc p"
+        "  join pg_namespace n on n.oid = p.pronamespace"
+        "  where n.nspname = 'public'"
+        "    and (p.proname like '%\\_for\\_key' or p.proname = 'resolve_api_key_user_id')"
+        ") "
+        "select proname || ': no explicit acl (PUBLIC keeps default EXECUTE)'"
+        " from fns where proacl is null "
+        "union all "
+        "select proname || ': EXECUTE granted to '"
+        "       || case a.grantee when 0 then 'PUBLIC' else a.grantee::regrole::text end "
+        "from fns, aclexplode(fns.proacl) a "
+        "where a.privilege_type = 'EXECUTE'"
+        "  and (a.grantee = 0 or a.grantee::regrole::text in ('anon', 'authenticated'))"
+    )
+    assert r.returncode == 0, r.stderr
+    assert not r.stdout.strip(), f"RPCs executable by non-service roles:\n{r.stdout}"
+
+    # Positive half: service_role must KEEP execute on every *_for_key RPC
+    # (guards against a future over-revoke), and all four must exist.
+    r = psql_cli(
+        "-AtX", "-c",
+        "select count(*), "
+        "count(*) filter (where has_function_privilege('service_role', p.oid, 'EXECUTE')) "
+        "from pg_proc p join pg_namespace n on n.oid = p.pronamespace "
+        "where n.nspname = 'public' "
+        "  and (p.proname like '%\\_for\\_key' or p.proname = 'resolve_api_key_user_id')"
+    )
+    assert r.returncode == 0, r.stderr
+    total, with_service = (int(x) for x in r.stdout.strip().split("|"))
+    assert total >= 4, f"expected at least the 4 key-scoped RPCs, found {total}"
+    assert total == with_service, (
+        f"{total - with_service} of {total} key-scoped RPCs lost service_role EXECUTE"
+    )
+    print("✓ *_for_key RPCs are not executable by PUBLIC/anon/authenticated,"
+          " and service_role keeps EXECUTE")
 
     # ── 5. fake-key RPC probe semantics (what /api/health/db relies on) ──────
     bad = "f" * 64

@@ -103,10 +103,15 @@ BEGIN
 END;
 $$;
 
+-- anon/authenticated are revoked EXPLICITLY (not just PUBLIC): on Supabase
+-- projects whose default privileges (ALTER DEFAULT PRIVILEGES ... GRANT
+-- EXECUTE ON FUNCTIONS) hand them a DIRECT grant on newly created functions,
+-- a PUBLIC revoke alone leaves that direct grant in place. (This exact gap
+-- made this function anon/authenticated-callable in production once.)
 REVOKE ALL ON FUNCTION public.insert_regression_run_for_key(
     TEXT, TEXT, TEXT, DOUBLE PRECISION, TEXT, TEXT,
     INTEGER, INTEGER, DOUBLE PRECISION, JSONB, TIMESTAMPTZ
-) FROM PUBLIC;
+) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.insert_regression_run_for_key(
     TEXT, TEXT, TEXT, DOUBLE PRECISION, TEXT, TEXT,
     INTEGER, INTEGER, DOUBLE PRECISION, JSONB, TIMESTAMPTZ

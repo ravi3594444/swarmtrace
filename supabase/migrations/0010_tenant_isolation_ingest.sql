@@ -18,7 +18,7 @@
 -- 2. upsert_trace_for_key(...) — same as upsert_trace_with_metrics but takes
 --    p_key_hash instead of p_user_id. The function stamps user_id itself.
 -- 3. insert_agent_event_for_key(...) — same pattern for FOV events.
--- 4. REVOKE EXECUTE from PUBLIC; GRANT only to service_role.
+-- 4. REVOKE EXECUTE from PUBLIC/anon/authenticated; GRANT only to service_role.
 --
 -- The legacy upsert_trace_with_metrics(p_user_id, ...) signature is left in
 -- place for integration tests and older deploy rollbacks, but application
@@ -53,7 +53,12 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.resolve_api_key_user_id(TEXT) FROM PUBLIC;
+-- anon/authenticated are revoked EXPLICITLY (not just PUBLIC): on Supabase
+-- projects whose default privileges (ALTER DEFAULT PRIVILEGES ... GRANT
+-- EXECUTE ON FUNCTIONS) hand them a DIRECT grant on newly created functions,
+-- a PUBLIC revoke alone leaves that direct grant in place.
+REVOKE ALL ON FUNCTION public.resolve_api_key_user_id(TEXT)
+  FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.resolve_api_key_user_id(TEXT) TO service_role;
 
 -- ── Ingest: key-hash-scoped upsert ──────────────────────────────────────────
@@ -145,7 +150,7 @@ $$;
 REVOKE ALL ON FUNCTION public.upsert_trace_for_key(
   TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, DOUBLE PRECISION, TEXT, TIMESTAMPTZ,
   INTEGER, INTEGER, DOUBLE PRECISION, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB
-) FROM PUBLIC;
+) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_trace_for_key(
   TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, DOUBLE PRECISION, TEXT, TIMESTAMPTZ,
   INTEGER, INTEGER, DOUBLE PRECISION, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB
@@ -189,7 +194,7 @@ $$;
 
 REVOKE ALL ON FUNCTION public.insert_agent_event_for_key(
   TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TIMESTAMPTZ
-) FROM PUBLIC;
+) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.insert_agent_event_for_key(
   TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TIMESTAMPTZ
 ) TO service_role;
