@@ -53,7 +53,7 @@ BEGIN
 END;
 $$;
 
-REVOKE ALL ON FUNCTION public.resolve_api_key_user_id(TEXT) FROM PUBLIC;
+REVOKE ALL ON FUNCTION public.resolve_api_key_user_id(TEXT) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.resolve_api_key_user_id(TEXT) TO service_role;
 
 -- ── Ingest: key-hash-scoped upsert ──────────────────────────────────────────
@@ -145,7 +145,7 @@ $$;
 REVOKE ALL ON FUNCTION public.upsert_trace_for_key(
   TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, DOUBLE PRECISION, TEXT, TIMESTAMPTZ,
   INTEGER, INTEGER, DOUBLE PRECISION, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB
-) FROM PUBLIC;
+) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.upsert_trace_for_key(
   TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, DOUBLE PRECISION, TEXT, TIMESTAMPTZ,
   INTEGER, INTEGER, DOUBLE PRECISION, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB
@@ -189,7 +189,7 @@ $$;
 
 REVOKE ALL ON FUNCTION public.insert_agent_event_for_key(
   TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TIMESTAMPTZ
-) FROM PUBLIC;
+) FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.insert_agent_event_for_key(
   TEXT, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB, TIMESTAMPTZ
 ) TO service_role;
