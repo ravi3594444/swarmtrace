@@ -8,11 +8,15 @@
 alter table public.api_keys enable row level security;
 alter table public.traces enable row level security;
 
+-- Idempotent: DROP IF EXISTS before CREATE so this file can be re-run
+-- safely (Postgres has no CREATE POLICY IF NOT EXISTS).
+drop policy if exists "api_keys: owner only" on public.api_keys;
 create policy "api_keys: owner only"
   on public.api_keys for all
   using (user_id = auth.jwt() ->> 'sub')
   with check (user_id = auth.jwt() ->> 'sub');
 
+drop policy if exists "traces: owner only" on public.traces;
 create policy "traces: owner only"
   on public.traces for all
   using (user_id = auth.jwt() ->> 'sub')
