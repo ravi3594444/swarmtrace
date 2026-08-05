@@ -97,7 +97,9 @@ def db_conn():
     # migrations. The migrations assume they're running in a Supabase
     # project, which provides:
     #   - `auth` schema with jwt() + uid() functions (used in RLS policies)
-    #   - `authenticated` + `service_role` roles (used in RLS TO clauses)
+    #   - `anon` + `authenticated` + `service_role` roles (used in RLS TO
+    #     clauses and in the REVOKE ... FROM PUBLIC, anon, authenticated
+    #     hardening in migrations 0010/0011)
     #   - `supabase_realtime` publication (ALTER PUBLICATION in 0002/0004/0005)
     # Plain Postgres (CI service container) has none of these. The stubs
     # let the migrations apply as-is. RLS policies evaluate to NULL (no
@@ -112,6 +114,10 @@ def db_conn():
     """)
     # Roles can't be CREATEd with IF NOT EXISTS — use a DO block.
     cur.execute("""
+        DO $$ BEGIN
+            CREATE ROLE anon;
+        EXCEPTION WHEN duplicate_object THEN NULL;
+        END $$;
         DO $$ BEGIN
             CREATE ROLE authenticated;
         EXCEPTION WHEN duplicate_object THEN NULL;
@@ -170,6 +176,7 @@ def db_conn():
         DROP SCHEMA IF EXISTS auth CASCADE;
         DROP ROLE IF EXISTS service_role;
         DROP ROLE IF EXISTS authenticated;
+        DROP ROLE IF EXISTS anon;
     """)
     cleanup_cur.close()
     conn.close()
