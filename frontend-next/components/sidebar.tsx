@@ -163,7 +163,7 @@ function LogoutButton() {
         aria-label="Log out"
         aria-haspopup="dialog"
         aria-expanded={confirmOpen}
-        className="w-7 h-7 rounded-lg border border-sidebar-border bg-sidebar flex items-center justify-center text-sidebar-foreground/60 hover:bg-red-950/30 hover:text-red-400 hover:border-red-900/60 transition-colors shrink-0"
+        className="w-7 h-7 rounded-lg border border-sidebar-border bg-sidebar flex items-center justify-center text-sidebar-foreground/60 hover:bg-red-500/10 hover:text-red-600 dark:hover:text-red-400 hover:border-red-500/30 dark:hover:border-red-900/60 transition-colors shrink-0"
       >
         <LogOut className="w-3.5 h-3.5" />
       </button>

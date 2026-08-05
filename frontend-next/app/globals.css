@@ -48,24 +48,22 @@
      state stays fully neutral. Don't reuse this color elsewhere. */
   --chart-activity-accent: #3b82f6; /* tailwind blue-500 */
   --radius: 1rem;
-  /* Sidebar is intentionally dark charcoal even in the light theme — this is
-     the "Pitch-style" split: a dark charcoal control rail against the
-     light/ivory content area, black CTAs. Values are pulled 1:1 from the
-     dark theme's charcoal palette below so the rail reads identically in
-     both themes; only the main content area switches between light and
-     dark.
-     Background sits one rung up the surface ramp (surface -> surface-container-low,
-     #131313 -> #1c1b1b) so the rail reads a little lighter/softer instead of
-     near-black, while staying on an existing token from the tonal system
-     rather than introducing a new one-off color. */
-  --sidebar: #1c1b1b;
-  --sidebar-foreground: #e5e2e1;
-  --sidebar-primary: #ffffff;
-  --sidebar-primary-foreground: #2f3131;
-  --sidebar-accent: #262524;
-  --sidebar-accent-foreground: #ffffff;
-  --sidebar-border: #363534;
-  --sidebar-ring: #ffffff;
+  /* Sidebar now follows the theme toggle — light sidebar in light mode
+     (white/ivory rail against the light canvas), dark charcoal sidebar in
+     dark mode. Values mirror the dark-mode structure: the primary token is
+     the darkest/strongest color (used for the logo mark and the "Trace"
+     word in the wordmark), foreground sits one step softer, accent is a
+     subtle hover/selected tint one rung down from pure white, and border
+     is a crisp hairline gray. This keeps the rail on the existing achromatic
+     tonal ramp instead of introducing one-off colors. */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #3f3f3f;
+  --sidebar-primary: #1a1a1a;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #f4f4f4;
+  --sidebar-accent-foreground: #1a1a1a;
+  --sidebar-border: #e5e5e5;
+  --sidebar-ring: #1a1a1a;
   /* NodeNetworkMap theme tokens — light mode. The map uses a light gradient
      background with dark grid lines and dark vignette glow so it reads as
      an integrated part of the page instead of a dark island. Values are
