@@ -116,6 +116,37 @@ a current signature is confirmed without writing any rows.
 | Dashboard loads but shows nothing while ingest succeeds | Traces are arriving under a different user/project, or Realtime isn't streaming (live-only views) | `/api/traces` via your session; verify Clerk integration; hard-refresh |
 | `not_configured` from `/api/health/db` | env vars missing on Vercel | Step 3 + redeploy |
 
+## Hardening: legacy ingest RPCs (older projects)
+
+Migrations 0010/0011 revoke `PUBLIC`/`anon`/`authenticated` on the
+key-scoped `*_for_key` RPCs explicitly — necessary because a project-level
+`ALTER DEFAULT PRIVILEGES ... GRANT EXECUTE ON FUNCTIONS` hands those roles
+a **direct** grant on newly created functions, which `REVOKE ... FROM
+PUBLIC` does not strip. The **pre-0010 legacy RPCs**
+(`upsert_trace_with_metrics`, `upsert_trace`, `increment_daily_metrics`)
+pre-date that hardening: they accept a caller-chosen `user_id`, so if they
+are callable by `anon`/`authenticated`, anyone with your anon key can write
+traces/metrics under an arbitrary tenant via PostgREST. No app code calls
+them (server routes use the `*_for_key` variants exclusively), so closing
+this is safe. Paste into the SQL editor (signature-agnostic, idempotent):
+
+```sql
+DO $$
+DECLARE f RECORD;
+BEGIN
+  FOR f IN
+    SELECT p.oid::regprocedure::text AS sig
+    FROM pg_proc p JOIN pg_namespace n ON n.oid = p.pronamespace
+    WHERE n.nspname = 'public'
+      AND p.proname IN ('upsert_trace_with_metrics', 'upsert_trace',
+                        'increment_daily_metrics')
+  LOOP
+    EXECUTE format('REVOKE ALL ON FUNCTION %s FROM PUBLIC, anon, authenticated', f.sig);
+    EXECUTE format('GRANT EXECUTE ON FUNCTION %s TO service_role', f.sig);
+  END LOOP;
+END $$;
+```
+
 ## Validating migration changes (contributors)
 
 `frontend-next/scripts/e2e_migrations.py` migrates a pristine local Postgres

@@ -4,7 +4,27 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.7.0] — 2026-08-05
+
+### Security
+- **Migrations 0010/0011 now revoke `anon`/`authenticated` explicitly on all
+  four key-scoped RPCs** (`resolve_api_key_user_id`, `upsert_trace_for_key`,
+  `insert_agent_event_for_key`, `insert_regression_run_for_key`). The previous
+  `REVOKE ALL ... FROM PUBLIC; GRANT ... TO service_role` pattern is
+  insufficient on Supabase projects whose default privileges
+  (`ALTER DEFAULT PRIVILEGES ... GRANT EXECUTE ON FUNCTIONS`) hand
+  `anon`/`authenticated` a **direct** execute grant on newly created
+  functions — direct grants survive a `PUBLIC` revoke. This gap made
+  `insert_regression_run_for_key` callable by `anon`/`authenticated` in one
+  production project (mitigated there live; callers still needed a valid
+  `key_hash`, and no app code relied on the access). The migration E2E now
+  simulates Supabase-style default privileges and asserts both halves of the
+  invariant: no `*_for_key` RPC is executable by `PUBLIC`/`anon`/
+  `authenticated`, and `service_role` keeps `EXECUTE` on all of them.
+  **Note:** the pre-0010 legacy RPCs (`upsert_trace_with_metrics`,
+  `upsert_trace`, `increment_daily_metrics`) still carry no revokes; if your
+  project has such default privileges, revoke them manually (see
+  `docs/SUPABASE_SETUP.md`) — they accept a caller-chosen `user_id`.
 
 ### Fixed
 - **Root-caused "valid API key, zero traces on dashboard": unmigrated
