@@ -13,6 +13,8 @@ CREATE TABLE IF NOT EXISTS public.user_integrations (
 
 ALTER TABLE public.user_integrations ENABLE ROW LEVEL SECURITY;
 
+-- Idempotent re-runs: DROP IF EXISTS first (no CREATE POLICY IF NOT EXISTS).
+DROP POLICY IF EXISTS "user_integrations: owner only" ON public.user_integrations;
 CREATE POLICY "user_integrations: owner only"
   ON public.user_integrations FOR ALL
   USING  (user_id = auth.jwt() ->> 'sub')

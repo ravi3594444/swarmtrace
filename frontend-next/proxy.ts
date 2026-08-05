@@ -11,6 +11,9 @@ const isPublicRoute = createRouteMatcher([
   "/api/ingest(.*)",
   "/api/events(.*)",
   "/api/mcp(.*)",
+  // Schema self-check — no auth on purpose (works pre-sign-in, which is
+  // exactly when operators need it). Read-only, rate-limited in the route.
+  "/api/health(.*)",
   "/sign-in(.*)",
   "/sign-up(.*)",
 ]);

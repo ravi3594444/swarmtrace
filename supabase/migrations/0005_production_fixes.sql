@@ -32,7 +32,18 @@
 --    (upsert) trigger function so retries are idempotent.
 
 -- ── Fix 1: Add traces to Realtime publication ─────────────────────────────────
-ALTER PUBLICATION supabase_realtime ADD TABLE public.traces;
+-- Guarded so re-running this file is safe (Postgres errors if the table is
+-- already a member of the publication).
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public' AND tablename = 'traces'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.traces;
+  END IF;
+END $$;
 
 -- ── Fix 2 + 3: Rebuild agent_events RLS policies ─────────────────────────────
 -- Drop the broken policy that used auth.uid() (Supabase UUID).
@@ -40,6 +51,8 @@ DROP POLICY IF EXISTS "users_own_events" ON public.agent_events;
 
 -- New policy: uses auth.jwt()->>'sub' which carries the Clerk user ID when
 -- the Clerk JWT template is configured (see setup note below).
+-- DROP IF EXISTS makes this file safe to re-run.
+DROP POLICY IF EXISTS "agent_events: owner only" ON public.agent_events;
 CREATE POLICY "agent_events: owner only"
   ON public.agent_events
   FOR SELECT

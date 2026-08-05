@@ -27,12 +27,15 @@ ALTER TABLE agent_events ENABLE ROW LEVEL SECURITY;
 
 -- Service role (used by the ingest API route) can insert/select freely.
 -- Authenticated users can only see their own events.
+-- DROP IF EXISTS first so re-running this file is safe.
+DROP POLICY IF EXISTS "service_full_access" ON agent_events;
 CREATE POLICY "service_full_access" ON agent_events
   FOR ALL
   TO service_role
   USING (true)
   WITH CHECK (true);
 
+DROP POLICY IF EXISTS "users_own_events" ON agent_events;
 CREATE POLICY "users_own_events" ON agent_events
   FOR SELECT
   TO authenticated
@@ -41,7 +44,18 @@ CREATE POLICY "users_own_events" ON agent_events
 -- ── Realtime ─────────────────────────────────────────────────────────────────
 -- This is the key line: the browser subscribes directly to this publication
 -- via Supabase Realtime WebSocket.  Vercel is NOT in the real-time path.
-ALTER PUBLICATION supabase_realtime ADD TABLE agent_events;
+-- Guarded so re-running doesn't error with "relation is already member of
+-- publication".
+DO $$
+BEGIN
+  IF NOT EXISTS (
+    SELECT 1 FROM pg_publication_tables
+    WHERE pubname = 'supabase_realtime'
+      AND schemaname = 'public' AND tablename = 'agent_events'
+  ) THEN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.agent_events;
+  END IF;
+END $$;
 
 -- ── Auto-purge old events (keep last 7 days per user) ─────────────────────────
 -- Run this as a cron job (Supabase pg_cron or external):

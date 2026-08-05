@@ -7,7 +7,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "test": "node --import tsx --test scripts/test-*.mjs"
+    "test": "node --import tsx --test scripts/test-*.mjs",
+    "db:migrate": "node scripts/run-migrations.mjs",
+    "db:status": "node scripts/run-migrations.mjs --status"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

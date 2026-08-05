@@ -415,6 +415,13 @@ export SWARMTRACE_API_KEY=your-key
 export SWARMTRACE_ENDPOINT=https://swarmtrace.vercel.app
 ```
 
+**Traces not arriving? Self-hosting the dashboard?** The dashboard's
+Supabase project must have the migrations in [`supabase/migrations/`](supabase/migrations)
+applied — that is the #1 setup failure (every ingest call 500s, nothing
+appears on the dashboard). See [`docs/SUPABASE_SETUP.md`](docs/SUPABASE_SETUP.md)
+for the one-command setup (`npm run db:migrate`) and the self-check endpoint
+`GET /api/health/db` that names any missing migration.
+
 ---
 
 ## Browser & Extended Capture (FOV)
