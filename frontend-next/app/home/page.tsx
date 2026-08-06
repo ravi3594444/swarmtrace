@@ -73,7 +73,7 @@ export default function HomePage() {
       {/* Plain-copy truncation notice (the shared TruncationBanner talks
           about "traces" and a date filter this page doesn't have). */}
       {truncated && (
-        <div className="mx-6 mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+        <div className="mx-4 sm:mx-6 mt-4 flex items-start gap-2 rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
           <AlertTriangle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0" />
           <span className="flex-1">
             Showing recent activity only — totals for today may be undercounted on very busy days.
@@ -81,12 +81,12 @@ export default function HomePage() {
         </div>
       )}
 
-      <div className="p-6 space-y-6">
+      <div className="p-4 sm:p-6 space-y-4 sm:space-y-6">
         <StatusBanner hasActivity={todayTraces.length > 0} issueCount={issueCount} />
 
         <SimpleStatCards traces={todayTraces} />
 
-        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4 sm:gap-6">
           <AttentionList traces={todayTraces} />
           <PlainActivityFeed traces={todayTraces} />
         </div>

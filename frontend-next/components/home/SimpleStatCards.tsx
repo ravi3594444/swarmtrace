@@ -31,14 +31,14 @@ const StatCard = memo(function StatCard({
   icon: React.ComponentType<{ className?: string }>
 }) {
   return (
-    <div className="rounded-xl border border-border bg-card p-5 shadow-sm transition-[background-color,border-color,color] duration-200">
+    <div className="rounded-xl border border-border bg-card p-4 sm:p-5 shadow-sm transition-[background-color,border-color,color] duration-200">
       <div className="flex items-center justify-between mb-3">
         <div className="text-sm font-medium text-muted-foreground">{label}</div>
         <div className="w-9 h-9 rounded-lg border border-border bg-muted/60 flex items-center justify-center shrink-0">
           <Icon className="w-4 h-4 text-muted-foreground" />
         </div>
       </div>
-      <div className="text-3xl font-bold tabular-nums text-foreground leading-none tracking-tight">
+      <div className="text-2xl sm:text-3xl font-bold tabular-nums text-foreground leading-none tracking-tight">
         {value}
       </div>
       <div className="mt-2 text-xs text-muted-foreground">{helper}</div>
@@ -59,8 +59,12 @@ export function SimpleStatCards({ traces }: { traces: Trace[] }) {
 
   const hasActivity = traces.length > 0
 
+  // grid-cols-2 even on the smallest phones: four full-width cards pushed
+  // the two detail panels below the fold on mobile, hiding the page's
+  // actual answer ("what needs attention"). Two-up keeps each card
+  // readable (labels wrap) while keeping the whole summary on screen.
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
       <div className="animate-slide-in-up" style={{ animationDelay: '0ms' }}>
         <StatCard
           label="Requests today"
