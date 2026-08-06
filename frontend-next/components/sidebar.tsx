@@ -6,7 +6,7 @@ import { useState, useEffect, useRef } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
-  MessagesSquare, GitCompareArrows, Compass, GitBranch, TrendingDown,
+  MessagesSquare, GitCompareArrows, Compass, GitBranch, TrendingDown, Home,
 } from 'lucide-react'
 import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 import { useOnboardingTour } from './onboarding/OnboardingTour'
@@ -38,6 +38,9 @@ const navGroups = [
   {
     label: 'Monitor',
     items: [
+      // Home is the plain-English summary for non-technical users; the
+      // pages below it remain the full developer views.
+      { href: '/home',     label: 'Home',     icon: Home },
       { href: '/overview', label: 'Overview', icon: LayoutGrid },
       { href: '/agents',   label: 'Agents',   icon: Users },
       { href: '/network',  label: 'Network',  icon: GitBranch },
