@@ -66,7 +66,7 @@ export function StatusBanner({
         </h2>
         <p className="text-sm text-muted-foreground mt-1">
           Some requests didn&apos;t complete. Details are listed below — or{' '}
-          <Link href="/failures" className="font-medium text-primary underline underline-offset-2 hover:no-underline">
+          <Link href="/failures" className="inline-block whitespace-nowrap font-medium text-primary underline underline-offset-2 hover:no-underline">
             see what&apos;s wrong →
           </Link>
         </p>

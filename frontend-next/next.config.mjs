@@ -38,12 +38,17 @@ const nextConfig = {
             key:   'Content-Security-Policy',
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://clerk.swarmtrace.ai https://*.clerk.accounts.dev https://challenges.cloudflare.com",
+              // va.vercel-scripts.com is @vercel/analytics — without it the
+              // script is blocked by CSP in production and Analytics silently
+              // never records a single pageview (reproduced in dev console).
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval' https://clerk.swarmtrace.ai https://*.clerk.accounts.dev https://challenges.cloudflare.com https://va.vercel-scripts.com",
               "worker-src 'self' blob:",
               "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net",
               "font-src 'self' https://cdn.jsdelivr.net",
               "img-src 'self' data: blob: https:",
-              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.clerk.com https://*.clerk.accounts.dev https://challenges.cloudflare.com https://api.github.com https://pypistats.org",
+              // vitals.vercel-insights.com is the @vercel/analytics beacon
+              // endpoint — the script loads but events 403 without this.
+              "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://api.clerk.com https://*.clerk.accounts.dev https://challenges.cloudflare.com https://api.github.com https://pypistats.org https://va.vercel-scripts.com https://vitals.vercel-insights.com",
               "frame-src https://challenges.cloudflare.com",
               "object-src 'none'",
               "base-uri 'self'",
