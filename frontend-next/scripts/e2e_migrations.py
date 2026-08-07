@@ -6,7 +6,7 @@ which bundles the Postgres binaries — no Docker, no system Postgres needed).
 What it proves (the exact things that were broken in the "valid API key,
 zero traces on dashboard" production incident):
 
-  1. all 12 files in supabase/migrations apply cleanly, in order, via
+  1. all 13 files in supabase/migrations apply cleanly, in order, via
      scripts/run-migrations.mjs (npm run db:migrate), each in one transaction
      with a schema_migrations ledger entry;
   2. re-running the runner is a strict no-op (idempotent);
