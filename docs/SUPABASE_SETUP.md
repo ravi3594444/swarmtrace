@@ -118,6 +118,9 @@ a current signature is confirmed without writing any rows.
 
 ## Hardening: legacy ingest RPCs (older projects)
 
+**As of migration `0012`, this is applied automatically by `db:migrate` —**
+**the manual step below is only needed on projects that can't run it.**
+
 Migrations 0010/0011 revoke `PUBLIC`/`anon`/`authenticated` on the
 key-scoped `*_for_key` RPCs explicitly — necessary because a project-level
 `ALTER DEFAULT PRIVILEGES ... GRANT EXECUTE ON FUNCTIONS` hands those roles

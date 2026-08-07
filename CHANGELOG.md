@@ -4,6 +4,30 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.1] — 2026-08-07
+
+### Security
+- **Closed the legacy-RPC gap flagged in 0.7.0's note.** `upsert_trace`,
+  `upsert_trace_with_metrics`, and `increment_daily_metrics` — the pre-0010
+  RPCs that accept a caller-chosen `user_id` — were still callable by `anon`
+  and `authenticated` on the production project. New migration `0012`
+  formalizes the `docs/SUPABASE_SETUP.md` manual hardening script (revoke
+  `PUBLIC`/`anon`/`authenticated`, grant `service_role` only) so `db:migrate`
+  closes this automatically instead of depending on someone pasting SQL by
+  hand. Also pins `search_path = public` on all three (Supabase's linter
+  flagged them as mutable-search-path functions); no app code called any of
+  them, so this is a pure attack-surface reduction with no behavior change.
+
+### Performance
+- **Fixed `auth_rls_initplan` on every tenant-isolation RLS policy**
+  (`api_keys`, `traces`, `daily_metrics`, `agent_events`,
+  `user_integrations`, `regression_runs`). Each policy compared `user_id`
+  against a bare `auth.jwt() ->> 'sub'`, which Postgres re-evaluates once
+  per row scanned instead of once per query. Migration `0012` wraps the
+  call in `(SELECT auth.jwt() ->> 'sub')` so the planner treats it as an
+  InitPlan. Same predicate, same semantics — matters increasingly as
+  `traces` grows.
+
 ## [0.7.0] — 2026-08-05
 
 ### Security
