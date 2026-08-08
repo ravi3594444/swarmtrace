@@ -23,8 +23,8 @@ import functools
 import logging
 import threading
 import time
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-from typing import Optional
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 
 _log = logging.getLogger("swarmtrace.budget")
 
@@ -41,7 +41,7 @@ _tok_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="st-tok")
 # Public helpers
 # ---------------------------------------------------------------------------
 
-def reset(func_name: Optional[str] = None) -> None:
+def reset(func_name: str | None = None) -> None:
     """
     Reset token-budget counters.
 
@@ -170,7 +170,7 @@ def budget(
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
                 result = None
-                original_exc: Optional[BaseException] = None
+                original_exc: BaseException | None = None
                 try:
                     result = await func(*args, **kwargs)
                     return result
@@ -193,7 +193,7 @@ def budget(
         @functools.wraps(func)
         def sync_wrapper(*args, **kwargs):
             result = None
-            original_exc: Optional[BaseException] = None
+            original_exc: BaseException | None = None
             try:
                 result = func(*args, **kwargs)
                 return result

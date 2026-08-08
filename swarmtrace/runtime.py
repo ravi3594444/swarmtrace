@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any
 
 from swarmtrace.delivery.sender import Sender
 from swarmtrace.events import emit
@@ -20,10 +21,10 @@ from swarmtrace.span_model import SpanRecord
 
 _log = logging.getLogger("swarmtrace")
 
-Config = Callable[[], Tuple[str, str]]
+Config = Callable[[], tuple[str, str]]
 
 
-def _span_to_payload(span: SpanRecord) -> Dict[str, Any]:
+def _span_to_payload(span: SpanRecord) -> dict[str, Any]:
     """Convert a canonical SpanRecord into the legacy /api/ingest payload shape."""
     payload = {
         "id": span.span_id,
@@ -64,7 +65,7 @@ class Runtime:
         repository: SpanRepository,
         transport: SpanTransport,
         config: Config,
-        sender: Optional[Sender] = None,
+        sender: Sender | None = None,
     ) -> None:
         self._repository = repository
         self._transport = transport
@@ -96,7 +97,7 @@ class Runtime:
             return
         self._sender.enqueue(_span_to_payload(span))
 
-    def resync(self, batch_size: int = 100, retries: int = 3) -> Tuple[int, int, int]:
+    def resync(self, batch_size: int = 100, retries: int = 3) -> tuple[int, int, int]:
         """Re-send unsynced spans to the remote endpoint one row at a time.
 
         Returns ``(attempted, succeeded, failed)``. If the remote endpoint is not
@@ -139,7 +140,7 @@ class Runtime:
 
 # Module-level default runtime. Created lazily so import-time circular
 # dependencies between runtime.py and tracer.py are avoided.
-_runtime: Optional[Runtime] = None
+_runtime: Runtime | None = None
 
 
 def get_runtime() -> Runtime:
@@ -158,13 +159,13 @@ def get_runtime() -> Runtime:
     return _runtime
 
 
-def set_runtime(runtime: Optional[Runtime]) -> None:
+def set_runtime(runtime: Runtime | None) -> None:
     """Replace the process runtime (used by tests and custom wiring)."""
     global _runtime
     _runtime = runtime
 
 
-def resync(batch_size: int = 100, retries: int = 3) -> Tuple[int, int, int]:
+def resync(batch_size: int = 100, retries: int = 3) -> tuple[int, int, int]:
     """Public resync entrypoint used by the CLI.
 
     Returns ``(attempted, succeeded, failed)``.

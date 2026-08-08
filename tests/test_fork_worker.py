@@ -28,7 +28,7 @@ import time
 
 import pytest
 
-import swarmtrace.tracer as tracer
+from swarmtrace import tracer
 
 pytestmark = pytest.mark.skipif(
     not hasattr(os, "fork"), reason="os.fork() not available on this platform"
@@ -49,7 +49,7 @@ def _run_in_child(fn) -> str:
         try:
             fn()
             result = b"PASS"
-        except BaseException as exc:  # noqa: BLE001 - report every failure mode
+        except BaseException as exc:
             result = f"FAIL: {exc!r}".encode()
         os.write(write_fd, result)
         os.close(write_fd)

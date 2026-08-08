@@ -27,7 +27,7 @@ import uuid
 from abc import ABC, abstractmethod
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from swarmtrace.gateway_config import GatewayConfig, UpstreamServer
 from swarmtrace.redact import redact
@@ -74,12 +74,12 @@ class Upstream(ABC):
         ...
 
     @abstractmethod
-    async def list_tools(self) -> List[Dict[str, Any]]:
+    async def list_tools(self) -> list[dict[str, Any]]:
         """Return a list of tool definitions, each with at least a 'name' key."""
         ...
 
     @abstractmethod
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         """Invoke a tool on the upstream server and return its raw result."""
         ...
 
@@ -90,11 +90,11 @@ class StdioUpstream(Upstream):
     def __init__(self, server: UpstreamServer) -> None:
         self.name = server.name
         self._server = server
-        self._read_stream: Optional[Any] = None
-        self._write_stream: Optional[Any] = None
-        self._session: Optional[Any] = None
-        self._stdio_cm: Optional[Any] = None
-        self._session_cm: Optional[Any] = None
+        self._read_stream: Any | None = None
+        self._write_stream: Any | None = None
+        self._session: Any | None = None
+        self._stdio_cm: Any | None = None
+        self._session_cm: Any | None = None
 
     def _params(self) -> Any:
         mcp = _ensure_mcp()
@@ -136,7 +136,7 @@ class StdioUpstream(Upstream):
         self._read_stream = None
         self._write_stream = None
 
-    async def list_tools(self) -> List[Dict[str, Any]]:
+    async def list_tools(self) -> list[dict[str, Any]]:
         if self._session is None:
             raise RuntimeError(f"upstream {self.name} is not connected")
         result = await self._session.list_tools()
@@ -150,7 +150,7 @@ class StdioUpstream(Upstream):
             for t in tools
         ]
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         if self._session is None:
             raise RuntimeError(f"upstream {self.name} is not connected")
         return await self._session.call_tool(name, arguments)
@@ -175,7 +175,7 @@ def _content_to_text(content: Any) -> str:
     """Extract text from MCP content blocks."""
     if not content:
         return ""
-    parts: List[str] = []
+    parts: list[str] = []
     for block in content:
         if isinstance(block, dict):
             text = block.get("text")
@@ -188,7 +188,7 @@ def _content_to_text(content: Any) -> str:
     return "\n".join(parts)[:32000]
 
 
-def _extract_context_from_meta(meta: Any) -> Optional[TraceContext]:
+def _extract_context_from_meta(meta: Any) -> TraceContext | None:
     """Look for a SwarmTrace trace context in the MCP request ``meta`` object."""
     if meta is None:
         return None
@@ -207,7 +207,7 @@ def _extract_context_from_meta(meta: Any) -> Optional[TraceContext]:
     )
 
 
-def _parse_traceparent(traceparent: str) -> Optional[TraceContext]:
+def _parse_traceparent(traceparent: str) -> TraceContext | None:
     """Parse a W3C traceparent header into a TraceContext.
 
     Format: ``00-<trace_id>-<span_id>-<flags>``. We treat the incoming span_id
@@ -243,16 +243,16 @@ class SwarmTraceMcpGateway:
     def __init__(
         self,
         config: GatewayConfig,
-        upstreams: Optional[Dict[str, Upstream]] = None,
+        upstreams: dict[str, Upstream] | None = None,
     ) -> None:
         self._config = config
-        self._upstreams: Dict[str, Upstream] = upstreams or {}
+        self._upstreams: dict[str, Upstream] = upstreams or {}
         if not self._upstreams:
             for server in config.servers:
                 self._upstreams[server.name] = StdioUpstream(server)
-        self._tool_to_upstream: Dict[str, str] = {}
-        self._tool_info: Dict[str, Dict[str, Any]] = {}
-        self._server: Optional[Any] = None
+        self._tool_to_upstream: dict[str, str] = {}
+        self._tool_info: dict[str, dict[str, Any]] = {}
+        self._server: Any | None = None
 
     def _make_server(self) -> Any:
         mcp = _ensure_mcp()
@@ -354,7 +354,7 @@ class SwarmTraceMcpGateway:
         span_id = uuid.uuid4().hex
         start = time.perf_counter()
         start_time = datetime.now(timezone.utc)
-        error: Optional[str] = None
+        error: str | None = None
         result_value: Any = None
 
         trace_ctx = _extract_context_from_meta(params.meta)
@@ -411,9 +411,9 @@ class SwarmTraceMcpGateway:
     async def call_tool(
         self,
         name: str,
-        arguments: Dict[str, Any],
+        arguments: dict[str, Any],
         *,
-        meta: Optional[Dict[str, Any]] = None,
+        meta: dict[str, Any] | None = None,
     ) -> Any:
         """Synchronous-style helper for tests and embedded use.
 
@@ -444,7 +444,7 @@ class SwarmTraceMcpGateway:
         """Yield an ASGI app configured for SSE MCP transport."""
         mcp = _ensure_mcp()
         try:
-            import uvicorn
+            import uvicorn  # noqa: F401 -- presence check only; caller runs the yielded ASGI app
             from starlette.applications import Starlette
             from starlette.routing import Route
         except ImportError as exc:
@@ -535,15 +535,15 @@ class SwarmTraceMcpGateway:
         else:
             raise ValueError(f"unsupported transport: {transport}")
 
-    def tools(self) -> Dict[str, Dict[str, Any]]:
+    def tools(self) -> dict[str, dict[str, Any]]:
         """Return a snapshot of registered tools."""
         return dict(self._tool_info)
 
 
 __all__ = [
-    "Upstream",
     "StdioUpstream",
     "SwarmTraceMcpGateway",
+    "Upstream",
     "_extract_context_from_meta",
     "_parse_traceparent",
 ]

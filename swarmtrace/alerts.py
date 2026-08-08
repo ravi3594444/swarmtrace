@@ -51,13 +51,14 @@ import sqlite3
 import threading
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 from urllib.error import URLError
 from urllib.request import Request, urlopen
 
-from swarmtrace.storage import get_all_traces, TraceRow
+from swarmtrace.storage import TraceRow, get_all_traces
 
 _log = logging.getLogger("swarmtrace.alerts")
 
@@ -72,7 +73,7 @@ ALERT_DB_PATH = os.environ.get(
 )
 
 _lock = threading.Lock()
-_conn: Optional[sqlite3.Connection] = None
+_conn: sqlite3.Connection | None = None
 
 
 def _get_conn() -> sqlite3.Connection:
@@ -107,7 +108,7 @@ def _get_conn() -> sqlite3.Connection:
     return _conn
 
 
-def _save(alert: "Alert") -> None:
+def _save(alert: Alert) -> None:
     try:
         with _lock:
             conn = _get_conn()
@@ -143,19 +144,19 @@ class Alert:
     id:         str
     rule:       str
     severity:   str       # 'info' | 'warning' | 'critical'
-    agent_id:   Optional[str]
-    agent_name: Optional[str]
+    agent_id:   str | None
+    agent_name: str | None
     message:    str
-    detail:     Optional[str] = None
-    trace_ids:  List[str]  = field(default_factory=list)
+    detail:     str | None = None
+    trace_ids:  list[str]  = field(default_factory=list)
     fired_at:   str        = field(
         default_factory=lambda: datetime.now(timezone.utc).isoformat()
     )
     acked:      bool       = False
-    acked_at:   Optional[str] = None
+    acked_at:   str | None = None
     delivered:  bool       = False
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["acked"] = bool(d["acked"])
         d["delivered"] = bool(d["delivered"])
@@ -188,15 +189,15 @@ class RuleConfig:
 class RuleEngine:
     """Evaluates the built-in rules against the most recent traces."""
 
-    def __init__(self, config: Optional[RuleConfig] = None):
+    def __init__(self, config: RuleConfig | None = None):
         self.config = config or RuleConfig()
         # (rule, agent_id) -> last-fired timestamp
-        self._cooldowns: Dict[tuple, float] = {}
+        self._cooldowns: dict[tuple, float] = {}
 
     # ── helpers ──────────────────────────────────────────────────────────────
 
     @staticmethod
-    def _parse_ts(ts: str) -> Optional[datetime]:
+    def _parse_ts(ts: str) -> datetime | None:
         if not ts:
             return None
         try:
@@ -223,7 +224,7 @@ class RuleEngine:
 
     # ── public entrypoint ────────────────────────────────────────────────────
 
-    def evaluate(self, traces: List[TraceRow]) -> List[Alert]:
+    def evaluate(self, traces: list[TraceRow]) -> list[Alert]:
         """Run every enabled rule over ``traces`` and return the fired alerts."""
         # Each trace row is a dict from the storage layer (see
         # storage.py:TraceRow) -- keyed by column name, so this survives any
@@ -232,12 +233,12 @@ class RuleEngine:
             return []
 
         # Bucket by agent_id for rules that need per-agent aggregation.
-        by_agent: Dict[str, List[TraceRow]] = {}
+        by_agent: dict[str, list[TraceRow]] = {}
         for row in traces:
             agent_id = row["agent_id"] or row["id"] or "unknown"
             by_agent.setdefault(agent_id, []).append(row)
 
-        fired: List[Alert] = []
+        fired: list[Alert] = []
         if "budget_breach"      in self.config.enabled_rules:
             fired.extend(self._rule_budget_breach(traces, by_agent))
         if "error_spike"        in self.config.enabled_rules:
@@ -249,17 +250,17 @@ class RuleEngine:
     # ── rules ────────────────────────────────────────────────────────────────
 
     def _rule_budget_breach(
-        self, traces: List[TraceRow], by_agent: Dict[str, List[TraceRow]]
-    ) -> List[Alert]:
+        self, traces: list[TraceRow], by_agent: dict[str, list[TraceRow]]
+    ) -> list[Alert]:
         cfg = self.config
         cutoff = datetime.now(timezone.utc) - timedelta(minutes=cfg.window_minutes)
-        fired: List[Alert] = []
+        fired: list[Alert] = []
         for agent_id, rows in by_agent.items():
             if self._in_cooldown("budget_breach", agent_id):
                 continue
             total = 0.0
-            trace_ids: List[str] = []
-            latest_ts: Optional[datetime] = None
+            trace_ids: list[str] = []
+            latest_ts: datetime | None = None
             agent_name = None
             for row in rows:
                 ts = self._parse_ts(row["timestamp"])
@@ -292,9 +293,9 @@ class RuleEngine:
                 self._mark_fired("budget_breach", agent_id)
         return fired
 
-    def _rule_error_spike(self, by_agent: Dict[str, List[TraceRow]]) -> List[Alert]:
+    def _rule_error_spike(self, by_agent: dict[str, list[TraceRow]]) -> list[Alert]:
         cfg = self.config
-        fired: List[Alert] = []
+        fired: list[Alert] = []
         for agent_id, rows in by_agent.items():
             if self._in_cooldown("error_spike", agent_id):
                 continue
@@ -327,9 +328,9 @@ class RuleEngine:
                 self._mark_fired("error_spike", agent_id)
         return fired
 
-    def _rule_latency_regression(self, by_agent: Dict[str, List[TraceRow]]) -> List[Alert]:
+    def _rule_latency_regression(self, by_agent: dict[str, list[TraceRow]]) -> list[Alert]:
         cfg = self.config
-        fired: List[Alert] = []
+        fired: list[Alert] = []
         for agent_id, rows in by_agent.items():
             if self._in_cooldown("latency_regression", agent_id):
                 continue
@@ -374,7 +375,7 @@ class RuleEngine:
 # Webhook delivery
 # ---------------------------------------------------------------------------
 
-def _slack_payload(alert: Alert) -> Dict[str, Any]:
+def _slack_payload(alert: Alert) -> dict[str, Any]:
     """Slack-compatible incoming-webhook payload."""
     colour = {
         "info":     "#3b82f6",
@@ -395,7 +396,7 @@ def _slack_payload(alert: Alert) -> Dict[str, Any]:
     }
 
 
-def _generic_payload(alert: Alert) -> Dict[str, Any]:
+def _generic_payload(alert: Alert) -> dict[str, Any]:
     return {
         "source":     "swarmtrace",
         "version":    1,
@@ -486,7 +487,7 @@ class AlertRunner:
         interval_seconds: int = 60,
         api_key: str = "",
         endpoint: str = "",
-        on_alert: Optional[Callable[[Alert], None]] = None,
+        on_alert: Callable[[Alert], None] | None = None,
     ):
         self.engine   = engine
         self.webhook  = webhook
@@ -495,7 +496,7 @@ class AlertRunner:
         self.endpoint = endpoint
         self.on_alert = on_alert
         self._stop    = threading.Event()
-        self._thread: Optional[threading.Thread] = None
+        self._thread: threading.Thread | None = None
 
     def start(self) -> None:
         if self._thread and self._thread.is_alive():
@@ -539,23 +540,23 @@ class AlertRunner:
 # Global config + lifecycle
 # ---------------------------------------------------------------------------
 
-_engine:    Optional[RuleEngine]   = None
-_runner:    Optional[AlertRunner]   = None
-_config:    Optional[RuleConfig]   = None
+_engine:    RuleEngine | None   = None
+_runner:    AlertRunner | None   = None
+_config:    RuleConfig | None   = None
 _webhook:   str                    = ""
-_user_hook: Optional[Callable[[Alert], None]] = None
+_user_hook: Callable[[Alert], None] | None = None
 
 
 def configure(
     *,
-    webhook: Optional[str]       = None,
-    budget_usd: Optional[float]  = None,
-    error_rate_threshold: Optional[float] = None,
-    latency_p95_sec: Optional[float] = None,
-    window_minutes: Optional[int] = None,
-    cooldown_seconds: Optional[int] = None,
-    enabled_rules: Optional[tuple] = None,
-    on_alert: Optional[Callable[[Alert], None]] = None,
+    webhook: str | None       = None,
+    budget_usd: float | None  = None,
+    error_rate_threshold: float | None = None,
+    latency_p95_sec: float | None = None,
+    window_minutes: int | None = None,
+    cooldown_seconds: int | None = None,
+    enabled_rules: tuple | None = None,
+    on_alert: Callable[[Alert], None] | None = None,
 ) -> RuleConfig:
     """
     Configure (or update) the global alert engine. Safe to call multiple
@@ -622,7 +623,7 @@ def stop() -> None:
         _runner = None
 
 
-def evaluate_now() -> List[Alert]:
+def evaluate_now() -> list[Alert]:
     """Run the rule engine once over the current trace buffer (for tests / CLI)."""
     return get_engine().evaluate(get_all_traces(limit=2000))
 
@@ -630,17 +631,17 @@ def evaluate_now() -> List[Alert]:
 def list_alerts(
     limit: int = 50,
     *,
-    severity: Optional[str] = None,
-    rule: Optional[str] = None,
+    severity: str | None = None,
+    rule: str | None = None,
     include_acked: bool = True,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Return recent alerts (most recent first)."""
     try:
         with _lock:
             conn = _get_conn()
             query = "SELECT * FROM alerts"
-            clauses: List[str] = []
-            params: List[Any]  = []
+            clauses: list[str] = []
+            params: list[Any]  = []
             if not include_acked:
                 clauses.append("acked = 0")
             if severity:

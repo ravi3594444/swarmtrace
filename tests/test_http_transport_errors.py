@@ -26,11 +26,10 @@ from urllib.error import HTTPError, URLError
 import pytest
 
 from swarmtrace.adapters.http_transport import (
+    _MAX_ERROR_BODY_CHARS,
     HttpTransport,
     IngestHTTPError,
-    _MAX_ERROR_BODY_CHARS,
 )
-
 
 CLASSIFIED_500_BODY = json.dumps(
     {

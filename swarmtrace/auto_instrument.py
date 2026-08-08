@@ -26,7 +26,6 @@ import logging
 import time
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, Tuple
 
 from swarmtrace.pricing import calculate_cost
 from swarmtrace.redact import redact
@@ -65,7 +64,7 @@ class _StreamInstrumentWrapper:
         self._parent_id = parent_id
         self._in_tok = 0
         self._out_tok = 0
-        self._error: Optional[Exception] = None
+        self._error: Exception | None = None
         self._recorded = False
 
     def __iter__(self):
@@ -170,7 +169,7 @@ class _AsyncStreamInstrumentWrapper:
         self._parent_id = parent_id
         self._in_tok = 0
         self._out_tok = 0
-        self._error: Optional[Exception] = None
+        self._error: Exception | None = None
         self._recorded = False
 
     def __aiter__(self):
@@ -243,11 +242,11 @@ def _record_async(
     func_name: str,
     model: str,
     start: float,
-    error: Optional[Exception],
+    error: Exception | None,
     in_tok: int,
     out_tok: int,
-    agent: Optional[Tuple[str, str]],
-    parent_id: Optional[str],
+    agent: tuple[str, str] | None,
+    parent_id: str | None,
 ) -> None:
     """Fire-and-forget: build the trace record and hand it to the background
     sender. Called in a ``finally`` block so it must never raise.
@@ -303,7 +302,7 @@ def _mark_patched(wrapper):
 
 def patch_openai() -> bool:
     try:
-        from openai.resources.chat.completions import Completions, AsyncCompletions
+        from openai.resources.chat.completions import AsyncCompletions, Completions
     except ImportError:
         return False
 
@@ -316,7 +315,7 @@ def patch_openai() -> bool:
             model = kwargs.get("model", "")
             agent = current_agent()
             parent_id = current_parent()
-            error: Optional[Exception] = None
+            error: Exception | None = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
             # stream_returned tracks whether original() successfully returned
@@ -359,7 +358,7 @@ def patch_openai() -> bool:
             model = kwargs.get("model", "")
             agent = current_agent()
             parent_id = current_parent()
-            error: Optional[Exception] = None
+            error: Exception | None = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
             stream_returned = False
@@ -395,7 +394,7 @@ def patch_openai() -> bool:
 
 def patch_anthropic() -> bool:
     try:
-        from anthropic.resources.messages import Messages, AsyncMessages
+        from anthropic.resources.messages import AsyncMessages, Messages
     except ImportError:
         return False
 
@@ -408,7 +407,7 @@ def patch_anthropic() -> bool:
             model = kwargs.get("model", "")
             agent = current_agent()
             parent_id = current_parent()
-            error: Optional[Exception] = None
+            error: Exception | None = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
             stream_returned = False
@@ -444,7 +443,7 @@ def patch_anthropic() -> bool:
             model = kwargs.get("model", "")
             agent = current_agent()
             parent_id = current_parent()
-            error: Optional[Exception] = None
+            error: Exception | None = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
             stream_returned = False
@@ -497,7 +496,7 @@ def patch_gemini() -> bool:
             model = _model_name(self)
             agent = current_agent()
             parent_id = current_parent()
-            error: Optional[Exception] = None
+            error: Exception | None = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
             stream_returned = False
@@ -532,7 +531,7 @@ def patch_gemini() -> bool:
             model = _model_name(self)
             agent = current_agent()
             parent_id = current_parent()
-            error: Optional[Exception] = None
+            error: Exception | None = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
             stream_returned = False
@@ -580,7 +579,7 @@ def patch_litellm() -> bool:
             model = kwargs.get("model") or (args[0] if args else "")
             agent = current_agent()
             parent_id = current_parent()
-            error: Optional[Exception] = None
+            error: Exception | None = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
             stream_returned = False
@@ -616,7 +615,7 @@ def patch_litellm() -> bool:
             model = kwargs.get("model") or (args[0] if args else "")
             agent = current_agent()
             parent_id = current_parent()
-            error: Optional[Exception] = None
+            error: Exception | None = None
             in_tok = out_tok = 0
             is_stream = kwargs.get("stream", False)
             stream_returned = False

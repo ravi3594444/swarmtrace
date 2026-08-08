@@ -9,10 +9,9 @@ can capture or silence it via standard logging configuration.
 
 import logging
 
-from swarmtrace.storage import get_traces
-
 # replay() lives in swarmtrace.cli — import from there to avoid duplication.
-from swarmtrace.cli import replay  # noqa: F401  (re-exported for backwards compat)
+from swarmtrace.cli import replay  # noqa: F401 -- intentional re-export, see docstring above
+from swarmtrace.storage import get_traces
 
 _log = logging.getLogger("swarmtrace.replay")
 

@@ -7,8 +7,7 @@ not installed so the base test suite can run without gateway dependencies.
 from __future__ import annotations
 
 import asyncio
-import sys
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
@@ -33,11 +32,11 @@ class FakeUpstream:
 
     name = "fake"
 
-    def __init__(self, tools: List[Dict[str, Any]], responses: Dict[str, Any]):
+    def __init__(self, tools: list[dict[str, Any]], responses: dict[str, Any]):
         self._tools = tools
         self._responses = responses
         self.connected = False
-        self.calls: List[tuple] = []
+        self.calls: list[tuple] = []
 
     async def connect(self) -> None:
         self.connected = True
@@ -45,10 +44,10 @@ class FakeUpstream:
     async def close(self) -> None:
         self.connected = False
 
-    async def list_tools(self) -> List[Dict[str, Any]]:
+    async def list_tools(self) -> list[dict[str, Any]]:
         return list(self._tools)
 
-    async def call_tool(self, name: str, arguments: Dict[str, Any]) -> Any:
+    async def call_tool(self, name: str, arguments: dict[str, Any]) -> Any:
         self.calls.append((name, arguments))
         if name in self._responses:
             response = self._responses[name]

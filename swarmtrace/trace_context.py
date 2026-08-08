@@ -13,9 +13,9 @@ the public helpers and the TraceContext dataclass directly.
 from __future__ import annotations
 
 import contextvars
+from collections.abc import Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
-from typing import Iterator, Optional, Tuple
 
 
 @dataclass(frozen=True)
@@ -28,13 +28,13 @@ class TraceContext:
     """
 
     span_id: str
-    parent_span_id: Optional[str] = None
-    trace_id: Optional[str] = None
-    agent_id: Optional[str] = None
-    agent_name: Optional[str] = None
-    session_id: Optional[str] = None
+    parent_span_id: str | None = None
+    trace_id: str | None = None
+    agent_id: str | None = None
+    agent_name: str | None = None
+    session_id: str | None = None
 
-    def as_agent_tuple(self) -> Optional[Tuple[str, str]]:
+    def as_agent_tuple(self) -> tuple[str, str] | None:
         """Return (agent_id, agent_name) if an agent is present, else None."""
         if self.agent_id is None:
             return None
@@ -47,16 +47,16 @@ class TraceContext:
 # Each var holds the context for the *current* span. Nested spans replace
 # the value while the body runs and restore it on exit.
 
-_parent_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+_parent_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "parent_ctx", default=None
 )
-_agent_ctx: contextvars.ContextVar[Optional[Tuple[str, str]]] = contextvars.ContextVar(
+_agent_ctx: contextvars.ContextVar[tuple[str, str] | None] = contextvars.ContextVar(
     "agent_ctx", default=None
 )
-_session_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+_session_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "session_ctx", default=None
 )
-_trace_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
+_trace_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "trace_ctx", default=None
 )
 
@@ -65,22 +65,22 @@ _trace_ctx: contextvars.ContextVar[Optional[str]] = contextvars.ContextVar(
 # Public helpers
 # ---------------------------------------------------------------------------
 
-def current_parent() -> Optional[str]:
+def current_parent() -> str | None:
     """Return the parent_span_id of the current span, if any."""
     return _parent_ctx.get()
 
 
-def current_agent() -> Optional[Tuple[str, str]]:
+def current_agent() -> tuple[str, str] | None:
     """Return ``(agent_id, agent_name)`` of the nearest enclosing agent span."""
     return _agent_ctx.get()
 
 
-def current_session() -> Optional[str]:
+def current_session() -> str | None:
     """Return the current session_id, if any."""
     return _session_ctx.get()
 
 
-def current_trace() -> Optional[str]:
+def current_trace() -> str | None:
     """Return the trace_id of the current distributed run, if any."""
     return _trace_ctx.get()
 

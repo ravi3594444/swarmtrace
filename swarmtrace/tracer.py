@@ -40,36 +40,42 @@ import logging
 import os
 import time
 import uuid
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FuturesTimeout
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Iterator, List, Optional, Tuple
 
+from swarmtrace.adapters.http_transport import HttpTransport
+from swarmtrace.adapters.sqlite_repository import SqliteRepository
 from swarmtrace.config import (
     configure_remote,
     normalize_base_url,
     resolve_remote_config,
     validate_endpoint_scheme,
 )
-from swarmtrace.adapters.http_transport import HttpTransport
-from swarmtrace.adapters.sqlite_repository import SqliteRepository
 from swarmtrace.delivery.sender import Sender
-from swarmtrace.runtime import Runtime, get_runtime, set_runtime
-from swarmtrace.storage import save_trace
 from swarmtrace.pricing import calculate_cost
 from swarmtrace.redact import redact
+from swarmtrace.runtime import Runtime, get_runtime, set_runtime
 from swarmtrace.span_model import SpanRecord
 from swarmtrace.trace_context import (
-    TraceContext,
     _agent_ctx,
     _parent_ctx,
     _session_ctx,
     _trace_ctx,
+)
+from swarmtrace.trace_context import (
     current_agent as _current_agent,
+)
+from swarmtrace.trace_context import (
     current_parent as _current_parent,
+)
+from swarmtrace.trace_context import (
     current_session as _current_session,
+)
+from swarmtrace.trace_context import (
     current_trace as _current_trace,
-    using,
 )
 
 _log = logging.getLogger("swarmtrace")
@@ -81,13 +87,13 @@ _log = logging.getLogger("swarmtrace")
 # aliases stay in tracer.py for backwards compatibility with older tests and
 # integrations that monkeypatch ``swarmtrace.tracer._api_key`` / ``_endpoint``.
 
-_api_key: Optional[str] = None
-_endpoint: Optional[str] = None
+_api_key: str | None = None
+_endpoint: str | None = None
 
 
 def init(
-    api_key: Optional[str] = None,
-    endpoint: Optional[str] = None,
+    api_key: str | None = None,
+    endpoint: str | None = None,
     auto_instrument: bool = True,
     fov: bool = False,
     fov_watch_dir: str = ".",
@@ -185,7 +191,7 @@ def _send_remote(payload: dict, key: str, url: str) -> None:
     _transport.send_single(payload, key, url)
 
 
-def _send_batch_remote(payloads: List[dict], key: str, url: str) -> None:
+def _send_batch_remote(payloads: list[dict], key: str, url: str) -> None:
     """Send a BATCH of traces as one gzip'd POST.
 
     Body shape: ``{"traces": [...]}`` (the new batch shape accepted by
@@ -227,7 +233,7 @@ def resync(batch_size: int = 100, retries: int = 3) -> tuple[int, int, int]:
 
 
 @contextmanager
-def session(session_id: Optional[str] = None) -> Iterator[str]:
+def session(session_id: str | None = None) -> Iterator[str]:
     """Group every traced call made inside the block into one conversation.
 
     Usage::
@@ -270,7 +276,7 @@ _KIND_CHOICES = _VALID_KINDS | {"auto"}
 _str_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="st-str")
 
 
-def _resolve_kind(kind: str, enclosing_agent: Optional[Tuple[str, str]]) -> str:
+def _resolve_kind(kind: str, enclosing_agent: tuple[str, str] | None) -> str:
     if kind != "auto":
         return kind
     return "agent" if enclosing_agent is None else "function"
@@ -293,7 +299,7 @@ def _build_trace_id() -> str:
     return uuid.uuid4().hex
 
 
-def _stable_agent_id(func, name: Optional[str]) -> str:
+def _stable_agent_id(func, name: str | None) -> str:
     """Deterministic agent_id for a bare ``@observe`` entrypoint.
 
     See docs/SDK_DASHBOARD_CONTRACT.md for the full SDK<->dashboard
@@ -371,13 +377,13 @@ def _extract_token_info(result) -> tuple[int, int, float]:
 
 def _flush(
     trace_id: str,
-    parent_id: Optional[str],
+    parent_id: str | None,
     func_name: str,
     args,
     kwargs,
-    output: Optional[str],
+    output: str | None,
     latency: float,
-    error: Optional[str],
+    error: str | None,
     timestamp: str,
     in_tok: int,
     out_tok: int,
@@ -385,8 +391,8 @@ def _flush(
     kind: str,
     agent_id: str,
     agent_name: str,
-    session_id: Optional[str] = None,
-    distributed_trace_id: Optional[str] = None,
+    session_id: str | None = None,
+    distributed_trace_id: str | None = None,
 ) -> None:
     # Cap args_repr at the same 32000-char limit _safe_str applies to output.
     # Without this, a single large argument (big string, dataframe repr, etc.)
@@ -443,8 +449,8 @@ def _safe_flush(*flush_args) -> None:
 # Decorator
 # ---------------------------------------------------------------------------
 
-def observe(func=None, *, kind: str = "auto", name: Optional[str] = None,
-            session_id: Optional[str] = None):
+def observe(func=None, *, kind: str = "auto", name: str | None = None,
+            session_id: str | None = None):
     """
     Decorator that records every call (sync or async) to the traces DB.
 
@@ -507,8 +513,8 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None,
                 agent_token = None
 
             start = time.perf_counter()
-            output: Optional[str] = None
-            error: Optional[str] = None
+            output: str | None = None
+            error: str | None = None
             in_tok = out_tok = 0
             cost = 0.0
 
@@ -575,8 +581,8 @@ def observe(func=None, *, kind: str = "auto", name: Optional[str] = None,
             agent_token = None
 
         start = time.perf_counter()
-        output: Optional[str] = None
-        error: Optional[str] = None
+        output: str | None = None
+        error: str | None = None
         in_tok = out_tok = 0
         cost = 0.0
 

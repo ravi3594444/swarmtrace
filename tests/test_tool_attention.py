@@ -21,7 +21,6 @@ import pytest
 
 import swarmtrace.tool_attention as ta
 
-
 # ---------------------------------------------------------------------------
 # Fake optional dependencies (numpy, sentence_transformers, faiss)
 # ---------------------------------------------------------------------------
@@ -101,7 +100,7 @@ def _remove_fake_deps():
 @pytest.fixture()
 def fake_deps():
     """Install fake numpy/st/faiss for the test, clean up after."""
-    np = pytest.importorskip("numpy")
+    pytest.importorskip("numpy")
     _install_fake_deps()
     yield
     _remove_fake_deps()
@@ -172,7 +171,7 @@ def test_add_tools_is_incremental_not_rebuild(fake_deps, sample_tools):
     spying on it.
     """
     att = ta.ToolAttention(sample_tools, verbose=False)
-    build_calls_before = att._build_index.__code__  # just verify method exists
+    _build_calls_before = att._build_index.__code__  # just verify method exists
 
     # Spy on _build_index — replace it with a mock that counts calls
     att._build_index = MagicMock()

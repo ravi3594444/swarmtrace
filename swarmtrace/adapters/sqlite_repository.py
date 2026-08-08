@@ -9,11 +9,9 @@ legacy storage row shape.
 
 from __future__ import annotations
 
-from typing import List
-
+from swarmtrace import storage
 from swarmtrace.ports import SpanRepository
 from swarmtrace.span_model import SpanRecord
-from swarmtrace import storage
 
 
 class SqliteRepository(SpanRepository):
@@ -27,7 +25,7 @@ class SqliteRepository(SpanRepository):
         """Insert or replace one span in the SQLite outbox."""
         storage.save_trace(**span.to_storage_dict())
 
-    def get_children(self, span_id: str) -> List[SpanRecord]:
+    def get_children(self, span_id: str) -> list[SpanRecord]:
         """Return all direct children of ``span_id``.
 
         Rows are ordered by timestamp descending, newest first.
@@ -46,7 +44,7 @@ class SqliteRepository(SpanRepository):
         """Set the synced flag for a single span row."""
         storage.mark_synced(span_id, synced)
 
-    def get_unsynced(self, limit: int = 100) -> List[SpanRecord]:
+    def get_unsynced(self, limit: int = 100) -> list[SpanRecord]:
         """Return up to ``limit`` unsynced spans, oldest first."""
         rows = storage.get_unsynced_traces(limit=limit)
         return [SpanRecord.from_storage_row(row) for row in rows]

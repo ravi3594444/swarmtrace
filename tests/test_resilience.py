@@ -1,10 +1,7 @@
-import contextlib
-import io
-import logging
 import unittest
 from unittest.mock import patch
 
-import swarmtrace.pricing as pricing
+from swarmtrace import pricing
 from swarmtrace.pricing import calculate_cost
 from swarmtrace.tracer import _safe_flush
 

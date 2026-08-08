@@ -10,9 +10,8 @@ from unittest.mock import patch
 
 import pytest
 
-import swarmtrace.alerts as alerts
+from swarmtrace import alerts
 from swarmtrace.alerts import Alert, RuleConfig, RuleEngine
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -34,7 +33,7 @@ def _trace(
     agent_name: str = "my_agent",
     cost: float = 0.0,
     latency: float = 0.5,
-    error: str = None,
+    error: str | None = None,
     function: str = "step",
     n: int = 1,
     within_window: bool = True,

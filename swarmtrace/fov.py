@@ -48,6 +48,8 @@ from datetime import datetime, timezone
 # ── shared config + context ─────────────────────────────────────────────────
 from swarmtrace.config import (
     normalize_base_url as _normalize_base_url,
+)
+from swarmtrace.config import (
     remote_config as _remote_config,
 )
 from swarmtrace.trace_context import current_agent
@@ -66,7 +68,8 @@ from swarmtrace.redact import redact as _redact_text
 _log = logging.getLogger("swarmtrace.fov")
 
 # ── local event storage ──────────────────────────────────────────────────────
-from swarmtrace.storage import _get_conn, _lock as _storage_lock
+from swarmtrace.storage import _get_conn
+from swarmtrace.storage import _lock as _storage_lock
 
 # ---------------------------------------------------------------------------
 # Local SQLite event table — with bounded size (no disk-fill risk)
@@ -187,7 +190,7 @@ def _save_event_local(event: dict) -> None:
 # ---------------------------------------------------------------------------
 
 _FOV_QUEUE_MAX = 500
-_FOV_QUEUE: "queue.Queue[dict]" = queue.Queue(maxsize=_FOV_QUEUE_MAX)
+_FOV_QUEUE: queue.Queue[dict] = queue.Queue(maxsize=_FOV_QUEUE_MAX)
 _fov_worker_lock = threading.Lock()
 _fov_worker_started = False
 
@@ -308,8 +311,9 @@ def _mk_event(event_type: str, status: str, data: dict) -> dict:
 
 def _resize_jpeg(raw: bytes, max_width: int = 800) -> bytes:
     try:
-        from PIL import Image
         import io as _io
+
+        from PIL import Image
         img = Image.open(_io.BytesIO(raw))
         if img.width > max_width:
             h = int(img.height * max_width / img.width)
@@ -1039,8 +1043,8 @@ def patch_filesystem(watch_dir: str = ".") -> bool:
     if _FS_PATCHED:
         return True
     try:
-        from watchdog.observers import Observer
         from watchdog.events import FileSystemEventHandler
+        from watchdog.observers import Observer
 
         class _Handler(FileSystemEventHandler):
             def _emit(self, action: str, path: str):

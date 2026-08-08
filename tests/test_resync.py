@@ -14,19 +14,14 @@ Also covers:
 from __future__ import annotations
 
 import importlib
-import threading
-import time
-from unittest.mock import patch
 
 import pytest
 
-import swarmtrace.tracer as tracer
-import swarmtrace.storage as storage
 from swarmtrace import runtime as runtime_module
+from swarmtrace import storage, tracer
 from swarmtrace.adapters.sqlite_repository import SqliteRepository
 from swarmtrace.runtime import Runtime
 from tests._fakes import FakeTransport
-
 
 # --------------------------------------------------------------------------
 # Fixtures

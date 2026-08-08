@@ -35,9 +35,9 @@ class ToolAttention:
             # swarmtrace` for anyone who did `pip install swarmtrace`
             # (numpy is under the [tools] extra, not the base install).
             # Matches the lazy-import pattern in regression.py / scraper.py.
+            import faiss
             import numpy as np
             from sentence_transformers import SentenceTransformer
-            import faiss
 
             self._model = SentenceTransformer("all-MiniLM-L6-v2")
 
@@ -134,7 +134,7 @@ class ToolAttention:
 
         # Search FAISS index
         actual_k = min(k, len(self.tools))
-        distances, indices = self._index.search(query_vec, actual_k)
+        _distances, indices = self._index.search(query_vec, actual_k)
 
         selected = [self.tools[i] for i in indices[0]]
 

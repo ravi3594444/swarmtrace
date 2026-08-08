@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime, timezone
 
 import pytest
 
+import swarmtrace.storage as storage_module
 from swarmtrace.adapters.http_transport import _span_to_payload as http_payload
-from swarmtrace.runtime import Runtime, _span_to_payload as runtime_payload, get_runtime
+from swarmtrace.runtime import Runtime
+from swarmtrace.runtime import _span_to_payload as runtime_payload
 from swarmtrace.span_model import SpanRecord
 from swarmtrace.storage import get_traces, save_trace
-import swarmtrace.storage as storage_module
 
 
 @pytest.fixture

@@ -17,7 +17,7 @@ import os
 import sqlite3
 import stat
 import threading
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any
 
 _log = logging.getLogger("swarmtrace")
 
@@ -50,9 +50,9 @@ BUSY_TIMEOUT_MS: int = 5_000
 # instead of row[13]. Any future ALTER TABLE ADD COLUMN in _ADDED_COLUMNS
 # is automatically available under its own name everywhere -- no consumer
 # needs to change.
-TraceRow = Dict[str, Any]
+TraceRow = dict[str, Any]
 
-_ADDED_COLUMNS: List[Tuple[str, str]] = [
+_ADDED_COLUMNS: list[tuple[str, str]] = [
     ("kind",       "TEXT NOT NULL DEFAULT 'agent'"),
     ("agent_id",   "TEXT"),
     ("agent_name", "TEXT"),
@@ -71,7 +71,7 @@ _ADDED_COLUMNS: List[Tuple[str, str]] = [
 ]
 
 _lock = threading.Lock()
-_conn: Optional[sqlite3.Connection] = None
+_conn: sqlite3.Connection | None = None
 _write_count: int = 0
 
 # ---------------------------------------------------------------------------
@@ -263,22 +263,22 @@ def purge_now() -> None:
 def save_trace(
     *,
     id_: str,
-    parent_id: Optional[str] = None,
-    trace_id: Optional[str] = None,
+    parent_id: str | None = None,
+    trace_id: str | None = None,
     function: str,
-    args: Optional[str] = None,
-    output: Optional[str] = None,
+    args: str | None = None,
+    output: str | None = None,
     latency_sec: float = 0.0,
-    error: Optional[str] = None,
+    error: str | None = None,
     timestamp: str,
     input_tokens: int = 0,
     output_tokens: int = 0,
     cost_usd: float = 0.0,
     kind: str = "function",
-    agent_id: Optional[str] = None,
-    agent_name: Optional[str] = None,
-    session_id: Optional[str] = None,
-    attributes: Optional[str] = None,
+    agent_id: str | None = None,
+    agent_name: str | None = None,
+    session_id: str | None = None,
+    attributes: str | None = None,
 ) -> None:
     global _write_count
     agent_id = agent_id or id_
@@ -307,7 +307,7 @@ def save_trace(
     except Exception as exc:
         _log.warning("storage warning: %s", exc)
 
-def get_traces(limit: int = 20) -> List[TraceRow]:
+def get_traces(limit: int = 20) -> list[TraceRow]:
     try:
         with _lock:
             conn = _get_conn()
@@ -318,7 +318,7 @@ def get_traces(limit: int = 20) -> List[TraceRow]:
     except Exception:
         return []
 
-def get_all_traces(limit: Optional[int] = 500) -> List[TraceRow]:
+def get_all_traces(limit: int | None = 500) -> list[TraceRow]:
     try:
         with _lock:
             conn = _get_conn()
@@ -334,7 +334,7 @@ def get_all_traces(limit: Optional[int] = 500) -> List[TraceRow]:
     except Exception:
         return []
 
-def get_by_id(trace_id: str) -> Optional[TraceRow]:
+def get_by_id(trace_id: str) -> TraceRow | None:
     try:
         with _lock:
             conn = _get_conn()
@@ -366,7 +366,7 @@ def mark_synced(trace_id: str, synced: int = 1) -> None:
         _log.warning("mark_synced warning: %s", exc)
 
 
-def get_unsynced_traces(limit: int = 100) -> List[TraceRow]:
+def get_unsynced_traces(limit: int = 100) -> list[TraceRow]:
     """Return up to ``limit`` trace rows that haven't been confirmed synced.
 
     Used by the ``swarmtrace resync`` CLI to find rows whose remote POST

@@ -20,14 +20,15 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import Any, Callable, Dict, List
+from collections.abc import Callable
+from typing import Any
 
 _log = logging.getLogger("swarmtrace.events")
 
 EventHandler = Callable[..., Any]
 
 # Global listener registry. Protected by _lock so emit() is thread-safe.
-_listeners: Dict[str, List[EventHandler]] = {}
+_listeners: dict[str, list[EventHandler]] = {}
 _lock = threading.Lock()
 
 
@@ -80,7 +81,7 @@ def emit(event_type: str, **kwargs: Any) -> None:
             _log.warning("event handler for %s failed: %s", event_type, exc)
 
 
-def listeners(event_type: str) -> List[EventHandler]:
+def listeners(event_type: str) -> list[EventHandler]:
     """Return a snapshot of handlers for ``event_type``."""
     with _lock:
         return list(_listeners.get(event_type, []))
@@ -93,4 +94,4 @@ def reset() -> None:
         _listeners = {}
 
 
-__all__ = ["on", "off", "emit", "listeners", "reset"]
+__all__ = ["emit", "listeners", "off", "on", "reset"]

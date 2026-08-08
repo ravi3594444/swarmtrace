@@ -17,7 +17,7 @@ import logging
 import queue
 import threading
 import time
-from typing import Callable, List, Optional, Tuple
+from collections.abc import Callable
 
 _log = logging.getLogger("swarmtrace")
 
@@ -29,7 +29,7 @@ class Sender:
         self,
         transport,
         repository,
-        config: Callable[[], Tuple[str, str]],
+        config: Callable[[], tuple[str, str]],
         *,
         sleep: Callable[[float], None] = time.sleep,
         batch_max_items: int = 20,
@@ -48,7 +48,7 @@ class Sender:
         self._retries = retries
         self._thread_name = thread_name
 
-        self._queue: "queue.Queue[dict]" = queue.Queue(maxsize=queue_max)
+        self._queue: queue.Queue[dict] = queue.Queue(maxsize=queue_max)
         self._started = False
         self._lock = threading.Lock()
 
@@ -70,7 +70,7 @@ class Sender:
         except queue.Full:
             _log.error("ingest queue full — trace dropped")
 
-    def drain_batch(self, max_items: int, timeout: float) -> List[dict]:
+    def drain_batch(self, max_items: int, timeout: float) -> list[dict]:
         """Drain up to ``max_items`` payloads from the queue.
 
         Blocks until at least one item is available (so the worker doesn't
@@ -78,7 +78,7 @@ class Sender:
         The ``timeout`` only applies to the FIRST item — once we have one,
         we drain non-blocking.
         """
-        batch: List[dict] = []
+        batch: list[dict] = []
         try:
             first = self._queue.get(timeout=timeout)
             batch.append(first)
@@ -107,16 +107,15 @@ class Sender:
     def _run(self) -> None:
         """Background send loop. Never dies — outer boundary logs and loops."""
         while True:
-            batch: List[dict] = []
+            batch: list[dict] = []
             try:
                 batch = self.drain_batch(self._batch_max_items, self._batch_flush_timeout)
                 if not batch:
                     continue
                 key, url = self._config()
-                if key and url:
-                    if self._send_with_retries(batch, key, url):
-                        for payload in batch:
-                            self._repository.mark_synced(payload.get("id", ""))
+                if key and url and self._send_with_retries(batch, key, url):
+                    for payload in batch:
+                        self._repository.mark_synced(payload.get("id", ""))
             except Exception as exc:
                 _log.error("worker error (thread continues): %s", exc)
             finally:
@@ -126,7 +125,7 @@ class Sender:
                     except Exception:
                         pass
 
-    def _send_with_retries(self, batch: List[dict], key: str, url: str) -> bool:
+    def _send_with_retries(self, batch: list[dict], key: str, url: str) -> bool:
         """Send one batch; return True on confirmed success."""
         for attempt in range(self._retries):
             try:

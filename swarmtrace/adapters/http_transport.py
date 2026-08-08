@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import gzip
 import json
-from typing import Any, Dict, List
+from typing import Any
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
 
@@ -55,9 +55,9 @@ def _ingest_error_from(err: HTTPError) -> IngestHTTPError:
     return IngestHTTPError(err.code or 0, str(err.reason or ""), body)
 
 
-def _span_to_payload(span: SpanRecord) -> Dict[str, Any]:
+def _span_to_payload(span: SpanRecord) -> dict[str, Any]:
     """Convert a canonical SpanRecord into the legacy /api/ingest payload shape."""
-    payload: Dict[str, Any] = {
+    payload: dict[str, Any] = {
         "id": span.span_id,
         "parent_id": span.parent_span_id,
         "function": span.name,
@@ -85,12 +85,12 @@ def _span_to_payload(span: SpanRecord) -> Dict[str, Any]:
 class HttpTransport:
     """Send trace payloads to ``{endpoint}/api/ingest`` over HTTPS."""
 
-    def send(self, spans: List[SpanRecord], key: str, url: str) -> None:
+    def send(self, spans: list[SpanRecord], key: str, url: str) -> None:
         """Implement ``SpanTransport.send`` by mapping spans to ingest payloads."""
         payloads = [_span_to_payload(span) for span in spans]
         self.send_batch(payloads, key, url)
 
-    def send_batch(self, payloads: List[dict], key: str, url: str) -> None:
+    def send_batch(self, payloads: list[dict], key: str, url: str) -> None:
         """Send a BATCH of traces as one gzip'd POST.
 
         Body shape: ``{"traces": [...]}``. gzip-compressed — trace payloads

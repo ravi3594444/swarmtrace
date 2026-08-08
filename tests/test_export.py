@@ -22,9 +22,9 @@ import pytest
 def export_mod(tmp_path, monkeypatch):
     """Reload storage + export against a temporary DB file, per test."""
     monkeypatch.setenv("SWARMTRACE_DB_PATH", str(tmp_path / "traces.db"))
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     importlib.reload(storage)
-    import swarmtrace.export as export
+    from swarmtrace import export
     importlib.reload(export)
     yield export
     if storage._conn is not None:
@@ -33,18 +33,18 @@ def export_mod(tmp_path, monkeypatch):
 
 
 def _save(storage_mod, **overrides):
-    defaults = dict(
-        id_="t1", parent_id=None, function="fn", args="()", output="out",
-        latency_sec=0.1, error=None,
-        timestamp="2026-01-01T00:00:00+00:00", input_tokens=10,
-        output_tokens=5, cost_usd=0.001,
-    )
+    defaults = {
+        "id_": "t1", "parent_id": None, "function": "fn", "args": "()", "output": "out",
+        "latency_sec": 0.1, "error": None,
+        "timestamp": "2026-01-01T00:00:00+00:00", "input_tokens": 10,
+        "output_tokens": 5, "cost_usd": 0.001,
+    }
     defaults.update(overrides)
     storage_mod.save_trace(**defaults)
 
 
 def test_export_json_writes_all_traces(export_mod, tmp_path):
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="a")
     _save(storage, id_="b")
 
@@ -62,7 +62,7 @@ def test_export_json_includes_every_column_no_hardcoded_keys(export_mod, tmp_pat
     """_traces_to_dicts uses dict(row) with no hardcoded key list, so
     every column (including ones added by future migrations) should be
     present automatically."""
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="a")
 
     out = tmp_path / "out.json"
@@ -85,7 +85,7 @@ def test_export_json_empty_db_writes_empty_list(export_mod, tmp_path):
 
 
 def test_export_csv_writes_header_and_rows(export_mod, tmp_path):
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="a", function="fn_a")
     _save(storage, id_="b", function="fn_b")
 
@@ -109,7 +109,7 @@ def test_export_csv_empty_db_does_not_create_file(export_mod, tmp_path):
 
 
 def test_export_csv_fieldnames_match_first_row_keys(export_mod, tmp_path):
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="a")
 
     out = tmp_path / "out.csv"
@@ -124,7 +124,7 @@ def test_export_csv_fieldnames_match_first_row_keys(export_mod, tmp_path):
 
 
 def test_main_defaults_to_json_export(export_mod, tmp_path, monkeypatch):
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="a")
 
     monkeypatch.chdir(tmp_path)
@@ -135,7 +135,7 @@ def test_main_defaults_to_json_export(export_mod, tmp_path, monkeypatch):
 
 
 def test_main_respects_format_csv_flag(export_mod, tmp_path, monkeypatch):
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="a")
 
     monkeypatch.chdir(tmp_path)
@@ -147,7 +147,7 @@ def test_main_respects_format_csv_flag(export_mod, tmp_path, monkeypatch):
 
 
 def test_main_respects_output_path_flag(export_mod, tmp_path, monkeypatch):
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="a")
 
     custom = tmp_path / "custom_name.json"
@@ -161,7 +161,7 @@ def test_main_respects_output_path_flag(export_mod, tmp_path, monkeypatch):
 
 
 def test_main_combines_format_and_output_flags(export_mod, tmp_path, monkeypatch):
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="a")
 
     custom = tmp_path / "custom.csv"
@@ -244,7 +244,7 @@ def test_export_csv_neutralizes_formula_injection_in_output(export_mod, tmp_path
     """End-to-end: a trace whose output starts with '=' must be exported
     with the leading-quote escape, so opening the CSV in Excel cannot
     execute the formula."""
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="evil", output="=cmd|'/c calc'!A1")
 
     out = tmp_path / "evil.csv"
@@ -259,7 +259,7 @@ def test_export_csv_neutralizes_formula_injection_in_output(export_mod, tmp_path
 
 def test_export_csv_neutralizes_formula_injection_in_args(export_mod, tmp_path):
     """Same attack via the args column."""
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="evil2", args='+HYPERLINK("http://evil","click")')
 
     out = tmp_path / "evil2.csv"
@@ -275,7 +275,7 @@ def test_export_csv_neutralizes_formula_injection_in_args(export_mod, tmp_path):
 def test_export_csv_preserves_safe_output(export_mod, tmp_path):
     """Regression guard: don't over-sanitize. A normal output string
     must pass through unchanged so the export stays useful for debugging."""
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="safe", output="the answer is 42")
 
     out = tmp_path / "safe.csv"
@@ -289,7 +289,7 @@ def test_export_csv_preserves_safe_output(export_mod, tmp_path):
 def test_export_json_does_not_apply_csv_sanitization(export_mod, tmp_path):
     """JSON export must NOT be sanitized — JSON consumers don't interpret
     =/+/-/@ as formulas. Sanitizing JSON would corrupt the data."""
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     _save(storage, id_="raw", output="=cmd|'/c calc'!A1")
 
     out = tmp_path / "raw.json"

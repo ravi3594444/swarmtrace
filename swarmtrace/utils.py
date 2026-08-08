@@ -6,8 +6,9 @@ token counting, and performance monitoring.
 """
 
 import time
-from typing import Any, Dict
 from dataclasses import dataclass
+from typing import Any
+
 
 @dataclass
 class SwarmTraceRecord:
@@ -19,7 +20,7 @@ class SwarmTraceRecord:
     duration_ms: float
     status: str = "success"
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert trace record to dictionary format."""
         return {
             'agent_id': self.agent_id,

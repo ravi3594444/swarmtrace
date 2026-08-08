@@ -18,11 +18,10 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from swarmtrace.redact import redact
 from swarmtrace.span_model import SpanRecord
-
 
 OTLP_KIND_MAP = {
     0: "function",  # SPAN_KIND_UNSPECIFIED
@@ -41,7 +40,7 @@ def _hex_to_str(hex_val: str) -> str:
     return hex_val.lower()
 
 
-def _nano_to_dt(nano: Any) -> Optional[datetime]:
+def _nano_to_dt(nano: Any) -> datetime | None:
     """Convert nanoseconds-since-epoch to a UTC datetime."""
     if nano is None:
         return None
@@ -80,11 +79,11 @@ def _any_value_to_python(value: Any) -> Any:
     return None
 
 
-def _otlp_attributes_to_dict(attrs: Any) -> Dict[str, Any]:
+def _otlp_attributes_to_dict(attrs: Any) -> dict[str, Any]:
     """Convert a list of OTLP key/value attributes into a Python dict."""
     if not isinstance(attrs, list):
         return {}
-    result: Dict[str, Any] = {}
+    result: dict[str, Any] = {}
     for item in attrs:
         if not isinstance(item, dict):
             continue
@@ -96,10 +95,10 @@ def _otlp_attributes_to_dict(attrs: Any) -> Dict[str, Any]:
 
 
 def _derive_agent_id_and_name(
-    resource_attrs: Dict[str, Any],
-    span_attrs: Dict[str, Any],
+    resource_attrs: dict[str, Any],
+    span_attrs: dict[str, Any],
     span_name: str,
-) -> tuple[Optional[str], Optional[str]]:
+) -> tuple[str | None, str | None]:
     """Derive agent_id / agent_name from OTLP resource and span attributes."""
     # Explicit SwarmTrace annotations take precedence.
     agent_id = span_attrs.get("swarmtrace.agent_id") or resource_attrs.get("swarmtrace.agent_id")
@@ -122,8 +121,8 @@ def _derive_agent_id_and_name(
 
 
 def _pick(
-    span_attrs: Dict[str, Any],
-    resource_attrs: Dict[str, Any],
+    span_attrs: dict[str, Any],
+    resource_attrs: dict[str, Any],
     *keys: str,
     default: Any = None,
 ) -> Any:
@@ -136,8 +135,8 @@ def _pick(
 
 
 def otlp_span_to_span_record(
-    otlp_span: Dict[str, Any],
-    resource_attrs: Optional[Dict[str, Any]] = None,
+    otlp_span: dict[str, Any],
+    resource_attrs: dict[str, Any] | None = None,
 ) -> SpanRecord:
     """Convert one OTLP span dict into a SwarmTrace SpanRecord.
 
@@ -213,9 +212,9 @@ def otlp_span_to_span_record(
     )
 
 
-def otlp_payload_to_span_records(payload: Dict[str, Any]) -> List[SpanRecord]:
+def otlp_payload_to_span_records(payload: dict[str, Any]) -> list[SpanRecord]:
     """Convert a full OTLP JSON trace payload into a list of SpanRecords."""
-    records: List[SpanRecord] = []
+    records: list[SpanRecord] = []
     resource_spans = payload.get("resourceSpans") or []
     for resource_span in resource_spans:
         if not isinstance(resource_span, dict):
@@ -235,7 +234,7 @@ def otlp_payload_to_span_records(payload: Dict[str, Any]) -> List[SpanRecord]:
     return records
 
 
-def validate_otlp_payload(payload: Any) -> Optional[str]:
+def validate_otlp_payload(payload: Any) -> str | None:
     """Return an error string if the payload is invalid, or None if OK."""
     if not isinstance(payload, dict):
         return "OTLP payload must be a JSON object"
@@ -247,8 +246,8 @@ def validate_otlp_payload(payload: Any) -> Optional[str]:
 
 
 __all__ = [
-    "otlp_span_to_span_record",
-    "otlp_payload_to_span_records",
-    "validate_otlp_payload",
     "OTLP_KIND_MAP",
+    "otlp_payload_to_span_records",
+    "otlp_span_to_span_record",
+    "validate_otlp_payload",
 ]

@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 
 @dataclass
@@ -45,23 +45,23 @@ class UpstreamServer:
 
     name: str
     command: str
-    args: List[str] = field(default_factory=list)
-    env: Optional[Dict[str, str]] = None
-    cwd: Optional[str] = None
-    tool_prefix: Optional[str] = None
+    args: list[str] = field(default_factory=list)
+    env: dict[str, str] | None = None
+    cwd: str | None = None
+    tool_prefix: str | None = None
 
 
 @dataclass
 class GatewayConfig:
     """Top-level gateway configuration."""
 
-    servers: List[UpstreamServer]
+    servers: list[UpstreamServer]
     host: str = "127.0.0.1"
     port: int = 8000
     log_level: str = "INFO"
 
 
-def _load_upstream(name: str, data: Dict[str, Any]) -> UpstreamServer:
+def _load_upstream(name: str, data: dict[str, Any]) -> UpstreamServer:
     """Parse a single upstream server definition."""
     env = data.get("env")
     if env is not None and not isinstance(env, dict):
@@ -106,7 +106,7 @@ def load_config(path: str) -> GatewayConfig:
     if not isinstance(data, dict):
         raise ValueError("gateway config must be a JSON object")
 
-    servers: List[UpstreamServer] = []
+    servers: list[UpstreamServer] = []
 
     generic_servers = data.get("servers")
     if generic_servers is not None:
@@ -162,4 +162,4 @@ def save_config(path: str, config: GatewayConfig) -> None:
         json.dump(payload, f, indent=2)
 
 
-__all__ = ["UpstreamServer", "GatewayConfig", "load_config", "save_config"]
+__all__ = ["GatewayConfig", "UpstreamServer", "load_config", "save_config"]

@@ -26,7 +26,7 @@ skip the upload entirely.
 
 import json
 
-import swarmtrace.regression as regression
+from swarmtrace import regression
 
 
 def test_llm_raising_value_error_falls_back_to_neutral():
