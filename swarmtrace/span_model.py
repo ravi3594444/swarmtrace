@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any
 
 
 @dataclass
@@ -28,21 +28,21 @@ class SpanRecord:
     name: str
     kind: str
     start_time: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
-    end_time: Optional[datetime] = None
+    end_time: datetime | None = None
     status: str = "ok"
-    parent_span_id: Optional[str] = None
-    trace_id: Optional[str] = None
-    agent_id: Optional[str] = None
-    agent_name: Optional[str] = None
-    session_id: Optional[str] = None
-    args: Optional[str] = None
-    output: Optional[str] = None
-    error: Optional[str] = None
+    parent_span_id: str | None = None
+    trace_id: str | None = None
+    agent_id: str | None = None
+    agent_name: str | None = None
+    session_id: str | None = None
+    args: str | None = None
+    output: str | None = None
+    error: str | None = None
     latency_sec: float = 0.0
     input_tokens: int = 0
     output_tokens: int = 0
     cost_usd: float = 0.0
-    attributes: Dict[str, Any] = field(default_factory=dict)
+    attributes: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.end_time is not None and self.latency_sec == 0.0:
@@ -52,7 +52,7 @@ class SpanRecord:
         if self.trace_id is None:
             self.trace_id = self.span_id
 
-    def to_storage_dict(self) -> Dict[str, Any]:
+    def to_storage_dict(self) -> dict[str, Any]:
         """Return kwargs for the ``storage.save_trace`` function.
 
         ``trace_id`` and ``attributes`` are included so the SQLite repository
@@ -81,10 +81,10 @@ class SpanRecord:
         }
 
     @classmethod
-    def from_storage_row(cls, row: Dict[str, Any]) -> "SpanRecord":
+    def from_storage_row(cls, row: dict[str, Any]) -> SpanRecord:
         """Build a SpanRecord from a sqlite3.Row dict."""
         raw_attrs = row.get("attributes")
-        attributes: Dict[str, Any] = {}
+        attributes: dict[str, Any] = {}
         if isinstance(raw_attrs, str):
             try:
                 attributes = json.loads(raw_attrs)

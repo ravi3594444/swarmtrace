@@ -28,8 +28,7 @@ reassembled from earlier chunks.
 
 from __future__ import annotations
 
-import swarmtrace.fov as fov
-
+from swarmtrace import fov
 
 # ---------------------------------------------------------------------------
 # Value-method redaction — ALWAYS redact fill/type/press/select_option values

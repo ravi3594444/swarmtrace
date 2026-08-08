@@ -26,10 +26,8 @@ from unittest.mock import patch
 
 import pytest
 
-import swarmtrace.tracer as tracer
-import swarmtrace.storage as storage
+from swarmtrace import storage, tracer
 from swarmtrace.delivery.sender import Sender
-
 
 # --------------------------------------------------------------------------
 # Fakes
@@ -319,6 +317,7 @@ class TestResyncStillSingleObject:
 
     def test_resync_uses_send_single_not_batch(self, fake_runtime):
         from datetime import datetime, timezone
+
         from swarmtrace.runtime import resync as runtime_resync
         from swarmtrace.span_model import SpanRecord
 

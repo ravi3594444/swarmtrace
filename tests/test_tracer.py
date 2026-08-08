@@ -4,8 +4,7 @@ import asyncio
 
 import pytest
 
-import swarmtrace.tracer as tracer
-
+from swarmtrace import tracer
 
 _SAVE_TRACE_FIELD_ORDER = (
     "id_", "parent_id", "function", "args", "output", "latency_sec",
@@ -562,7 +561,7 @@ def test_distinct_lambdas_in_same_outer_function_get_distinct_ids(records):
 def _row_dict(t):
     """Convert a save_trace positional-args tuple to the dict shape the API
     receives from Supabase."""
-    (id_, parent_id, func, args, output, lat, err, ts, in_t, out_t, cost,
+    (id_, parent_id, func, args, _output, _lat, err, ts, _in_t, _out_t, _cost,
      kind, agent_id, agent_name, _session_id) = t
     return {
         "id": id_, "parent_id": parent_id, "function": func,
@@ -774,7 +773,7 @@ def test_small_args_unaffected_by_cap(records):
 # insecure. The worker then skips sending (matching the "no endpoint
 # configured" path) instead of leaking the key.
 
-from swarmtrace.tracer import _validate_endpoint_scheme, _remote_config
+from swarmtrace.tracer import _remote_config, _validate_endpoint_scheme
 
 
 def test_validate_endpoint_empty_is_ok():

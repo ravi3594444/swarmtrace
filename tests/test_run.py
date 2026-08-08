@@ -6,8 +6,6 @@ import hashlib
 import pytest
 
 import swarmtrace
-import swarmtrace.tracer as tracer
-
 
 _SAVE_TRACE_FIELD_ORDER = (
     "id_", "parent_id", "function", "args", "output", "latency_sec",
@@ -89,7 +87,7 @@ def test_sync_run_creates_root_agent_span(records):
     assert _row_function(row) == "research-agent"
     assert _row_kind(row) == "agent"
     assert _row_parent_id(row) is None
-    assert _row_agent_id(row) == hashlib.sha256("research-agent".encode()).hexdigest()
+    assert _row_agent_id(row) == hashlib.sha256(b"research-agent").hexdigest()
     assert _row_agent_name(row) == "research-agent"
     assert _row_error(row) is None
 
@@ -119,9 +117,8 @@ def test_async_run_creates_root_agent_span(records):
 
 
 def test_nested_span_under_run_sets_parent(records):
-    with swarmtrace.run("research-agent"):
-        with swarmtrace.span("fetch-data", kind="tool"):
-            pass
+    with swarmtrace.run("research-agent"), swarmtrace.span("fetch-data", kind="tool"):
+        pass
 
     assert len(records) == 2
     run_row = _find_row(records, "research-agent")
@@ -150,10 +147,9 @@ def test_run_and_observe_share_context(records):
 
 
 def test_run_inherits_session(records):
-    with swarmtrace.session("conversation-42"):
-        with swarmtrace.run("research-agent"):
-            with swarmtrace.span("fetch-data", kind="tool"):
-                pass
+    with swarmtrace.session("conversation-42"), swarmtrace.run("research-agent"):
+        with swarmtrace.span("fetch-data", kind="tool"):
+            pass
 
     assert len(records) == 2
     run_row = _find_row(records, "research-agent")
@@ -166,9 +162,8 @@ def test_run_exception_propagates_and_records_error(records):
     class CustomError(Exception):
         pass
 
-    with pytest.raises(CustomError):
-        with swarmtrace.run("research-agent"):
-            raise CustomError("boom")
+    with pytest.raises(CustomError), swarmtrace.run("research-agent"):
+        raise CustomError("boom")
 
     assert len(records) == 1
     row = records[0]

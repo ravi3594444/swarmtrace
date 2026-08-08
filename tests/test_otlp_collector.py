@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
-from typing import Any, Dict, List
+from typing import Any
 
 import pytest
 
@@ -18,13 +18,13 @@ class FakeHttpTransport(HttpTransport):
     """Records batches instead of making real HTTP calls."""
 
     def __init__(self) -> None:
-        self.batches: List[List[SpanRecord]] = []
-        self.singles: List[Dict[str, Any]] = []
+        self.batches: list[list[SpanRecord]] = []
+        self.singles: list[dict[str, Any]] = []
 
-    def send(self, spans: List[SpanRecord], key: str, url: str) -> None:
+    def send(self, spans: list[SpanRecord], key: str, url: str) -> None:
         self.batches.append(list(spans))
 
-    def send_batch(self, payloads: List[dict], key: str, url: str) -> None:
+    def send_batch(self, payloads: list[dict], key: str, url: str) -> None:
         self.batches.append(payloads)
 
     def send_single(self, payload: dict, key: str, url: str) -> None:
@@ -34,7 +34,7 @@ class FakeHttpTransport(HttpTransport):
 @pytest.fixture
 def collector(tmp_path):
     transport = FakeHttpTransport()
-    seen: List[List[SpanRecord]] = []
+    seen: list[list[SpanRecord]] = []
     c = OtlpCollector(
         host="127.0.0.1",
         port=0,  # let OS choose a free port

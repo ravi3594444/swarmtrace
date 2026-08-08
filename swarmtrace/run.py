@@ -7,7 +7,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from swarmtrace.runtime import get_runtime
 from swarmtrace.span_model import SpanRecord
@@ -25,7 +25,7 @@ def _stable_agent_id(name: str) -> str:
     return hashlib.sha256(name.encode("utf-8")).hexdigest()
 
 
-def _now() -> Tuple[float, datetime]:
+def _now() -> tuple[float, datetime]:
     return time.perf_counter(), datetime.now(timezone.utc)
 
 
@@ -36,10 +36,10 @@ class _SpanContext:
         self,
         name: str,
         kind: str,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         *,
         is_run: bool = False,
-        attributes: Optional[Dict[str, Any]] = None,
+        attributes: dict[str, Any] | None = None,
     ):
         self.name = name
         self.kind = kind
@@ -48,13 +48,13 @@ class _SpanContext:
         self.attributes = attributes or {}
         self.span_id = uuid.uuid4().hex
         self._start: float = 0.0
-        self._start_time: Optional[datetime] = None
-        self._error: Optional[str] = None
-        self._ctx_manager: Optional[object] = None
-        self.parent_id: Optional[str] = None
-        self.trace_id: Optional[str] = None
-        self.agent_id: Optional[str] = None
-        self.agent_name: Optional[str] = None
+        self._start_time: datetime | None = None
+        self._error: str | None = None
+        self._ctx_manager: object | None = None
+        self.parent_id: str | None = None
+        self.trace_id: str | None = None
+        self.agent_id: str | None = None
+        self.agent_name: str | None = None
 
     def _build_trace_context(self) -> TraceContext:
         parent = current_parent()
@@ -78,7 +78,7 @@ class _SpanContext:
             session_id=session_id,
         )
 
-    def _record(self, exc: Optional[BaseException]) -> None:
+    def _record(self, exc: BaseException | None) -> None:
         self._error = str(exc) if exc is not None else None
         latency = round(time.perf_counter() - self._start, 3)
         end_time = datetime.now(timezone.utc)
@@ -100,7 +100,7 @@ class _SpanContext:
         )
         get_runtime().record(span)
 
-    def __enter__(self) -> "_SpanContext":
+    def __enter__(self) -> _SpanContext:
         self._start, self._start_time = _now()
         self._ctx_manager = using(self._build_trace_context())
         self._ctx_manager.__enter__()
@@ -113,7 +113,7 @@ class _SpanContext:
             if self._ctx_manager is not None:
                 self._ctx_manager.__exit__(exc_type, exc, tb)
 
-    async def __aenter__(self) -> "_SpanContext":
+    async def __aenter__(self) -> _SpanContext:
         return self.__enter__()
 
     async def __aexit__(self, exc_type, exc, tb) -> None:
@@ -123,9 +123,9 @@ class _SpanContext:
 def run(
     name: str,
     *,
-    session_id: Optional[str] = None,
+    session_id: str | None = None,
     kind: str = "agent",
-    attributes: Optional[Dict[str, Any]] = None,
+    attributes: dict[str, Any] | None = None,
 ) -> _SpanContext:
     return _SpanContext(name, kind=kind, session_id=session_id, is_run=True, attributes=attributes)
 
@@ -134,7 +134,7 @@ def span(
     name: str,
     *,
     kind: str = "function",
-    attributes: Optional[Dict[str, Any]] = None,
+    attributes: dict[str, Any] | None = None,
 ) -> _SpanContext:
     return _SpanContext(name, kind=kind, is_run=False, attributes=attributes)
 
@@ -155,4 +155,4 @@ def current_span_attributes(**attrs: Any):
         pass
 
 
-__all__ = ["run", "span", "current_span_attributes"]
+__all__ = ["current_span_attributes", "run", "span"]

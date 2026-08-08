@@ -15,7 +15,7 @@ import threading
 
 import pytest
 
-import swarmtrace.fov as fov
+from swarmtrace import fov
 
 
 @pytest.fixture(autouse=True)

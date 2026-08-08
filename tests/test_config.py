@@ -7,8 +7,7 @@ need to import tracer internals.
 
 import pytest
 
-import swarmtrace.config as config
-import swarmtrace.tracer as tracer
+from swarmtrace import config, tracer
 
 
 @pytest.fixture(autouse=True)

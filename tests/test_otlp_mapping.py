@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
-
-import pytest
+from datetime import datetime
 
 from swarmtrace.otlp_mapping import (
     OTLP_KIND_MAP,

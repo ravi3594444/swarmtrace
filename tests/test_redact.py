@@ -13,11 +13,9 @@ unredacted.
 
 from __future__ import annotations
 
-import re
 import unittest
 
-from swarmtrace.redact import redact, luhn_ok
-
+from swarmtrace.redact import luhn_ok, redact
 
 # --------------------------------------------------------------------------
 # Test PANs — these are issuer-published test card numbers that pass Luhn

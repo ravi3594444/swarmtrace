@@ -16,19 +16,18 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Optional, Tuple
 from urllib.parse import urlparse
 
 _log = logging.getLogger("swarmtrace")
 
-_api_key: Optional[str] = None
-_endpoint: Optional[str] = None
+_api_key: str | None = None
+_endpoint: str | None = None
 
 
 def configure_remote(
     *,
-    api_key: Optional[str] = None,
-    endpoint: Optional[str] = None,
+    api_key: str | None = None,
+    endpoint: str | None = None,
 ) -> None:
     """Set process-local remote ingest configuration.
 
@@ -54,7 +53,7 @@ def clear_remote_config() -> None:
     _endpoint = None
 
 
-def remote_config() -> Tuple[str, str]:
+def remote_config() -> tuple[str, str]:
     """Return ``(api_key, normalized_endpoint)`` for remote ingest.
 
     If no endpoint is configured, the endpoint component is ``""``. If an
@@ -67,9 +66,9 @@ def remote_config() -> Tuple[str, str]:
 
 def resolve_remote_config(
     *,
-    api_key_override: Optional[str] = None,
-    endpoint_override: Optional[str] = None,
-) -> Tuple[str, str]:
+    api_key_override: str | None = None,
+    endpoint_override: str | None = None,
+) -> tuple[str, str]:
     """Resolve remote config with optional explicit overrides.
 
     This helper exists so ``tracer.py`` can preserve its historical private
@@ -93,7 +92,7 @@ def resolve_remote_config(
     return key, normalize_base_url(raw_url)
 
 
-def validate_endpoint_scheme(url: str) -> Tuple[bool, str]:
+def validate_endpoint_scheme(url: str) -> tuple[bool, str]:
     """Check whether *url* is safe to send the SwarmTrace API key to.
 
     Returns ``(ok, reason)``. ``ok=True`` means safe (or empty — no endpoint

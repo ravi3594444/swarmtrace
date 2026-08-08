@@ -8,7 +8,7 @@ a ``Runtime`` built from these fakes.
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from swarmtrace.span_model import SpanRecord
 
@@ -17,13 +17,13 @@ class FakeRepository:
     """In-memory SpanRepository that records every saved span."""
 
     def __init__(self) -> None:
-        self.spans: List[SpanRecord] = []
+        self.spans: list[SpanRecord] = []
         self._synced: set[str] = set()
 
     def save(self, span: SpanRecord) -> None:
         self.spans.append(span)
 
-    def get_children(self, span_id: str) -> List[SpanRecord]:
+    def get_children(self, span_id: str) -> list[SpanRecord]:
         return [s for s in self.spans if s.parent_span_id == span_id]
 
     def mark_synced(self, span_id: str, synced: int = 1) -> None:
@@ -32,7 +32,7 @@ class FakeRepository:
         else:
             self._synced.discard(span_id)
 
-    def get_unsynced(self, limit: int = 100) -> List[SpanRecord]:
+    def get_unsynced(self, limit: int = 100) -> list[SpanRecord]:
         return [s for s in self.spans[:limit] if s.span_id not in self._synced]
 
     def is_synced(self, span_id: str) -> bool:
@@ -45,15 +45,15 @@ class FakeTransport:
     def __init__(
         self,
         *,
-        raise_on_batch: Optional[Exception] = None,
-        raise_on_single: Optional[Exception] = None,
+        raise_on_batch: Exception | None = None,
+        raise_on_single: Exception | None = None,
     ) -> None:
-        self.batches: List[List[Dict[str, Any]]] = []
-        self.singles: List[Dict[str, Any]] = []
+        self.batches: list[list[dict[str, Any]]] = []
+        self.singles: list[dict[str, Any]] = []
         self.raise_on_batch = raise_on_batch
         self.raise_on_single = raise_on_single
 
-    def send(self, spans: List[SpanRecord], key: str, url: str) -> None:
+    def send(self, spans: list[SpanRecord], key: str, url: str) -> None:
         """Implement ``SpanTransport.send`` by delegating to ``send_batch``."""
         payloads = []
         for s in spans:
@@ -80,12 +80,12 @@ class FakeTransport:
             payloads.append(payload)
         self.send_batch(payloads, key, url)
 
-    def send_batch(self, payloads: List[Dict[str, Any]], key: str, url: str) -> None:
+    def send_batch(self, payloads: list[dict[str, Any]], key: str, url: str) -> None:
         if self.raise_on_batch is not None:
             raise self.raise_on_batch
         self.batches.append(list(payloads))
 
-    def send_single(self, payload: Dict[str, Any], key: str, url: str) -> None:
+    def send_single(self, payload: dict[str, Any], key: str, url: str) -> None:
         if self.raise_on_single is not None:
             raise self.raise_on_single
         self.singles.append(payload)

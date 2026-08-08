@@ -3,7 +3,7 @@ import logging
 import os
 import time
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any
 from urllib.request import Request, urlopen
 
 from swarmtrace.redact import redact
@@ -33,7 +33,7 @@ def _get_llm():
 
     api_key = os.environ.get("LIGHTNING_API_KEY")
     if not api_key:
-        raise EnvironmentError(
+        raise OSError(
             "[swarmtrace] LIGHTNING_API_KEY environment variable is not set.\n"
             "Export it before using regression detection:\n"
             "  export LIGHTNING_API_KEY=your_key_here\n"
@@ -105,17 +105,17 @@ def _cap_text(value: Any, limit: int = MAX_TEXT_LEN) -> str:
 
 def report_run(
     *,
-    run_id: Optional[str] = None,
-    name: Optional[str] = None,
+    run_id: str | None = None,
+    name: str | None = None,
     threshold: float = DEFAULT_THRESHOLD,
-    version_a_prompt: Optional[str] = None,
-    version_b_prompt: Optional[str] = None,
+    version_a_prompt: str | None = None,
+    version_b_prompt: str | None = None,
     inputs_count: int,
     regressions_count: int,
     duration_sec: float,
-    results: List[Dict[str, Any]],
-    api_key: Optional[str] = None,
-    endpoint: Optional[str] = None,
+    results: list[dict[str, Any]],
+    api_key: str | None = None,
+    endpoint: str | None = None,
 ) -> bool:
     """Report a prompt-regression run to the SwarmTrace dashboard.
 
@@ -216,9 +216,9 @@ def compare(func, inputs: list, version_a_prompt: str, version_b_prompt: str,
             threshold: float = DEFAULT_THRESHOLD, llm=None,
             *,
             report_to_dashboard: bool = False,
-            run_name: Optional[str] = None,
-            api_key: Optional[str] = None,
-            endpoint: Optional[str] = None):
+            run_name: str | None = None,
+            api_key: str | None = None,
+            endpoint: str | None = None):
     """
     Compare two prompt versions against the same inputs.
     Detects regressions automatically.
@@ -255,7 +255,7 @@ def compare(func, inputs: list, version_a_prompt: str, version_b_prompt: str,
     _log.info("-" * 85)
 
     regressions = 0
-    results: List[Dict[str, Any]] = []
+    results: list[dict[str, Any]] = []
     start_total = time.time()
 
     for input_text in inputs:

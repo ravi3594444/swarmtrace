@@ -4,6 +4,53 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.2] — 2026-08-08
+
+### Chore
+- **Cleared the ~558 non-critical ruff findings noted as outstanding in the**
+  **0.7.1 audit** (import sorting, deprecated `typing` generics, unused
+  imports/variables, and a handful of small simplifications) — down to 86,
+  all deliberately left for human review (see below). None of this touches
+  the CI-blocking subset (`E9,F63,F7,F82`), which was already clean.
+- Modernized `Optional[X]` → `X | None` and `List`/`Dict`/`Tuple` → the
+  builtin generics across `swarmtrace/` and `tests/` (target is already
+  py310+), then removed the `typing` imports that became dead as a result.
+  76 of those "unused import" removals were mechanical fallout from this
+  rewrite; 4 were pre-existing and **not** touched because they're
+  intentional: `mcp_gateway.py`'s `uvicorn` and the two SDK-presence checks
+  in `test_auto_instrument.py` (`openai`/`anthropic`) only exist to trigger
+  `ImportError` if the optional dependency is missing, and
+  `replay.py`'s `from swarmtrace.cli import replay` is a documented
+  backwards-compat re-export. All four now carry `# noqa: F401` explaining
+  why.
+- Fixed 8 test files that had the executable bit set with no shebang
+  (`chmod -x`; they're pytest modules, never run directly).
+- Collapsed a few nested `with`/`if` statements ruff considered safe to
+  merge (`SIM117`/`SIM102`) and prefixed genuinely-unused unpacked/assigned
+  variables with `_` (`RUF059`/`F841`) — all confirmed by hand to have zero
+  other references before touching, then verified against the full suite.
+- **Deliberately left unfixed** — these need case-by-case judgment, not a
+  blanket pass, and several sites likely rely on the "failure isolation"
+  pattern noted in earlier audits (swallowing errors so a transport/reporting
+  failure can't break a caller's actual work):
+  - `BLE001` (70) / `S110` (7) — blind `except`/`except: pass`. Narrowing
+    each one requires knowing whether the broad catch is intentional
+    isolation or a real gap; guessing wrong risks turning a deliberately
+    silent failure path into a crash.
+  - `TRY004` (4) — suggests `ValueError` → `TypeError` in a few spots.
+    Changing the exception type a public function raises is a
+    compatibility-sensitive decision, not a style fix.
+  - `SIM117` (3) — nested `with` in `test_resilience.py` (unittest
+    `assertLogs` + `patch`) and the async case in `test_run.py`; ruff itself
+    declines to auto-fix these, unlike the 3 it merged without hesitation.
+  - `PYI034` (2) — `_SpanContext.__enter__`/`__aenter__` returning `Self`
+    instead of the concrete type. No runtime effect (no type checker runs
+    in CI) and doing it correctly on a py310 floor needs either
+    `from __future__ import annotations` or a version-guarded import;
+    left for a deliberate pass rather than a rushed one.
+- Full suites re-verified clean after every step: 404 Python tests, 267
+  frontend tests, `tsc --noEmit`, eslint. Bumped to 0.7.2.
+
 ## [0.7.1] — 2026-08-07
 
 ### Security

@@ -14,9 +14,8 @@ import types
 
 import pytest
 
-import swarmtrace.tracer as tracer
 import swarmtrace.auto_instrument as ai
-
+from swarmtrace import tracer
 
 _SAVE_TRACE_FIELD_ORDER = (
     "id_", "parent_id", "function", "args", "output", "latency_sec",
@@ -52,7 +51,7 @@ def records(monkeypatch, fake_runtime):
 
 def _has_openai() -> bool:
     try:
-        import openai  # noqa: F401
+        import openai  # noqa: F401 -- presence check only
         return True
     except Exception:
         return False
@@ -216,7 +215,7 @@ def test_patch_openai_redacts_api_key_in_error_message(records, monkeypatch):
 
 def _has_anthropic() -> bool:
     try:
-        import anthropic  # noqa: F401
+        import anthropic  # noqa: F401 -- presence check only
         return True
     except Exception:
         return False

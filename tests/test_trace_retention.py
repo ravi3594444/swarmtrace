@@ -6,13 +6,13 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+import swarmtrace.storage as storage_module
 from swarmtrace.storage import (
     RETENTION_DAYS,
     get_traces,
     purge_now,
     save_trace,
 )
-import swarmtrace.storage as storage_module
 
 
 @pytest.fixture

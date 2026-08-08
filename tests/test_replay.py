@@ -20,9 +20,9 @@ import pytest
 def replay_mod(tmp_path, monkeypatch):
     """Reload storage + replay against a temporary DB file, per test."""
     monkeypatch.setenv("SWARMTRACE_DB_PATH", str(tmp_path / "traces.db"))
-    import swarmtrace.storage as storage
+    from swarmtrace import storage
     importlib.reload(storage)
-    import swarmtrace.replay as replay
+    from swarmtrace import replay
     importlib.reload(replay)
     yield replay
     if storage._conn is not None:
@@ -31,13 +31,13 @@ def replay_mod(tmp_path, monkeypatch):
 
 
 def _save(function="fn", error=None, trace_id="t1", **overrides):
-    import swarmtrace.storage as storage
-    defaults = dict(
-        id_=trace_id, parent_id=None, function=function, args="()", output="out",
-        latency_sec=0.1, error=error,
-        timestamp="2026-01-01T00:00:00+00:00", input_tokens=10,
-        output_tokens=5, cost_usd=0.001,
-    )
+    from swarmtrace import storage
+    defaults = {
+        "id_": trace_id, "parent_id": None, "function": function, "args": "()", "output": "out",
+        "latency_sec": 0.1, "error": error,
+        "timestamp": "2026-01-01T00:00:00+00:00", "input_tokens": 10,
+        "output_tokens": 5, "cost_usd": 0.001,
+    }
     defaults.update(overrides)
     storage.save_trace(**defaults)
 
@@ -95,7 +95,7 @@ def test_show_failures_truncates_long_error_text(replay_mod, caplog):
 # ── replay() re-export from swarmtrace.cli ──────────────────────────────────
 
 def test_replay_is_reexported_from_cli(replay_mod):
-    import swarmtrace.cli as cli
+    from swarmtrace import cli
     assert replay_mod.replay is cli.replay
 
 

@@ -1,7 +1,8 @@
 import asyncio
-import time
 import statistics
-from swarmtrace.tracer import observe, init
+import time
+
+from swarmtrace.tracer import init, observe
 
 # Disable remote ingest and auto-instrumentation so only the decorator's
 # own overhead is measured.

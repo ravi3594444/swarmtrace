@@ -16,8 +16,7 @@ import types
 
 import pytest
 
-import swarmtrace.scraper as scraper
-import swarmtrace.tracer as tracer
+from swarmtrace import scraper, tracer
 
 
 class _FakePage:

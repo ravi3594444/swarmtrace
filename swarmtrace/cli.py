@@ -1,5 +1,6 @@
 import sys
-from swarmtrace.storage import get_traces, get_by_id
+
+from swarmtrace.storage import get_by_id, get_traces
 
 DEFAULT_VIEW_LIMIT = 100
 

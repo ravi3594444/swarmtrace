@@ -22,10 +22,10 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
 import threading
+from collections.abc import Callable
 from http.server import BaseHTTPRequestHandler, HTTPServer, ThreadingHTTPServer
-from typing import Any, Callable, List, Optional
+from typing import Any
 
 from swarmtrace.adapters.http_transport import HttpTransport
 from swarmtrace.otlp_mapping import otlp_payload_to_span_records, validate_otlp_payload
@@ -52,7 +52,7 @@ class OtlpCollectorHandler(BaseHTTPRequestHandler):
     transport: HttpTransport = HttpTransport()
     api_key: str = ""
     endpoint: str = ""
-    on_spans: Optional[Callable[[List[SpanRecord]], None]] = None
+    on_spans: Callable[[list[SpanRecord]], None] | None = None
 
     def _send_json(self, status: int, body: Any) -> None:
         data = json.dumps(body).encode("utf-8")
@@ -66,7 +66,7 @@ class OtlpCollectorHandler(BaseHTTPRequestHandler):
         self.send_response(status)
         self.end_headers()
 
-    def do_POST(self) -> None:  # noqa: N802
+    def do_POST(self) -> None:
         if self.path not in ("/v1/traces", "/v1/traces/"):
             self._send_json(404, {"error": "not found"})
             return
@@ -135,10 +135,10 @@ class OtlpCollector:
         self,
         host: str = "127.0.0.1",
         port: int = 4318,
-        api_key: Optional[str] = None,
-        endpoint: Optional[str] = None,
-        transport: Optional[HttpTransport] = None,
-        on_spans: Optional[Callable[[List[SpanRecord]], None]] = None,
+        api_key: str | None = None,
+        endpoint: str | None = None,
+        transport: HttpTransport | None = None,
+        on_spans: Callable[[list[SpanRecord]], None] | None = None,
     ) -> None:
         self.host = host
         self.port = port
@@ -146,8 +146,8 @@ class OtlpCollector:
         self.endpoint = endpoint or _default_endpoint()
         self.transport = transport or HttpTransport()
         self.on_spans = on_spans
-        self._server: Optional[HTTPServer] = None
-        self._thread: Optional[threading.Thread] = None
+        self._server: HTTPServer | None = None
+        self._thread: threading.Thread | None = None
 
     def _make_handler(self) -> type[BaseHTTPRequestHandler]:
         class _Handler(OtlpCollectorHandler):

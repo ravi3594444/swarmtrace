@@ -18,7 +18,7 @@ import time
 
 import pytest
 
-import swarmtrace.pricing as pricing
+from swarmtrace import pricing
 
 
 @pytest.fixture(autouse=True)

@@ -1,7 +1,8 @@
-import json
 import csv
+import json
 import logging
 import sys
+
 from swarmtrace.storage import get_all_traces
 
 _log = logging.getLogger("swarmtrace.export")

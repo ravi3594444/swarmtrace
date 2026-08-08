@@ -38,9 +38,8 @@ What is NOT scrubbed
 from __future__ import annotations
 
 import re
-from typing import Optional
 
-__all__ = ["redact", "luhn_ok"]
+__all__ = ["luhn_ok", "redact"]
 
 
 # --------------------------------------------------------------------------
@@ -161,7 +160,7 @@ def _redact_credit_cards(text: str) -> str:
     Luhn-checked, not bare regex, so non-card numbers don't get
     accidentally scrubbed.
     """
-    def replace(m: "re.Match[str]") -> str:
+    def replace(m: re.Match[str]) -> str:
         raw = m.group(0)
         digits = re.sub(r"[^0-9]", "", raw)
         return _REDACTED if luhn_ok(digits) else raw
@@ -172,7 +171,7 @@ def _redact_credit_cards(text: str) -> str:
 # Public entry point
 # --------------------------------------------------------------------------
 
-def redact(text: Optional[str]) -> Optional[str]:
+def redact(text: str | None) -> str | None:
     """Scrub emails, API keys, credit card numbers, and JWTs from *text*.
 
     - ``None`` passes through unchanged (so ``tracer._flush`` can call
