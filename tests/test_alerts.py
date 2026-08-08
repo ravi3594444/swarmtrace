@@ -37,13 +37,14 @@ def _trace(
     function: str = "step",
     n: int = 1,
     within_window: bool = True,
+    synced: int = 1,
 ) -> list:
     """
     Build synthetic TraceRow dicts matching swarmtrace.storage.TraceRow —
     one dict per row, keyed by column name (id, parent_id, function, args,
     output, latency_sec, error, timestamp, input_tokens, output_tokens,
-    cost_usd, kind, agent_id, agent_name, ...), same shape get_all_traces()
-    hands the rule engine in production.
+    cost_usd, kind, agent_id, agent_name, synced, ...), same shape
+    get_all_traces() hands the rule engine in production.
     """
     rows = []
     base = datetime.now(timezone.utc)
@@ -64,6 +65,7 @@ def _trace(
             "kind": "agent",
             "agent_id": agent_id,
             "agent_name": agent_name,
+            "synced": synced,
         })
     return rows
 
@@ -77,10 +79,12 @@ def test_rule_config_defaults_are_safe():
     assert cfg.budget_usd == 5.0
     assert cfg.error_rate_threshold == 0.5
     assert cfg.latency_p95_sec == 30.0
+    assert cfg.sync_backlog_rate == 0.5
     assert cfg.cooldown_seconds == 300
     assert "budget_breach" in cfg.enabled_rules
     assert "error_spike" in cfg.enabled_rules
     assert "latency_regression" in cfg.enabled_rules
+    assert "sync_backlog" in cfg.enabled_rules
 
 
 # ---------------------------------------------------------------------------
@@ -198,6 +202,71 @@ def test_latency_regression_no_alert_when_fast():
 
 
 # ---------------------------------------------------------------------------
+# sync_backlog
+# ---------------------------------------------------------------------------
+
+def test_sync_backlog_fires_when_unsynced_share_exceeds_threshold():
+    cfg = RuleConfig(sync_backlog_rate=0.5, min_traces=10, cooldown_seconds=0)
+    engine = RuleEngine(cfg)
+    # 10 traces, 7 unsynced → 70% > 50% threshold.
+    ok  = _trace(agent_id="a1", n=3, synced=1)
+    bad = _trace(agent_id="a2", n=7, synced=0)
+    fired = engine.evaluate(ok + bad)
+    assert len(fired) == 1
+    a = fired[0]
+    assert a.rule == "sync_backlog"
+    assert a.severity == "warning"  # 70% is < the 90% critical cutoff
+    assert a.agent_id is None       # system-wide, not scoped to one agent
+    assert "70%" in a.message
+
+
+def test_sync_backlog_critical_at_90_percent():
+    cfg = RuleConfig(sync_backlog_rate=0.5, min_traces=10, cooldown_seconds=0)
+    engine = RuleEngine(cfg)
+    ok  = _trace(agent_id="a1", n=1, synced=1)
+    bad = _trace(agent_id="a1", n=9, synced=0)
+    fired = engine.evaluate(ok + bad)
+    assert len(fired) == 1
+    assert fired[0].severity == "critical"
+
+
+def test_sync_backlog_no_alert_when_all_synced():
+    cfg = RuleConfig(sync_backlog_rate=0.5, min_traces=10, cooldown_seconds=0)
+    engine = RuleEngine(cfg)
+    traces = _trace(agent_id="a1", n=10, synced=1)
+    assert engine.evaluate(traces) == []
+
+
+def test_sync_backlog_missing_synced_key_treated_as_synced():
+    """Rows without a `synced` key (older/partial TraceRow shapes) must not
+    be treated as backlog — only an explicit synced=0 counts."""
+    cfg = RuleConfig(sync_backlog_rate=0.5, min_traces=10, cooldown_seconds=0)
+    engine = RuleEngine(cfg)
+    traces = _trace(agent_id="a1", n=10)
+    for row in traces:
+        del row["synced"]
+    assert engine.evaluate(traces) == []
+
+
+def test_sync_backlog_below_min_traces_no_alert():
+    cfg = RuleConfig(sync_backlog_rate=0.1, min_traces=50, cooldown_seconds=0)
+    engine = RuleEngine(cfg)
+    # 100% unsynced, but only 4 traces (< 50) → no alert.
+    traces = _trace(agent_id="a1", n=4, synced=0)
+    assert engine.evaluate(traces) == []
+
+
+def test_sync_backlog_uses_cooldown():
+    cfg = RuleConfig(sync_backlog_rate=0.5, min_traces=10, cooldown_seconds=300)
+    engine = RuleEngine(cfg)
+    traces = _trace(agent_id="a1", n=10, synced=0)
+    first  = engine.evaluate(traces)
+    second = engine.evaluate(traces)
+    assert len(first)  == 1
+    assert len(second) == 0    # cooldown active
+
+
+# ---------------------------------------------------------------------------
 # Empty / disabled cases
 # ---------------------------------------------------------------------------
 
@@ -294,6 +363,10 @@ def test_configure_returns_latest_rule_config():
     alerts.configure(latency_p95_sec=99.0)
     assert alerts._config.budget_usd == 12.0
     assert alerts._config.latency_p95_sec == 99.0
+
+    alerts.configure(sync_backlog_rate=0.75)
+    assert alerts._config.sync_backlog_rate == 0.75
+    assert alerts._config.budget_usd == 12.0  # untouched fields still stick
 
 
 # ---------------------------------------------------------------------------

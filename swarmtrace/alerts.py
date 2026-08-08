@@ -22,6 +22,11 @@ The default rules (each one configurable / disable-able):
                            (default 0.5 = 50%).
 * ``latency_regression`` — p95 latency over the last ``min_traces`` traces
                            exceeds ``latency_p95_sec`` (default 30s).
+* ``sync_backlog``       — share of the last ``min_traces`` traces still
+                           unsynced (``synced=0``) exceeds
+                           ``sync_backlog_rate`` (default 0.5 = 50%).
+                           System-wide (not per-agent): a stuck remote
+                           endpoint stalls sync for every agent at once.
 
 A per-(rule, agent) cooldown (default 5 min) prevents alert spam.
 
@@ -181,9 +186,20 @@ class RuleConfig:
     # latency_regression
     latency_p95_sec:       float = 30.0
 
+    # sync_backlog
+    sync_backlog_rate:     float = 0.5
+
     # global
     cooldown_seconds:      int   = 300      # 5 min per (rule, agent)
-    enabled_rules:         tuple = ("budget_breach", "error_spike", "latency_regression")
+    enabled_rules:         tuple = (
+        "budget_breach", "error_spike", "latency_regression", "sync_backlog",
+    )
+
+
+# Cooldown key for rules that aren't scoped to a single agent (currently
+# only sync_backlog — a stuck endpoint affects every agent simultaneously,
+# so there's nothing to bucket by).
+_SYSTEM_AGENT = "__system__"
 
 
 class RuleEngine:
@@ -245,6 +261,8 @@ class RuleEngine:
             fired.extend(self._rule_error_spike(by_agent))
         if "latency_regression" in self.config.enabled_rules:
             fired.extend(self._rule_latency_regression(by_agent))
+        if "sync_backlog"       in self.config.enabled_rules:
+            fired.extend(self._rule_sync_backlog(traces))
         return fired
 
     # ── rules ────────────────────────────────────────────────────────────────
@@ -368,6 +386,62 @@ class RuleEngine:
                     trace_ids=[r["id"] for r in recent[:50]],
                 ))
                 self._mark_fired("latency_regression", agent_id)
+        return fired
+
+    def _rule_sync_backlog(self, traces: list[TraceRow]) -> list[Alert]:
+        """Fires when a growing share of recent traces are stuck unsynced.
+
+        ``storage._purge_old_rows`` never evicts unsynced rows (see its
+        docstring) — deliberately, so a dead remote endpoint can't cause
+        silent trace loss. The tradeoff is that the local DB then grows
+        without bound until someone notices. This rule is that "someone
+        notices": if most of the last ``min_traces`` rows never got a
+        confirmed remote ACK, the endpoint is very likely down or
+        rejecting writes, and the operator should run ``swarmtrace resync``
+        (or fix the endpoint) before local disk becomes the limiting factor.
+
+        System-wide rather than per-agent — sync failures are almost always
+        endpoint-wide, and the local DB doesn't partition sync status by
+        agent in any way that would make a per-agent breakdown meaningful.
+
+        A row missing the ``synced`` key entirely is treated as synced
+        (not counted toward the backlog) rather than assumed stuck. Every
+        real row has the column (``NOT NULL DEFAULT 0``), so this only
+        matters for callers that hand in partial TraceRow-shaped dicts —
+        it keeps the rule from firing on data it can't actually interpret.
+        """
+        cfg = self.config
+        if self._in_cooldown("sync_backlog", _SYSTEM_AGENT):
+            return []
+        # Traces are ordered DESC by timestamp from storage — take the most recent N.
+        recent = traces[: cfg.min_traces]
+        if len(recent) < cfg.min_traces:
+            return []
+        unsynced = [r for r in recent if not r.get("synced", 1)]
+        rate = len(unsynced) / len(recent)
+        if rate < cfg.sync_backlog_rate:
+            return []
+        fired = [Alert(
+            id=uuid.uuid4().hex,
+            rule="sync_backlog",
+            severity="critical" if rate >= 0.9 else "warning",
+            agent_id=None,
+            agent_name=None,
+            message=(
+                f"{len(unsynced)} of the last {len(recent)} traces are unsynced "
+                f"({rate*100:.0f}%, threshold {cfg.sync_backlog_rate*100:.0f}%) — "
+                "remote ingest may be down; local DB will grow until it "
+                "recovers or you run `swarmtrace resync`"
+            ),
+            detail=json.dumps({
+                "unsynced":  len(unsynced),
+                "total":     len(recent),
+                "rate":      round(rate, 4),
+                "threshold": cfg.sync_backlog_rate,
+            }),
+            trace_ids=[r["id"] for r in unsynced[:50]],
+        )]
+        self._mark_fired("sync_backlog", _SYSTEM_AGENT)
         return fired
 
 
@@ -553,6 +627,7 @@ def configure(
     budget_usd: float | None  = None,
     error_rate_threshold: float | None = None,
     latency_p95_sec: float | None = None,
+    sync_backlog_rate: float | None = None,
     window_minutes: int | None = None,
     cooldown_seconds: int | None = None,
     enabled_rules: tuple | None = None,
@@ -573,6 +648,8 @@ def configure(
         _config.error_rate_threshold = error_rate_threshold
     if latency_p95_sec is not None:
         _config.latency_p95_sec = latency_p95_sec
+    if sync_backlog_rate is not None:
+        _config.sync_backlog_rate = sync_backlog_rate
     if window_minutes is not None:
         _config.window_minutes = window_minutes
     if cooldown_seconds is not None:
