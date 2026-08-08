@@ -205,8 +205,10 @@ def _purge_old_rows(conn: sqlite3.Connection) -> None:
     recovery), this function will NOT evict them — the DB can grow beyond
     MAX_ROWS. That's deliberate: better to grow the local DB (bounded by
     disk) than to silently drop traces the user thinks are safe. The
-    operator should see the growth via metrics/alerting (TODO: wire into
-    the alerts module) and either fix the endpoint or run resync manually.
+    operator sees the growth via the alerts module's ``sync_backlog`` rule
+    (swarmtrace/alerts.py), which fires when a majority of recent traces
+    are stuck unsynced, and can then fix the endpoint or run resync
+    manually.
     """
     row_count: int = conn.execute("SELECT COUNT(*) FROM traces").fetchone()[0]
     if row_count <= MAX_ROWS:
