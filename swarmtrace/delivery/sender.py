@@ -18,6 +18,9 @@ import queue
 import threading
 import time
 from collections.abc import Callable
+from typing import Any
+
+from swarmtrace.ports import SpanRepository, SpanTransport
 
 _log = logging.getLogger("swarmtrace")
 
@@ -27,8 +30,8 @@ class Sender:
 
     def __init__(
         self,
-        transport,
-        repository,
+        transport: SpanTransport,
+        repository: SpanRepository,
         config: Callable[[], tuple[str, str]],
         *,
         sleep: Callable[[float], None] = time.sleep,
@@ -48,13 +51,13 @@ class Sender:
         self._retries = retries
         self._thread_name = thread_name
 
-        self._queue: queue.Queue[dict] = queue.Queue(maxsize=queue_max)
+        self._queue: queue.Queue[dict[str, Any]] = queue.Queue(maxsize=queue_max)
         self._started = False
         self._lock = threading.Lock()
 
     # ------------------------------------------------------------------ queue
 
-    def enqueue(self, payload: dict) -> None:
+    def enqueue(self, payload: dict[str, Any]) -> None:
         """Drop a payload onto the queue for the worker to send.
 
         No-op when the remote endpoint isn't configured. Starts the worker
@@ -70,7 +73,7 @@ class Sender:
         except queue.Full:
             _log.error("ingest queue full — trace dropped")
 
-    def drain_batch(self, max_items: int, timeout: float) -> list[dict]:
+    def drain_batch(self, max_items: int, timeout: float) -> list[dict[str, Any]]:
         """Drain up to ``max_items`` payloads from the queue.
 
         Blocks until at least one item is available (so the worker doesn't
@@ -78,7 +81,7 @@ class Sender:
         The ``timeout`` only applies to the FIRST item — once we have one,
         we drain non-blocking.
         """
-        batch: list[dict] = []
+        batch: list[dict[str, Any]] = []
         try:
             first = self._queue.get(timeout=timeout)
             batch.append(first)
@@ -107,7 +110,7 @@ class Sender:
     def _run(self) -> None:
         """Background send loop. Never dies — outer boundary logs and loops."""
         while True:
-            batch: list[dict] = []
+            batch: list[dict[str, Any]] = []
             try:
                 batch = self.drain_batch(self._batch_max_items, self._batch_flush_timeout)
                 if not batch:
@@ -125,7 +128,7 @@ class Sender:
                     except Exception:
                         pass
 
-    def _send_with_retries(self, batch: list[dict], key: str, url: str) -> bool:
+    def _send_with_retries(self, batch: list[dict[str, Any]], key: str, url: str) -> bool:
         """Send one batch; return True on confirmed success."""
         for attempt in range(self._retries):
             try:

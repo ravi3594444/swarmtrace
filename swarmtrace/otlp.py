@@ -52,7 +52,27 @@ class OtlpCollectorHandler(BaseHTTPRequestHandler):
     transport: HttpTransport = HttpTransport()
     api_key: str = ""
     endpoint: str = ""
-    on_spans: Callable[[list[SpanRecord]], None] | None = None
+
+    # Held in a one-element tuple, NOT as a bare class attribute.
+    #
+    # A plain function assigned to a class attribute is a descriptor: reading
+    # it back through an instance yields a *bound method*, so ``self.on_spans``
+    # silently became ``on_spans(self, spans)`` and every user hook written as
+    # an ordinary function or lambda died with "takes 1 positional argument but
+    # 2 were given". do_POST catches that and only logs a warning, so the hook
+    # just never fired. The one existing test passed because it used
+    # ``list.append`` — a bound builtin method, which is not a descriptor and
+    # therefore the single callable shape that happened to work.
+    #
+    # A tuple is not a descriptor, so the callable comes back out untouched
+    # whatever shape it has. ``on_spans`` stays a normal attribute for callers
+    # via the property below.
+    _on_spans: tuple[Callable[[list[SpanRecord]], None] | None] = (None,)
+
+    @property
+    def on_spans(self) -> Callable[[list[SpanRecord]], None] | None:
+        """The configured span hook, unbound and callable as ``hook(spans)``."""
+        return self._on_spans[0]
 
     def _send_json(self, status: int, body: Any) -> None:
         data = json.dumps(body).encode("utf-8")
@@ -154,7 +174,9 @@ class OtlpCollector:
             transport = self.transport
             api_key = self.api_key
             endpoint = self.endpoint
-            on_spans = self.on_spans
+            # Tuple-wrapped so the hook is not turned into a bound method —
+            # see OtlpCollectorHandler._on_spans for why.
+            _on_spans = (self.on_spans,)
 
         return _Handler
 
@@ -203,7 +225,9 @@ def main() -> None:
     parser.add_argument("--host", default="127.0.0.1", help="bind host")
     parser.add_argument("--port", type=int, default=4318, help="bind port")
     parser.add_argument("--api-key", default=_default_api_key(), help="SwarmTrace API key")
-    parser.add_argument("--endpoint", default=_default_endpoint(), help="SwarmTrace endpoint base URL")
+    parser.add_argument(
+        "--endpoint", default=_default_endpoint(), help="SwarmTrace endpoint base URL"
+    )
     parser.add_argument("--log-level", default="INFO", help="log level")
     args = parser.parse_args()
 

@@ -28,6 +28,9 @@ def show_failures():
     _log.info("%-10s %-20s %-40s %s", "ID", "FUNCTION", "ERROR", "TIMESTAMP")
     _log.info("-" * 90)
     for t in failed:
-        _log.info("%-10s %-20s %-40s %s", t["id"], t["function"], str(t["error"])[:38], t["timestamp"])
+        _log.info(
+            "%-10s %-20s %-40s %s",
+            t["id"], t["function"], str(t["error"])[:38], t["timestamp"],
+        )
     _log.info("Total failures: %d", len(failed))
     _log.info("Replay any failure: from swarmtrace.replay import replay; replay('id')")

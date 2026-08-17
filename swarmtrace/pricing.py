@@ -60,7 +60,8 @@ _BUNDLED_MODEL_PRICING: dict[str, dict[str, float]] = {
     "gemini-1.5-pro": {"input_cost_per_token": 0.0000035, "output_cost_per_token": 0.0000105},
     "gemini-1.5-flash": {"input_cost_per_token": 0.00000035, "output_cost_per_token": 0.00000105},
     "gemini-2.0-flash": {"input_cost_per_token": 0.0000001, "output_cost_per_token": 0.0000004},
-    "gemini-2.0-flash-lite": {"input_cost_per_token": 0.000000075, "output_cost_per_token": 0.0000003},
+    "gemini-2.0-flash-lite":
+        {"input_cost_per_token": 0.000000075, "output_cost_per_token": 0.0000003},
     "gemini-2.5-pro": {"input_cost_per_token": 0.00000125, "output_cost_per_token": 0.00001},
 
     # Mistral
@@ -75,8 +76,10 @@ _BUNDLED_MODEL_PRICING: dict[str, dict[str, float]] = {
     "deepseek-reasoner": {"input_cost_per_token": 0.00000055, "output_cost_per_token": 0.00000219},
 
     # Groq / Llama
-    "llama-3.1-70b-versatile": {"input_cost_per_token": 0.00000059, "output_cost_per_token": 0.00000079},
-    "llama-3.1-8b-instant": {"input_cost_per_token": 0.00000005, "output_cost_per_token": 0.00000008},
+    "llama-3.1-70b-versatile":
+        {"input_cost_per_token": 0.00000059, "output_cost_per_token": 0.00000079},
+    "llama-3.1-8b-instant":
+        {"input_cost_per_token": 0.00000005, "output_cost_per_token": 0.00000008},
     "llama3-70b-8192": {"input_cost_per_token": 0.0000007, "output_cost_per_token": 0.0000009},
     "llama3-8b-8192": {"input_cost_per_token": 0.0000001, "output_cost_per_token": 0.00000012},
     "mixtral-8x7b-32768": {"input_cost_per_token": 0.0000007, "output_cost_per_token": 0.0000007},

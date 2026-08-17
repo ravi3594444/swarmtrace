@@ -38,6 +38,7 @@ What is NOT scrubbed
 from __future__ import annotations
 
 import re
+from typing import overload
 
 __all__ = ["luhn_ok", "redact"]
 
@@ -171,8 +172,24 @@ def _redact_credit_cards(text: str) -> str:
 # Public entry point
 # --------------------------------------------------------------------------
 
+@overload
+def redact(text: str) -> str: ...
+
+
+@overload
+def redact(text: None) -> None: ...
+
+
 def redact(text: str | None) -> str | None:
     """Scrub emails, API keys, credit card numbers, and JWTs from *text*.
+
+    Overloaded so ``None`` in means ``None`` out and ``str`` in means ``str``
+    out. Without the overloads the declared return is ``str | None`` for every
+    caller, and the two call sites that slice the result directly —
+    ``redact(str(x))[:32000]`` in ``otlp_mapping`` and the ``args``/``output``/
+    ``error`` reassignments in ``tracer._flush`` — are unprovable to a type
+    checker even though they are safe at runtime. The overloads make that
+    safety checkable rather than assumed.
 
     - ``None`` passes through unchanged (so ``tracer._flush`` can call
       ``redact(output)`` even when output is ``None``).

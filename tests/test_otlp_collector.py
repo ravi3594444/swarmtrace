@@ -140,3 +140,98 @@ def test_collector_no_forward_without_config():
         assert resp.status == 200
     finally:
         c.stop()
+
+
+# --------------------------------------------------------------------------
+# on_spans hook shapes
+# --------------------------------------------------------------------------
+
+def _valid_payload(name: str = "hook-span") -> dict:
+    """Smallest OTLP payload that maps to exactly one span."""
+    return {
+        "resourceSpans": [
+            {
+                "resource": {
+                    "attributes": [
+                        {"key": "service.name", "value": {"stringValue": "test-agent"}}
+                    ]
+                },
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {
+                                "traceId": "abc",
+                                "spanId": "def",
+                                "name": name,
+                                "kind": 1,
+                                "startTimeUnixNano": "1700000000000000000",
+                                "endTimeUnixNano": "1700000001000000000",
+                                "attributes": [],
+                                "status": {"code": 1},
+                            }
+                        ]
+                    }
+                ],
+            }
+        ]
+    }
+
+
+@pytest.mark.parametrize("shape", ["plain_function", "lambda", "callable_object"])
+def test_on_spans_hook_fires_for_every_callable_shape(shape):
+    """The hook must fire whatever kind of callable the user passes.
+
+    Regression guard. ``on_spans`` used to be stored as a bare class attribute
+    on the request handler, which makes any *function* a descriptor: reading it
+    back through the handler instance produced a bound method, so the call
+    became ``hook(self, spans)`` and blew up with "takes 1 positional argument
+    but 2 were given". ``do_POST`` swallows that into a log warning, so a user
+    hook written the obvious way silently never ran.
+
+    The pre-existing test missed this because it passed ``list.append`` — a
+    bound builtin method, not a descriptor, and therefore the one callable
+    shape that happened to work. These three shapes cover the rest.
+    """
+    received: list[list[SpanRecord]] = []
+
+    if shape == "plain_function":
+        def hook(spans: list[SpanRecord]) -> None:
+            received.append(spans)
+    elif shape == "lambda":
+        def hook(spans): return received.append(spans)  # noqa: E731
+    else:
+        class Hook:
+            def __call__(self, spans: list[SpanRecord]) -> None:
+                received.append(spans)
+        hook = Hook()
+
+    c = OtlpCollector(
+        host="127.0.0.1",
+        port=0,
+        api_key="",
+        endpoint="",
+        transport=FakeHttpTransport(),
+        on_spans=hook,
+    )
+    c.start()
+    try:
+        resp = _post(_url(c), _valid_payload())
+        assert resp.status == 200
+    finally:
+        c.stop()
+
+    assert len(received) == 1, f"{shape} hook never fired"
+    assert received[0][0].name == "hook-span"
+
+
+def test_on_spans_none_is_not_called():
+    """No hook configured is a no-op, not an attribute error."""
+    c = OtlpCollector(
+        host="127.0.0.1", port=0, api_key="", endpoint="",
+        transport=FakeHttpTransport(),
+    )
+    c.start()
+    try:
+        assert _post(_url(c), _valid_payload()).status == 200
+    finally:
+        c.stop()
