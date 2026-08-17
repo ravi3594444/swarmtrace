@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -86,12 +85,14 @@ def main() -> None:
     psql = os.path.join(PSQL_BIN, "psql")
 
     def psql_cli(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run([psql, uri, *args], capture_output=True, text=True)
+        return subprocess.run(
+            [psql, uri, *args], capture_output=True, text=True, check=False
+        )
 
     def runner(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["node", "scripts/run-migrations.mjs", *args],
-            cwd=FRONTEND_DIR, env=env, capture_output=True, text=True,
+            cwd=FRONTEND_DIR, env=env, capture_output=True, text=True, check=False,
         )
 
     srv.psql(SUPABASE_SHIMS)

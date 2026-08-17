@@ -62,3 +62,34 @@ def test_already_started_short_circuits_without_lock_contention():
     fov._screen_streamer_started = True
     fov._ensure_screen_streamer()  # must not raise or spawn anything
     assert fov._screen_streamer_started is True
+
+
+def test_fov_worker_retries_remote_failures_three_times(monkeypatch, caplog):
+    """Remote send errors must escape the sender so the worker can retry them."""
+    attempts = []
+
+    class StopWorker(BaseException):
+        pass
+
+    class OneItemQueue:
+        def get(self):
+            return {"event": "click"}
+
+        def task_done(self):
+            raise StopWorker
+
+    def fail_send(*args):
+        attempts.append(args)
+        raise OSError("network unavailable")
+
+    monkeypatch.setattr(fov, "_FOV_QUEUE", OneItemQueue())
+    monkeypatch.setattr(fov, "_remote_config", lambda: ("key", "https://example.com/api"))
+    monkeypatch.setattr(fov, "_send_event_remote", fail_send)
+    monkeypatch.setattr(fov.time, "sleep", lambda _delay: None)
+
+    with pytest.raises(StopWorker):
+        fov._fov_worker()
+
+    assert len(attempts) == 3
+    assert attempts[0][2] == "https://example.com"
+    assert "failed after 3 attempts" in caplog.text

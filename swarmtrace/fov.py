@@ -52,6 +52,9 @@ from swarmtrace.config import (
 from swarmtrace.config import (
     remote_config as _remote_config,
 )
+from swarmtrace.redact import redact as _redact_text
+from swarmtrace.storage import _get_conn
+from swarmtrace.storage import _lock as _storage_lock
 from swarmtrace.trace_context import current_agent
 
 # Compatibility alias used by older tests that monkeypatch fov._current_agent.
@@ -63,13 +66,9 @@ _current_agent = current_agent
 # pattern shapes, so pattern-only redaction would let it straight
 # through into local SQLite, the remote /api/events endpoint, and
 # Supabase).
-from swarmtrace.redact import redact as _redact_text
-
 _log = logging.getLogger("swarmtrace.fov")
 
 # ── local event storage ──────────────────────────────────────────────────────
-from swarmtrace.storage import _get_conn
-from swarmtrace.storage import _lock as _storage_lock
 
 # ---------------------------------------------------------------------------
 # Local SQLite event table — with bounded size (no disk-fill risk)
@@ -196,18 +195,16 @@ _fov_worker_started = False
 
 
 def _send_event_remote(payload: dict, key: str, base_url: str) -> None:
-    try:
-        import urllib.request
-        body = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            f"{base_url}/api/events",
-            data=body,
-            headers={"Content-Type": "application/json", "X-API-Key": key},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=5)
-    except Exception as exc:
-        _log.warning("remote event warning: %s", exc)
+    import urllib.request
+
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        f"{base_url}/api/events",
+        data=body,
+        headers={"Content-Type": "application/json", "X-API-Key": key},
+        method="POST",
+    )
+    urllib.request.urlopen(req, timeout=5)
 
 
 def _fov_worker() -> None:
@@ -223,9 +220,11 @@ def _fov_worker() -> None:
                 try:
                     _send_event_remote(payload, key, base)
                     break
-                except Exception:
+                except Exception as exc:
                     if attempt < 2:
                         time.sleep(2 ** attempt)
+                    else:
+                        _log.warning("remote event failed after 3 attempts: %s", exc)
         _FOV_QUEUE.task_done()
 
 
