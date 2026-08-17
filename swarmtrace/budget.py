@@ -18,8 +18,8 @@ Usage::
     reset()             # all functions
 """
 
-import asyncio
 import functools
+import inspect
 import logging
 import threading
 import time
@@ -166,7 +166,7 @@ def budget(
         Set to 0 to disable auto-reset (manual ``reset()`` only).
     """
     def decorator(func):
-        if asyncio.iscoroutinefunction(func):
+        if inspect.iscoroutinefunction(func):
             @functools.wraps(func)
             async def async_wrapper(*args, **kwargs):
                 result = None
