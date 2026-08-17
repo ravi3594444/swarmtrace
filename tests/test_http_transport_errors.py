@@ -44,7 +44,11 @@ CLASSIFIED_500_BODY = json.dumps(
 ).encode()
 
 
-def _http_error(status: int = 500, reason: str = "Internal Server Error", body: bytes = b"") -> HTTPError:
+def _http_error(
+    status: int = 500,
+    reason: str = "Internal Server Error",
+    body: bytes = b"",
+) -> HTTPError:
     return HTTPError(
         url="https://dash.example/api/ingest",
         code=status,

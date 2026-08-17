@@ -30,7 +30,10 @@ def simulate_reads(num_requests):
 def run_stress_test(concurrent_users=10, requests_per_user=50):
     results = [None] * concurrent_users
 
-    print(f"Starting stress test with {concurrent_users} users, {requests_per_user} requests each...")
+    print(
+        f"Starting stress test with {concurrent_users} users, "
+        f"{requests_per_user} requests each..."
+    )
 
     def worker(idx):
         results[idx] = simulate_reads(requests_per_user)

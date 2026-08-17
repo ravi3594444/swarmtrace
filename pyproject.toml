@@ -12,6 +12,9 @@ license = { text = "MIT" }
 classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
 ]
 requires-python = ">=3.10"
 dependencies = ["click", "rich"]
@@ -31,6 +34,12 @@ budget     = ["tiktoken"]
 fov        = ["playwright", "watchdog"]
 gateway    = ["mcp>=1,<2", "uvicorn"]
 all        = ["litai", "scrapling", "sentence-transformers", "faiss-cpu", "numpy", "tiktoken", "playwright", "watchdog", "mcp>=1,<2", "uvicorn"]
+# Everything the CI gates need, so `pip install -e ".[dev]"` reproduces CI
+# locally instead of each contributor guessing at tool versions.
+# setuptools is a genuine test dependency: test_architecture_boundaries runs
+# the build backend's own find_packages() to prove the adapters/delivery
+# subpackages land in the wheel. Python 3.12+ venvs no longer bundle it.
+dev        = ["pytest", "pytest-cov", "ruff", "mypy", "setuptools"]
 
 [project.scripts]
 swarmtrace = "swarmtrace.cli:view"
@@ -51,6 +60,154 @@ swarmtrace = ["py.typed"]
 [tool.ruff]
 line-length = 100
 target-version = "py310"
+
+[tool.ruff.lint]
+# CI previously gated on `--select E9,F63,F7,F82` — syntax errors and a
+# handful of always-wrong constructs. That catches code that cannot run; it
+# does not catch code that runs and is wrong. This ruleset is what the gate
+# enforces now, and the tree is clean against it.
+select = [
+    "E",    # pycodestyle errors
+    "W",    # pycodestyle warnings
+    "F",    # pyflakes — unused imports/names, undefined names
+    "I",    # isort — import ordering
+    "UP",   # pyupgrade — dead 3.x-era idioms
+    "B",    # flake8-bugbear — real bug shapes (mutable defaults, raise-without-from)
+    "C4",   # flake8-comprehensions
+    "SIM",  # flake8-simplify
+    "RET",  # flake8-return
+]
+ignore = [
+    # SIM105 — "use contextlib.suppress instead of try/except/pass".
+    # Measured on this interpreter: contextlib.suppress costs ~286 ns per
+    # call against ~10 ns for bare try/except — roughly 30x. Every site
+    # flagged here is on a hot path (the sender's per-payload task_done loop,
+    # the per-chunk stream wrappers in fov). This is a tracing SDK whose
+    # headline claim is sub-millisecond overhead; paying 30x for cosmetics
+    # on the hot path is the wrong trade.
+    "SIM105",
+    # RET504 — "assignment immediately before return is unnecessary".
+    # The flagged sites are the tail of a chained-reassignment pipeline
+    # (`text = f(text)` several times, then `return text`). Inlining only the
+    # last step makes the sequence read inconsistently, and the named local
+    # is what makes these functions debuggable at a breakpoint.
+    "RET504",
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = [
+    # Several test modules deliberately import the symbol under test next to
+    # the test that uses it, so the import is part of the test's narrative
+    # (and in a few cases must happen after an env var or monkeypatch is set).
+    "E402",
+    # Nested `with` blocks in the span/run tests ARE the thing under test —
+    # collapsing them into one statement hides the nesting the test asserts on.
+    "SIM117",
+]
+# Column-aligned fixture tables and long literal test vectors. Wrapping a
+# pricing table destroys the alignment that makes it scannable, and a JWT
+# test vector has no meaningful break point. Scoped to these two files
+# rather than all of tests/ so the limit still applies everywhere else.
+"tests/test_pricing_normalization.py" = ["E501"]
+"tests/test_fov_redaction.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.10"
+files = ["swarmtrace"]
+# Deliberately not --strict. The goal is catching real defects, not
+# annotating every legacy signature: the first run of this config on the
+# existing tree surfaced 14 errors, 4 of which were live bugs (see the
+# commit that fixed them). Tightening further — disallow_untyped_defs in
+# particular — is worth doing incrementally, module by module.
+warn_unused_ignores = true
+warn_redundant_casts = true
+no_implicit_optional = true
+check_untyped_defs = false
+
+# warn_unreachable is deliberately OFF. Every site it flagged in this tree is
+# correct code that mypy cannot model:
+#   * the double-checked lock in fov._ensure_events_table — mypy narrows the
+#     flag to False after the outer check, so the recheck inside the lock
+#     reads as dead. That recheck IS the TOCTOU fix (audit finding #11);
+#   * defensive isinstance coercion of untrusted external input, e.g.
+#     _hex_to_str() on OTLP JSON, where the annotation is the optimistic case
+#     and the check is the real one;
+#   * redact()'s documented non-str coercion.
+# This is a library that must never crash the agent it observes, so defensive
+# runtime checks in excess of the annotations are the house style. A rule that
+# fights that style would train people to delete the checks.
+
+# The instrumentation modules exist to monkey-patch third-party client
+# methods — that is the product, not an accident. Once the real openai /
+# requests / anthropic packages are installed (as they are in CI), mypy
+# reports every patch site as `method-assign`, plus one `assignment` where a
+# functools.wraps wrapper cannot reproduce requests.Session.request's full
+# signature. Both are inherent to patching and there is no annotation that
+# makes them go away. Scoped to these two modules so the codes stay live
+# everywhere else — this is why they are here and not in disable_error_code
+# at the top level.
+[[tool.mypy.overrides]]
+module = ["swarmtrace.auto_instrument", "swarmtrace.fov"]
+disable_error_code = ["method-assign", "assignment"]
+
+# Third-party modules with no bundled stubs. The instrumentation targets
+# (openai, anthropic, google.generativeai, httpx, requests) and the extras
+# (faiss, numpy, playwright, …) are all imported lazily inside the functions
+# that use them, so their absence says nothing about our own code. click/rich
+# are base deps but do not resolve consistently across environments; pinning
+# them here keeps the type gate deterministic rather than dependent on which
+# site-packages the runner happens to have.
+[[tool.mypy.overrides]]
+module = [
+    "anthropic.*",
+    "click.*",
+    "faiss.*",
+    "google.*",
+    "httpx.*",
+    "litai.*",
+    "litellm.*",
+    "mcp.*",
+    "numpy.*",
+    "openai.*",
+    "PIL.*",
+    "playwright.*",
+    "requests.*",
+    "rich.*",
+    "scrapling.*",
+    "sentence_transformers.*",
+    "starlette.*",
+    "tiktoken.*",
+    "uvicorn.*",
+    "watchdog.*",
+]
+ignore_missing_imports = true
+
+[tool.coverage.run]
+source = ["swarmtrace"]
+branch = true
+# The sender and FOV workers run on daemon threads that outlive the test
+# body; concurrency=thread lets coverage see them instead of reporting
+# their bodies as dead code.
+concurrency = ["thread"]
+
+[tool.coverage.report]
+show_missing = true
+skip_covered = true
+# Ratchet, not a target. 65% is what the suite actually covers today; this
+# floor exists so it cannot quietly slide backwards. Raise it as coverage
+# improves — the thin areas are auto_instrument (33%), fov (32%), cli (38%)
+# and gateway_cli (0%), all of which need real integration-style tests rather
+# than more mocking. Set a hair below the measured number because branch
+# coverage varies slightly across Python versions in the CI matrix.
+fail_under = 64
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    # Protocol method bodies are `...` by definition.
+    "^\\s*\\.\\.\\.$",
+]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

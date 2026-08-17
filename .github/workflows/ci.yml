@@ -8,23 +8,62 @@ on:
 
 jobs:
   python:
-    name: Python tests
+    name: Python ${{ matrix.python-version }} tests
+    runs-on: ubuntu-latest
+    strategy:
+      # Don't cancel 3.12 because 3.10 failed — when a version-specific
+      # break happens, seeing which versions pass is most of the diagnosis.
+      fail-fast: false
+      matrix:
+        # pyproject declares requires-python = ">=3.10", so every version in
+        # that range is a supported version and has to be tested. CI used to
+        # run 3.12 only, which meant a 3.10 incompatibility — a match
+        # statement, a 3.11+ stdlib call, a changed typing behaviour — would
+        # only surface as a bug report from someone who had already
+        # pip-installed it.
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: 'pip'
+      - name: Install dependencies
+        run: pip install -e ".[all,dev]" openai anthropic
+      - name: Tests
+        # Exclude tests/integration/ — those need a real Postgres and run in
+        # the dedicated "integration" job below. Collecting them here either
+        # skips/errors on missing POSTGRES_TEST_URL or doubles runtime.
+        #
+        # Coverage floor (fail_under) is configured in pyproject so `pytest
+        # --cov` behaves identically here and on a contributor's machine.
+        run: pytest -q --ignore=tests/integration --cov --cov-report=term
+
+  quality:
+    name: Lint and type check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          # Lint/type results are version-independent here; pin the low end of
+          # the supported range so mypy resolves against the oldest syntax we
+          # promise to support.
+          python-version: '3.10'
           cache: 'pip'
       - name: Install dependencies
-        run: pip install -e ".[all]" pytest ruff openai anthropic
-      - name: Lint (critical errors only)
-        run: ruff check --select E9,F63,F7,F82 swarmtrace tests
-      - name: Tests
-        # Exclude tests/integration/ — those need a real Postgres and run in
-        # the dedicated "integration" job below. Collecting them here either
-        # skips/errors on missing POSTGRES_TEST_URL or doubles runtime.
-        run: pytest -q --ignore=tests/integration
+        run: pip install -e ".[all,dev]" openai anthropic
+      - name: Lint
+        # Was `--select E9,F63,F7,F82` — syntax errors and a few
+        # always-wrong constructs, i.e. code that cannot run. It did not
+        # catch code that runs and is wrong. The full ruleset now lives in
+        # pyproject [tool.ruff.lint] with each ignore justified in place.
+        run: ruff check swarmtrace tests
+      - name: Type check
+        # The package ships py.typed — it advertises type information to
+        # every downstream user — but nothing verified that information.
+        # The first run of this step found 14 errors, 4 of them live bugs.
+        run: mypy
 
   frontend:
     name: Frontend typecheck

@@ -74,7 +74,10 @@ def _any_value_to_python(value: Any) -> Any:
     if "kvlistValue" in value:
         kv = value["kvlistValue"]
         if isinstance(kv, dict):
-            return {item["key"]: _any_value_to_python(item.get("value")) for item in kv.get("values", [])}
+            return {
+                item["key"]: _any_value_to_python(item.get("value"))
+                for item in kv.get("values", [])
+            }
         return {}
     return None
 
@@ -174,10 +177,12 @@ def otlp_span_to_span_record(
     session_id = _pick(span_attrs, resource_attrs, "swarmtrace.session_id", "session_id")
 
     input_tokens = int(
-        _pick(span_attrs, resource_attrs, "gen_ai.usage.input_tokens", "input_tokens", default=0) or 0
+        _pick(span_attrs, resource_attrs, "gen_ai.usage.input_tokens",
+              "input_tokens", default=0) or 0
     )
     output_tokens = int(
-        _pick(span_attrs, resource_attrs, "gen_ai.usage.output_tokens", "output_tokens", default=0) or 0
+        _pick(span_attrs, resource_attrs, "gen_ai.usage.output_tokens",
+              "output_tokens", default=0) or 0
     )
     cost_usd = float(
         _pick(span_attrs, resource_attrs, "swarmtrace.cost_usd", "cost_usd", default=0.0) or 0.0

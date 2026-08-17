@@ -80,6 +80,45 @@ class SpanRecord:
             "attributes": json.dumps(attrs) if attrs else None,
         }
 
+    def to_ingest_payload(self) -> dict[str, Any]:
+        """Return the ``/api/ingest`` wire payload for this span.
+
+        Single source of truth for the ingest wire shape. It previously lived
+        as three separate copies — ``runtime._span_to_payload``,
+        ``adapters.http_transport._span_to_payload``, and the test fake's own
+        inline mapping — which had already drifted: the fake dropped
+        ``session_id``, so no test exercising the transport seam could catch a
+        session-id regression. Keeping the mapping on the model means the live
+        path, the resync path, and the fakes cannot disagree again.
+
+        ``trace_id`` is omitted when it equals ``span_id`` (a root span carries
+        no distributed trace), and empty ``attributes`` are omitted entirely —
+        both keep the gzip'd batch payload small on the common path.
+        """
+        payload: dict[str, Any] = {
+            "id": self.span_id,
+            "parent_id": self.parent_span_id,
+            "function": self.name,
+            "args": self.args or "",
+            "output": self.output or "",
+            "latency_sec": self.latency_sec,
+            "error": self.error,
+            "timestamp": self.start_time.isoformat(),
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_usd": self.cost_usd,
+            "kind": self.kind,
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+        }
+        if self.session_id is not None:
+            payload["session_id"] = self.session_id
+        if self.trace_id is not None and self.trace_id != self.span_id:
+            payload["trace_id"] = self.trace_id
+        if self.attributes:
+            payload["attributes"] = self.attributes
+        return payload
+
     @classmethod
     def from_storage_row(cls, row: dict[str, Any]) -> SpanRecord:
         """Build a SpanRecord from a sqlite3.Row dict."""

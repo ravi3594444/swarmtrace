@@ -38,7 +38,10 @@ def _print_tree(traces, parent_id=None, indent=0):
         status = "ERROR" if error else "OK"
         tag = "" if kind == "agent" else f" [{kind}]"
         prefix = "    " * indent + ("└── " if indent > 0 else "")
-        print(f"{prefix}{func}(){tag} [{id_}] {latency}s | {in_tok}in/{out_tok}out | ${cost} | {status}")
+        print(
+            f"{prefix}{func}(){tag} [{id_}] {latency}s | "
+            f"{in_tok}in/{out_tok}out | ${cost} | {status}"
+        )
         _print_tree(traces, id_, indent + 1)
 
 
@@ -124,7 +127,8 @@ def view(limit=None):
 
             def add_children(tree_node, pid):
                 for child in [t for t in traces if t["parent_id"] == pid]:
-                    cid, cfunc, cerror, ckind = child["id"], child["function"], child["error"], child["kind"]
+                    cid, cfunc = child["id"], child["function"]
+                    cerror, ckind = child["error"], child["kind"]
                     clatency, ccost = child["latency_sec"], child["cost_usd"]
                     branch = tree_node.add(_tree_label(cfunc, cerror, ckind, clatency, ccost, cid))
                     # CRITICAL: recurse into `branch` (the new child node),
@@ -239,11 +243,17 @@ def _alerts_list(limit: int = 20) -> None:
                 "CRITICAL": "[red]CRIT[/red]",
             }.get(sev, sev)
             acked = "[green]✓[/green]" if a.get("acked") else "·"
-            t.add_row(a["fired_at"][:19], sev_styled, a["rule"], a.get("agent_name") or "—", a["message"], acked)
+            t.add_row(
+                a["fired_at"][:19], sev_styled, a["rule"],
+                a.get("agent_name") or "—", a["message"], acked,
+            )
         console.print(t)
     except ImportError:
         for a in list_alerts(limit=limit):
-            print(f"{a['fired_at']}  [{a['severity']:8}] {a['rule']:22} {a.get('agent_name') or '—':20} {a['message']}")
+            print(
+                f"{a['fired_at']}  [{a['severity']:8}] {a['rule']:22} "
+                f"{a.get('agent_name') or '—':20} {a['message']}"
+            )
 
 
 def _alerts_test() -> None:

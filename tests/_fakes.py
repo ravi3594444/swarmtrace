@@ -54,31 +54,14 @@ class FakeTransport:
         self.raise_on_single = raise_on_single
 
     def send(self, spans: list[SpanRecord], key: str, url: str) -> None:
-        """Implement ``SpanTransport.send`` by delegating to ``send_batch``."""
-        payloads = []
-        for s in spans:
-            payload = {
-                "id": s.span_id,
-                "parent_id": s.parent_span_id,
-                "function": s.name,
-                "args": s.args or "",
-                "output": s.output or "",
-                "latency_sec": s.latency_sec,
-                "error": s.error,
-                "timestamp": s.start_time.isoformat(),
-                "input_tokens": s.input_tokens,
-                "output_tokens": s.output_tokens,
-                "cost_usd": s.cost_usd,
-                "kind": s.kind,
-                "agent_id": s.agent_id,
-                "agent_name": s.agent_name,
-            }
-            if s.trace_id is not None and s.trace_id != s.span_id:
-                payload["trace_id"] = s.trace_id
-            if s.attributes:
-                payload["attributes"] = s.attributes
-            payloads.append(payload)
-        self.send_batch(payloads, key, url)
+        """Implement ``SpanTransport.send`` by delegating to ``send_batch``.
+
+        Uses the model's own mapping rather than an inline copy. The previous
+        inline copy had silently drifted from the production one — it dropped
+        ``session_id`` — which meant a session-id regression on the transport
+        seam was invisible to every test that used this fake.
+        """
+        self.send_batch([span.to_ingest_payload() for span in spans], key, url)
 
     def send_batch(self, payloads: list[dict[str, Any]], key: str, url: str) -> None:
         if self.raise_on_batch is not None:

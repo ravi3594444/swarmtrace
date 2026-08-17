@@ -40,7 +40,7 @@ _log = logging.getLogger("swarmtrace.mcp_gateway")
 # Lazy import of the mcp SDK. The gateway is an optional extra; the module
 # should still be importable when mcp is not installed so that tests and
 # the CLI can fail gracefully with a helpful message.
-_mcp = None  # type: ignore
+_mcp: Any = None
 
 
 def _ensure_mcp() -> Any:

@@ -43,7 +43,9 @@ import threading
 import time
 import uuid
 import weakref
+from collections.abc import Callable
 from datetime import datetime, timezone
+from typing import Any
 
 # ── shared config + context ─────────────────────────────────────────────────
 from swarmtrace.config import (
@@ -52,10 +54,7 @@ from swarmtrace.config import (
 from swarmtrace.config import (
     remote_config as _remote_config,
 )
-from swarmtrace.trace_context import current_agent
 
-# Compatibility alias used by older tests that monkeypatch fov._current_agent.
-_current_agent = current_agent
 # Redactor — used by tracer.py for span args/output, and now by FOV's
 # browser-event path too. See _redact_browser_args below for why FOV
 # needs field-aware redaction ON TOP of the pattern-based redact() (a
@@ -65,11 +64,15 @@ _current_agent = current_agent
 # Supabase).
 from swarmtrace.redact import redact as _redact_text
 
-_log = logging.getLogger("swarmtrace.fov")
-
-# ── local event storage ──────────────────────────────────────────────────────
+# ── local event storage ─────────────────────────────────────────────────────
 from swarmtrace.storage import _get_conn
 from swarmtrace.storage import _lock as _storage_lock
+from swarmtrace.trace_context import current_agent
+
+# Compatibility alias used by older tests that monkeypatch fov._current_agent.
+_current_agent = current_agent
+
+_log = logging.getLogger("swarmtrace.fov")
 
 # ---------------------------------------------------------------------------
 # Local SQLite event table — with bounded size (no disk-fill risk)
@@ -614,6 +617,18 @@ def _stream_event_data(token: str, accumulated: str) -> dict:
     }
 
 
+def _mark_patched(wrapper: Callable[..., Any]) -> Callable[..., Any]:
+    """Tag a wrapper so ``patch_playwright()`` never double-wraps a method.
+
+    The attribute is read back with ``getattr(orig, "_swarmtrace_patched",
+    False)``. Setting an arbitrary attribute on a function is invisible to a
+    type checker, hence the single localised ignore here rather than one at
+    each wrap site.
+    """
+    wrapper._swarmtrace_patched = True  # type: ignore[attr-defined]
+    return wrapper
+
+
 def _wrap_sync_method(name: str, original):
     @functools.wraps(original)
     def wrapper(self, *args, **kwargs):
@@ -652,8 +667,7 @@ def _wrap_sync_method(name: str, original):
             if ev3:
                 _save_event(ev3)
             raise
-    wrapper._swarmtrace_patched = True
-    return wrapper
+    return _mark_patched(wrapper)
 
 
 def _wrap_async_method(name: str, original):
@@ -687,8 +701,7 @@ def _wrap_async_method(name: str, original):
             if ev3:
                 _save_event(ev3)
             raise
-    wrapper._swarmtrace_patched = True
-    return wrapper
+    return _mark_patched(wrapper)
 
 
 def patch_playwright() -> bool:
@@ -766,6 +779,8 @@ class _StreamWrapper:
     def __exit__(self, *a):
         if hasattr(self._stream, "__exit__"):
             return self._stream.__exit__(*a)
+        # Explicit: a wrapped object with no __exit__ suppresses nothing.
+        return False
 
     def __getattr__(self, name):
         return getattr(self._stream, name)
@@ -810,6 +825,8 @@ class _AsyncStreamWrapper:
     async def __aexit__(self, *a):
         if hasattr(self._stream, "__aexit__"):
             return await self._stream.__aexit__(*a)
+        # Explicit: a wrapped object with no __aexit__ suppresses nothing.
+        return False
 
     def __getattr__(self, name):
         return getattr(self._stream, name)
@@ -1121,6 +1138,9 @@ def get_events(agent_id: str, limit: int = 100) -> list:
                 (agent_id, limit),
             )
             cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            # strict=True: cursor.description and each row always agree in
+            # length, so a mismatch means the query or schema changed under
+            # us. Fail loudly rather than silently dropping trailing columns.
+            return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
     except Exception:
         return []

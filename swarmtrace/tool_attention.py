@@ -25,6 +25,12 @@ class ToolAttention:
         self.verbose = verbose
         self._embeddings = None
         self._model = None
+        # Initialised alongside _model/_embeddings so the None guards in
+        # select()/add_tools() can actually run. _build_index() assigns it
+        # only on the success path, so without this line an instance whose
+        # index was never built raises AttributeError on attribute access —
+        # not the RuntimeError both methods document and intend to raise.
+        self._index = None
         self._build_index()
 
     def _build_index(self):
@@ -52,7 +58,10 @@ class ToolAttention:
 
             if self.verbose:
                 total_tokens = sum(len(json.dumps(t.get("schema", {}))) // 4 for t in self.tools)
-                _log.info("Indexed %d tools | Full schema: ~%d tokens", len(self.tools), total_tokens)
+                _log.info(
+                    "Indexed %d tools | Full schema: ~%d tokens",
+                    len(self.tools), total_tokens,
+                )
 
         except ImportError as e:
             raise ImportError(
@@ -117,7 +126,11 @@ class ToolAttention:
         ISO Scoring — select top-k tools by intent-schema overlap.
         Returns only the relevant tools with full schemas.
         """
-        if self._index is None:
+        # Guard on all three pieces of index state, matching add_tools().
+        # Checking only _index left _model unguarded on this path even though
+        # the very next lines call self._model.encode(...) — an AttributeError
+        # on None instead of the intended RuntimeError.
+        if self._index is None or self._model is None:
             raise RuntimeError(
                 "[ToolAttention] Index not built. "
                 "Ensure sentence-transformers and faiss-cpu are installed."

@@ -412,10 +412,8 @@ def deliver(alert: Alert, webhook: str, *, retries: int = 3) -> bool:
     """
     if not webhook:
         return False
-    if "hooks.slack.com" in webhook:
-        payload = _slack_payload(alert)
-    else:
-        payload = _generic_payload(alert)
+    is_slack = "hooks.slack.com" in webhook
+    payload = _slack_payload(alert) if is_slack else _generic_payload(alert)
 
     body = json.dumps(payload).encode()
     for attempt in range(retries):
