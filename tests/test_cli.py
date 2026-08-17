@@ -230,8 +230,8 @@ def test_view_tree_nests_grandchildren_correctly(cli, storage, capsys, monkeypat
 
     tree_section = out.split("=== Agent Tree ===", 1)[-1]
     lines = tree_section.split("\n")
-    sub_line = next((l for l in lines if "sub_agent" in l), None)
-    tool_line = next((l for l in lines if "tool_call" in l), None)
+    sub_line = next((line for line in lines if "sub_agent" in line), None)
+    tool_line = next((line for line in lines if "tool_call" in line), None)
     assert sub_line is not None, "sub_agent line not found in tree output"
     assert tool_line is not None, "tool_call line not found in tree output"
 

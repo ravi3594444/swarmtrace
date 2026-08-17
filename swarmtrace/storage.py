@@ -118,7 +118,11 @@ def _secure_db_path(path: str) -> None:
     except FileExistsError:
         expected = os.lstat(path)
         if stat.S_ISLNK(expected.st_mode) or not stat.S_ISREG(expected.st_mode):
-            raise OSError(f"refusing non-regular SwarmTrace DB path: {path}")
+            # from None: the FileExistsError is the expected, uninteresting
+            # branch here (the DB already exists). Chaining it would bury the
+            # actual security refusal under an irrelevant "During handling of
+            # the above exception" traceback.
+            raise OSError(f"refusing non-regular SwarmTrace DB path: {path}") from None
         fd = os.open(path, flags)
 
     try:
@@ -234,7 +238,8 @@ def _purge_by_age(conn: sqlite3.Connection) -> None:
         return
     conn.execute(
         "DELETE FROM traces WHERE id IN "
-        "(SELECT id FROM traces WHERE synced = 1 AND timestamp < datetime('now', '-' || ? || ' days'))",
+        "(SELECT id FROM traces WHERE synced = 1 AND "
+        "timestamp < datetime('now', '-' || ? || ' days'))",
         (RETENTION_DAYS,),
     )
 

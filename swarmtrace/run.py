@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import time
 import uuid
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timezone
 from typing import Any
 
@@ -50,7 +50,10 @@ class _SpanContext:
         self._start: float = 0.0
         self._start_time: datetime | None = None
         self._error: str | None = None
-        self._ctx_manager: object | None = None
+        # Typed as a context manager rather than bare ``object`` so the
+        # __enter__/__exit__ calls below are checkable — as ``object`` they
+        # were invisible to the type checker.
+        self._ctx_manager: AbstractContextManager[Any] | None = None
         self.parent_id: str | None = None
         self.trace_id: str | None = None
         self.agent_id: str | None = None

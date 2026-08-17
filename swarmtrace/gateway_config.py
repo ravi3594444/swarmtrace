@@ -100,7 +100,7 @@ def load_config(path: str) -> GatewayConfig:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"gateway config not found: {path}")
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
     if not isinstance(data, dict):
