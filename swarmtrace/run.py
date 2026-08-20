@@ -7,7 +7,13 @@ import time
 import uuid
 from contextlib import contextmanager
 from datetime import datetime, timezone
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    # typing.Self is 3.11+; this package supports 3.10. Safe under
+    # `from __future__ import annotations` since annotations are never
+    # evaluated at runtime, only by type checkers.
+    from typing import Self
 
 from swarmtrace.runtime import get_runtime
 from swarmtrace.span_model import SpanRecord
@@ -100,7 +106,7 @@ class _SpanContext:
         )
         get_runtime().record(span)
 
-    def __enter__(self) -> _SpanContext:
+    def __enter__(self) -> Self:
         self._start, self._start_time = _now()
         self._ctx_manager = using(self._build_trace_context())
         self._ctx_manager.__enter__()
@@ -113,7 +119,7 @@ class _SpanContext:
             if self._ctx_manager is not None:
                 self._ctx_manager.__exit__(exc_type, exc, tb)
 
-    async def __aenter__(self) -> _SpanContext:
+    async def __aenter__(self) -> Self:
         return self.__enter__()
 
     async def __aexit__(self, exc_type, exc, tb) -> None:

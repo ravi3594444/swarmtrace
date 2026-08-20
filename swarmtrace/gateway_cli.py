@@ -71,7 +71,7 @@ def main(config: str, transport: str, host: str, port: int, log_level: str) -> N
 
     try:
         asyncio.run(_start())
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- CLI entry point: clean message + exit code, not a raw traceback
         click.echo(f"Failed to start gateway: {exc}", err=True)
         sys.exit(1)
 
@@ -82,13 +82,13 @@ def main(config: str, transport: str, host: str, port: int, log_level: str) -> N
 
     try:
         gateway.run(transport=transport)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- CLI entry point: clean message + exit code, not a raw traceback
         click.echo(f"Gateway error: {exc}", err=True)
         sys.exit(1)
     finally:
         try:
             asyncio.run(gateway.stop())
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- shutdown must not mask the original error above
             click.echo(f"Gateway stop warning: {exc}", err=True)
 
 

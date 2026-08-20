@@ -50,7 +50,7 @@ def view(limit=None):
         limit = _parse_limit()
     try:
         traces = get_traces(limit=limit)
-    except Exception:
+    except Exception:  # noqa: BLE001 -- CLI entry point, defensive outer boundary
         traces = []
 
     if not traces:
@@ -256,7 +256,7 @@ def _alerts_test() -> None:
         console = None
     try:
         fired = evaluate_now()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- CLI entry point: clean message + exit code, not a raw traceback
         print(f"[swarmtrace] alert evaluation failed: {exc}", file=sys.stderr)
         sys.exit(1)
     if not fired:

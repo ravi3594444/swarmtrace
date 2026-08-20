@@ -4,6 +4,53 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [0.7.3] — 2026-08-20
+
+### Fixed
+- **`fov.py`'s `_send_event_remote` was silently swallowing its own**
+  **exceptions**, which defeated the documented "retry up to 3 times with
+  backoff" logic in its only caller: the outer `except Exception` could
+  never fire because the inner function never raised. A remote FOV event
+  send could fail outright and would never be retried. Now
+  `_send_event_remote` raises on failure and the retry loop actually
+  retries, logging a warning only after all 3 attempts are exhausted.
+
+### Chore
+- **Completed the `BLE001`/`S110`/`TRY004`/`SIM117`/`PYI034` audit left**
+  **outstanding in 0.7.2** (99 findings total this pass — a few new ones
+  landed on `main` since 0.7.2's snapshot). Every site was reviewed
+  individually rather than blanket-suppressed:
+  - `BLE001` (64) — the large majority are legitimate, deliberate
+    boundaries (storage/network/teardown layers, background daemon loops,
+    CLI entry points, arbitrary user-callback invocations, optional-SDK
+    presence checks) and are now suppressed with a `# noqa: BLE001`
+    explaining the specific reason. A smaller set were narrowed to the
+    actual exception types the call site can raise
+    (`otlp_mapping.py`, `span_model.py`, `alerts.py`'s timestamp parser).
+    `budget.py` also had a redundant `(FuturesTimeout, Exception)` tuple
+    collapsed to just `Exception` (the former is already a subclass of the
+    latter), which made the now-unused `FuturesTimeout` import removable.
+  - `S110` (7) — `alerts.py`'s `on_alert` callback now logs instead of
+    silently dropping the exception; `delivery/sender.py`'s `task_done()`
+    guard narrowed to `ValueError` with a debug log; `fov.py`'s four
+    monkey-patch/streaming sites narrowed to their realistic exception
+    types with debug logging; `tests/stress_api.py` now tracks and reports
+    request failures instead of discarding them.
+  - `TRY004` (4) — kept as `ValueError` with documented `noqa` in
+    `gateway_config.py`: these validate parsed JSON config, not Python
+    call arguments, and every *other* `isinstance` check in the same
+    module (unflagged by this rule) already raises `ValueError`. Switching
+    only the flagged four to `TypeError` would have split the module's
+    error contract for external callers.
+  - `SIM117` (3) / `PYI034` (2) — applied as planned in 0.7.2's notes:
+    merged nested `with` in `test_resilience.py`/`test_run.py`;
+    `_SpanContext.__enter__`/`__aenter__` now return `Self`, imported
+    under `TYPE_CHECKING` since the package floors at py310 and
+    `typing.Self` is py311+.
+- Full suite re-verified clean after every file: 390 Python tests passed
+  (14 skipped — no network/optional deps in the audit environment), `ruff
+  check .` fully clean. Bumped to 0.7.3.
+
 ## [0.7.2] — 2026-08-08
 
 ### Chore

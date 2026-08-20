@@ -142,7 +142,7 @@ def db_conn():
         sql = migration_file.read_text(encoding="utf-8")
         try:
             cur.execute(sql)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 -- test fixture: catch any migration failure to clean up + pytest.fail
             cur.close()
             conn.close()
             pytest.fail(
@@ -603,7 +603,7 @@ def test_upsert_for_key_rejects_unknown_key(clean_db):
     try:
         _call_rpc_for_key(cur, payload)
         raised = False
-    except Exception:
+    except Exception:  # noqa: BLE001 -- test wants "any exception" for an invalid key, not a specific type
         raised = True
     assert raised, "expected invalid_api_key exception for unknown key"
     cur.execute("SELECT count(*) AS n FROM public.traces WHERE id = 't-missing';")
@@ -732,7 +732,7 @@ def test_insert_regression_run_for_key_rejects_unknown_key(clean_db):
             ),
         )
         raised = False
-    except Exception:
+    except Exception:  # noqa: BLE001 -- test wants "any exception" for an invalid key, not a specific type
         raised = True
     assert raised, "expected invalid_api_key exception for unknown key"
     cur.execute(

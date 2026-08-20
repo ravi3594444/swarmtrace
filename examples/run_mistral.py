@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import os
 
-import swarmtrace
 from mistralai.client import Mistral
+
+import swarmtrace
 
 
 def main() -> None:

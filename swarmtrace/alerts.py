@@ -128,7 +128,7 @@ def _save(alert: Alert) -> None:
                 ),
             )
             conn.commit()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- storage boundary: must never crash the caller on a persistence hiccup
         _log.warning("save warning: %s", exc)
 
 
@@ -209,7 +209,7 @@ class RuleEngine:
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             return dt
-        except Exception:
+        except (ValueError, TypeError):
             return None
 
     def _in_cooldown(self, rule: str, agent_id: str) -> bool:
@@ -468,7 +468,8 @@ def _forward_to_dashboard(alert: Alert, api_key: str, endpoint: str) -> bool:
         )
         with urlopen(req, timeout=5) as resp:
             return 200 <= resp.status < 300
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- best-effort network call, must not raise
+        _log.debug("forward-to-dashboard webhook failed: %s", exc)
         return False
 
 
@@ -514,7 +515,7 @@ class AlertRunner:
         while not self._stop.is_set():
             try:
                 self._tick()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- daemon loop must never die on one bad tick
                 _log.error("tick failed: %s", exc)
             # Wait, but stay responsive to stop().
             self._stop.wait(self.interval)
@@ -532,8 +533,8 @@ class AlertRunner:
             if self.on_alert:
                 try:
                     self.on_alert(alert)
-                except Exception:
-                    pass
+                except Exception:  # noqa: BLE001 -- on_alert is arbitrary user code, must not propagate
+                    _log.exception("on_alert callback raised")
 
 
 # ---------------------------------------------------------------------------
@@ -603,7 +604,8 @@ def start(*, interval_seconds: int = 60) -> None:
     try:
         from swarmtrace.config import remote_config
         key, endpoint = remote_config()
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- startup config resolution must not block the alert runner
+        _log.debug("remote_config lookup failed, remote alerts disabled: %s", exc)
         key, endpoint = "", ""
     _runner = AlertRunner(
         get_engine(),
@@ -656,7 +658,7 @@ def list_alerts(
             params.append(limit)
             rows = conn.execute(query, params).fetchall()
         return [_row_to_alert(r).to_dict() for r in rows]
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- storage boundary: must never crash the caller on a query hiccup
         _log.warning("list warning: %s", exc)
         return []
 
@@ -672,7 +674,7 @@ def acknowledge(alert_id: str) -> bool:
             )
             conn.commit()
             return cur.rowcount > 0
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- storage boundary: must never crash the caller on a query hiccup
         _log.warning("ack warning: %s", exc)
         return False
 

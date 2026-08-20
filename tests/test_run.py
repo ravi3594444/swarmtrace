@@ -147,9 +147,12 @@ def test_run_and_observe_share_context(records):
 
 
 def test_run_inherits_session(records):
-    with swarmtrace.session("conversation-42"), swarmtrace.run("research-agent"):
-        with swarmtrace.span("fetch-data", kind="tool"):
-            pass
+    with (
+        swarmtrace.session("conversation-42"),
+        swarmtrace.run("research-agent"),
+        swarmtrace.span("fetch-data", kind="tool"),
+    ):
+        pass
 
     assert len(records) == 2
     run_row = _find_row(records, "research-agent")
@@ -200,9 +203,11 @@ def test_span_without_run_is_orphan(records):
 
 def test_nested_async_span_under_run(records):
     async def _main():
-        async with swarmtrace.run("research-agent"):
-            async with swarmtrace.span("fetch-data", kind="tool"):
-                pass
+        async with (
+            swarmtrace.run("research-agent"),
+            swarmtrace.span("fetch-data", kind="tool"),
+        ):
+            pass
 
     asyncio.run(_main())
 

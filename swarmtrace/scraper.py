@@ -50,7 +50,7 @@ def scrape(url: str, verbose=True, kind: str = "tool"):
         page = Fetcher().get(url, timeout=30)
         result = page.get_all_text(ignore_tags=("script", "style"))
         bytes_scraped = len(result.encode("utf-8"))
-    except Exception as e:
+    except Exception as e:  # noqa: BLE001 -- captured for span recording, then re-raised below
         error = str(e)
         _exc = e
     finally:

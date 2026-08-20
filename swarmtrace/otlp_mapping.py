@@ -47,7 +47,7 @@ def _nano_to_dt(nano: Any) -> datetime | None:
     try:
         sec = int(nano) / 1e9
         return datetime.fromtimestamp(sec, tz=timezone.utc)
-    except Exception:
+    except (TypeError, ValueError, OSError, OverflowError):
         return None
 
 
@@ -60,7 +60,7 @@ def _any_value_to_python(value: Any) -> Any:
     if "intValue" in value:
         try:
             return int(value["intValue"])
-        except Exception:
+        except (ValueError, TypeError):
             return value["intValue"]
     if "doubleValue" in value:
         return float(value["doubleValue"])

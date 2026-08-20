@@ -41,12 +41,14 @@ class TestReliability(unittest.TestCase):
         # print(file=sys.stderr)); now verified via assertLogs because the
         # impl uses logging.getLogger("swarmtrace") per the library's
         # logging policy (no handlers attached — host app's decision).
-        with patch('swarmtrace.tracer._flush', side_effect=Exception("DB Corrupted")):
-            with self.assertLogs("swarmtrace", level="WARNING") as cm:
-                _safe_flush(
-                    "id", None, "func", [], {}, "out", 0.1, None, "ts",
-                    0, 0, 0.0, "auto", "agent-id", "agent-name",
-                )
+        with (
+            patch('swarmtrace.tracer._flush', side_effect=Exception("DB Corrupted")),
+            self.assertLogs("swarmtrace", level="WARNING") as cm,
+        ):
+            _safe_flush(
+                "id", None, "func", [], {}, "out", 0.1, None, "ts",
+                0, 0, 0.0, "auto", "agent-id", "agent-name",
+            )
         joined = "\n".join(cm.output)
         self.assertIn("trace flush warning", joined)
         self.assertIn("DB Corrupted", joined)

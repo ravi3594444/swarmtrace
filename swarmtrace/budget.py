@@ -24,7 +24,6 @@ import logging
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
-from concurrent.futures import TimeoutError as FuturesTimeout
 
 _log = logging.getLogger("swarmtrace.budget")
 
@@ -80,13 +79,13 @@ def _count_tokens(text: str) -> int:
             import tiktoken
             enc = tiktoken.get_encoding("cl100k_base")
             return len(enc.encode(text))
-        except Exception:
+        except Exception:  # noqa: BLE001 -- optional dependency, best-effort degrade to approx count
             return approx
 
     try:
         fut = _tok_pool.submit(_try_tiktoken)
         return fut.result(timeout=0.2)
-    except (FuturesTimeout, Exception):
+    except Exception:  # noqa: BLE001 -- covers FuturesTimeout (an Exception subclass) plus any pool error
         return approx
 
 

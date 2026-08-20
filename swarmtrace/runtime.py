@@ -122,7 +122,7 @@ class Runtime:
                     self._transport.send_single(payload, key, url)
                     sent_ok = True
                     break
-                except Exception as exc:
+                except Exception as exc:  # noqa: BLE001 -- network transport failure, retried with backoff then logged
                     if attempt < retries - 1:
                         time.sleep(2 ** attempt)
                     else:
