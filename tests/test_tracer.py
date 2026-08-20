@@ -5,6 +5,7 @@ import asyncio
 import pytest
 
 from swarmtrace import tracer
+from swarmtrace.tracer import _normalize_base_url, _remote_config, _validate_endpoint_scheme
 
 _SAVE_TRACE_FIELD_ORDER = (
     "id_", "parent_id", "function", "args", "output", "latency_sec",
@@ -773,9 +774,6 @@ def test_small_args_unaffected_by_cap(records):
 # insecure. The worker then skips sending (matching the "no endpoint
 # configured" path) instead of leaking the key.
 
-from swarmtrace.tracer import _remote_config, _validate_endpoint_scheme
-
-
 def test_validate_endpoint_empty_is_ok():
     """Empty URL means 'no endpoint configured' — not a security issue."""
     ok, reason = _validate_endpoint_scheme("")
@@ -903,9 +901,6 @@ def test_remote_config_returns_url_for_localhost_dev(monkeypatch):
 # an uppercase (or mixed-case) /API suffix not being recognized at all
 # (str.endswith is case-sensitive), and surrounding whitespace from a
 # copy-pasted or heredoc-set env var not being trimmed.
-
-from swarmtrace.tracer import _normalize_base_url
-
 
 def test_normalize_base_url_four_documented_patterns_unaffected():
     """The fix must not regress the original four supported forms."""
