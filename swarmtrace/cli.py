@@ -24,12 +24,31 @@ def _parse_limit(default: int = DEFAULT_VIEW_LIMIT) -> int:
 
 # ---------- helpers ----------
 
+def _tree_roots(traces):
+    """Return visible tree roots and whether each is detached.
+
+    A trace can reference a parent that is outside the current ``--limit``
+    window (or was never recorded locally). Treating only ``parent_id=None``
+    rows as roots made those otherwise-valid spans disappear from the tree.
+    """
+    trace_ids = {trace["id"] for trace in traces}
+    return [
+        (trace, trace["parent_id"] is not None)
+        for trace in traces
+        if trace["parent_id"] is None or trace["parent_id"] not in trace_ids
+    ]
+
+
 def _print_tree(traces, parent_id=None, indent=0):
-    # Rows are dicts keyed by column name (storage.py), so any future
-    # migration column is automatically available under its own name here
-    # with no code change needed — see storage.py:TraceRow.
-    children = [t for t in traces if t["parent_id"] == parent_id]
+    if indent == 0 and parent_id is None:
+        children = [trace for trace, _detached in _tree_roots(traces)]
+    else:
+        children = [t for t in traces if t["parent_id"] == parent_id]
+
     for t in children:
+        # Rows are dicts keyed by column name (storage.py), so any future
+        # migration column is automatically available under its own name here
+        # with no code change needed — see storage.py:TraceRow.
         id_, func, error = t["id"], t["function"], t["error"]
         latency, in_tok, out_tok, cost, kind = (
             t["latency_sec"], t["input_tokens"], t["output_tokens"],
@@ -37,8 +56,12 @@ def _print_tree(traces, parent_id=None, indent=0):
         )
         status = "ERROR" if error else "OK"
         tag = "" if kind == "agent" else f" [{kind}]"
+        detached = " [detached]" if indent == 0 and t["parent_id"] is not None else ""
         prefix = "    " * indent + ("└── " if indent > 0 else "")
-        print(f"{prefix}{func}(){tag} [{id_}] {latency}s | {in_tok}in/{out_tok}out | ${cost} | {status}")
+        print(
+            f"{prefix}{func}(){tag}{detached} [{id_}] {latency}s | "
+            f"{in_tok}in/{out_tok}out | ${cost} | {status}"
+        )
         _print_tree(traces, id_, indent + 1)
 
 
@@ -99,15 +122,25 @@ def view(limit=None):
         # is still visible in the table view above and via `swarmtrace-replay`).
         from rich.text import Text
 
-        def _tree_label(func: str, error, kind: str, latency, cost, tid: str) -> Text:
+        def _tree_label(
+            func: str,
+            error,
+            kind: str,
+            latency,
+            cost,
+            tid: str,
+            *,
+            detached: bool = False,
+        ) -> Text:
             status = "[red]✗[/red]" if error else "[green]✓[/green]"
             tag = "" if kind == "agent" else f" [dim]({kind})[/dim]"
+            detached_tag = " [yellow](detached)[/yellow]" if detached else ""
             # Escape [ and ] around the trace ID with \[ \] so rich's markup
             # parser treats them as literal brackets, not style tags. Without
             # escaping, [root-1] is interpreted as a (nonexistent) style tag
             # and silently dropped from the output.
             label = (
-                f"[blue]{func}()[/blue] {status}{tag} "
+                f"[blue]{func}()[/blue] {status}{tag}{detached_tag} "
                 f"[yellow]{latency:.3f}s[/yellow] "
                 f"[magenta]${cost or 0}[/magenta] \\[{tid}]"
             )
@@ -116,11 +149,20 @@ def view(limit=None):
             t.overflow = "ellipsis"
             return t
 
-        roots = [t for t in traces if t["parent_id"] is None]
-        for root in roots:
+        for root, detached in _tree_roots(traces):
             id_, func, error, kind = root["id"], root["function"], root["error"], root["kind"]
             latency, cost = root["latency_sec"], root["cost_usd"]
-            tree = Tree(_tree_label(func, error, kind, latency, cost, id_))
+            tree = Tree(
+                _tree_label(
+                    func,
+                    error,
+                    kind,
+                    latency,
+                    cost,
+                    id_,
+                    detached=detached,
+                )
+            )
 
             def add_children(tree_node, pid):
                 for child in [t for t in traces if t["parent_id"] == pid]:

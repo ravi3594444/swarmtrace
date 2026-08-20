@@ -4,6 +4,20 @@ All notable changes to **swarmtrace** are documented here. Versions match
 PyPI releases. Format is loosely [Keep a Changelog](https://keepachangelog.com/),
 adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Improved
+- **The CLI tree no longer hides spans whose parent is outside the current**
+  **`--limit` window.** These spans now render as detached roots, preserving
+  visibility without inventing a false parent-child relationship.
+
+### Fixed
+- **Postgres integration-test teardown now removes every migration function**
+  **and revokes role-owned grants before dropping its Supabase role stubs.**
+  This fixes CI failing after all 14 assertions passed because
+  `increment_daily_metrics(...)` still granted `EXECUTE` to `service_role`,
+  and makes teardown resilient when future migrations add another RPC grant.
+
 ## [0.7.3] — 2026-08-20
 
 ### Fixed
