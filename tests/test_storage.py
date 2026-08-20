@@ -1,6 +1,8 @@
 """Tests for the SQLite trace storage layer."""
 
 import importlib
+import os
+import stat
 
 import pytest
 
@@ -214,10 +216,6 @@ def test_purge_evicts_oldest_synced_first(storage, monkeypatch):
 # data. Fix: _secure_db_path() securely opens a regular DB file as 0600,
 # creates only package-owned directories as 0700, and rejects unsafe paths.
 # ---------------------------------------------------------------------------
-
-import os
-import stat
-
 
 def test_db_file_created_with_0600_permissions(storage):
     """The DB file must be 0600 (owner-only) — not the umask default of 0644."""

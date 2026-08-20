@@ -33,9 +33,9 @@ attributed (via ``agent_id`` / ``agent_name``) to the nearest enclosing
 of the Agents page entirely rather than appearing as a phantom agent.
 """
 
-import asyncio
 import functools
 import hashlib
+import inspect
 import logging
 import os
 import time
@@ -475,7 +475,7 @@ def observe(func=None, *, kind: str = "auto", name: str | None = None,
             f"{sorted(_KIND_CHOICES)}"
         )
 
-    if asyncio.iscoroutinefunction(func):
+    if inspect.iscoroutinefunction(func):
         @functools.wraps(func)
         async def async_wrapper(*args, **kwargs):
             trace_id = _build_trace_id()

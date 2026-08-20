@@ -85,7 +85,9 @@ def main() -> None:
     psql = os.path.join(PSQL_BIN, "psql")
 
     def psql_cli(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run([psql, uri, *args], capture_output=True, text=True, check=False)
+        return subprocess.run(
+            [psql, uri, *args], capture_output=True, text=True, check=False
+        )
 
     def runner(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
