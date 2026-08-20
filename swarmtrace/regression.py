@@ -76,7 +76,7 @@ Reply with just the number, nothing else."""
     # legitimately can reference a real (just non-numeric) value.
     try:
         raw = llm(prompt)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- user-supplied callable, see comment above
         _log.warning(
             "similarity LLM call failed (%r) — defaulting to 0.5 (neutral).", exc,
         )
@@ -84,7 +84,7 @@ Reply with just the number, nothing else."""
 
     try:
         return min(1.0, max(0.0, float(raw.strip())))
-    except Exception:
+    except Exception:  # noqa: BLE001 -- untrusted LLM output, see comment below
         # Non-numeric (or non-string/None) output — warn and default to
         # neutral 0.5 so neither a regression nor a false pass is silently
         # reported.
@@ -191,7 +191,7 @@ def report_run(
     try:
         with urlopen(req, timeout=10) as resp:
             status = resp.status
-    except Exception as exc:  # network error, timeout, HTTP error, anything
+    except Exception as exc:  # noqa: BLE001 -- network error, timeout, HTTP error, anything; must not raise
         _log.warning(
             "dashboard regression report failed (%r) — run results are still "
             "available in this process's logs.",

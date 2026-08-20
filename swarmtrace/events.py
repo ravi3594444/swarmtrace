@@ -77,7 +77,7 @@ def emit(event_type: str, **kwargs: Any) -> None:
     for handler in handlers:
         try:
             handler(**kwargs)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- one bad subscriber must not break tracing, see docstring above
             _log.warning("event handler for %s failed: %s", event_type, exc)
 
 

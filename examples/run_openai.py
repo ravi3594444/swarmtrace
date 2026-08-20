@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import os
 
-import swarmtrace
 from openai import OpenAI
+
+import swarmtrace
 
 
 def main() -> None:

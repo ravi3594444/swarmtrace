@@ -107,7 +107,7 @@ def _background_fetch() -> None:
         with _cache_lock:
             _cache = data
             _cache_ts = time.time()
-    except Exception:
+    except Exception:  # noqa: BLE001 -- background thread must not die; see backoff rationale below
         # Back off for the full TTL before trying again, regardless of
         # whether we've succeeded before. Without the unconditional update
         # here, a fetch that fails *after* an earlier success would leave
@@ -258,7 +258,7 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
             return _price_from_entry(entry, input_tokens, output_tokens)
 
         return 0.0
-    except Exception:
+    except Exception:  # noqa: BLE001 -- invoked from finally blocks that must never raise, see comment above
         return 0.0
 
 def warm_cache() -> None:

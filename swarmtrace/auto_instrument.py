@@ -283,7 +283,7 @@ def _record_async(
             session_id=session_id,
         )
         get_runtime().record(span)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- instrumentation wrapper must never break the wrapped call, already logged
         _log.warning("auto-instrument record warning: %s", exc)
 
 
@@ -668,7 +668,7 @@ def patch_all() -> dict:
     for name, patch in patches.items():
         try:
             results[name] = bool(patch())
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- one bad patch must not stop the others, see docstring above
             results[name] = False
             _log.warning("auto-instrument warning (%s): %s", patch.__name__, exc)
     active = [name for name, ok in results.items() if ok]

@@ -85,7 +85,7 @@ class OtlpCollectorHandler(BaseHTTPRequestHandler):
         try:
             body = self.rfile.read(body_len)
             payload = json.loads(body.decode("utf-8"))
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- HTTP handler boundary: any parse failure becomes a 400, must not crash the server thread
             _log.debug("failed to read body: %s", exc)
             self._send_json(400, {"error": "invalid JSON body"})
             return
@@ -97,7 +97,7 @@ class OtlpCollectorHandler(BaseHTTPRequestHandler):
 
         try:
             spans = otlp_payload_to_span_records(payload)
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- HTTP handler boundary: any mapping failure becomes a 400
             _log.warning("failed to map OTLP spans: %s", exc)
             self._send_json(400, {"error": "failed to map spans"})
             return
@@ -105,13 +105,13 @@ class OtlpCollectorHandler(BaseHTTPRequestHandler):
         if self.on_spans is not None:
             try:
                 self.on_spans(spans)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- on_spans is arbitrary user code, must not crash the server thread
                 _log.warning("on_spans hook failed: %s", exc)
 
         if self.api_key and self.endpoint:
             try:
                 self.transport.send(spans, self.api_key, self.endpoint)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- HTTP handler boundary: any forwarding failure becomes a 502
                 _log.warning("failed to forward spans: %s", exc)
                 self._send_json(502, {"error": "failed to forward spans"})
                 return

@@ -88,7 +88,7 @@ class SpanRecord:
         if isinstance(raw_attrs, str):
             try:
                 attributes = json.loads(raw_attrs)
-            except Exception:
+            except (json.JSONDecodeError, ValueError):
                 attributes = {}
         elif isinstance(raw_attrs, dict):
             attributes = dict(raw_attrs)

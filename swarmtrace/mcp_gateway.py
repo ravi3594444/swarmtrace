@@ -123,13 +123,13 @@ class StdioUpstream(Upstream):
         if self._session_cm is not None:
             try:
                 await self._session_cm.__aexit__(None, None, None)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- teardown must not raise, already logged
                 _log.debug("upstream %s session close warning: %s", self.name, exc)
             self._session_cm = None
         if self._stdio_cm is not None:
             try:
                 await self._stdio_cm.__aexit__(None, None, None)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- teardown must not raise, already logged
                 _log.debug("upstream %s stdio close warning: %s", self.name, exc)
             self._stdio_cm = None
         self._session = None
@@ -306,7 +306,7 @@ class SwarmTraceMcpGateway:
         for upstream in list(self._upstreams.values()):
             try:
                 await upstream.close()
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- teardown must not raise, already logged
                 _log.warning("upstream %s close error: %s", upstream.name, exc)
 
     def _register_name(self, tool_name: str, upstream_name: str) -> str:
@@ -373,7 +373,7 @@ class SwarmTraceMcpGateway:
             result_value = await upstream.call_tool(original_name, arguments)
             output = _result_to_output(result_value)
             return mcp.types.CallToolResult(content=[_text_content(output)])
-        except Exception as exc:
+        except Exception as exc:  # noqa: BLE001 -- gateway contract: upstream tool failures become structured errors, never propagate raw
             error = str(exc)
             return mcp.types.CallToolResult(
                 content=[_text_content(f"upstream error: {error}")],
@@ -405,7 +405,7 @@ class SwarmTraceMcpGateway:
             )
             try:
                 get_runtime().record(span)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- tracing must not break gateway functionality, already logged
                 _log.warning("gateway span record warning: %s", exc)
 
     async def call_tool(

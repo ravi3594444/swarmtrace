@@ -15,6 +15,7 @@ API_URL = "http://localhost:8000/traces"
 def simulate_reads(num_requests):
     latencies = []
     successes = 0
+    errors = 0
     for _ in range(num_requests):
         try:
             start = time.perf_counter()
@@ -22,9 +23,9 @@ def simulate_reads(num_requests):
             latencies.append(time.perf_counter() - start)
             if resp.status_code == 200:
                 successes += 1
-        except Exception:
-            pass
-    return latencies, successes
+        except requests.RequestException:
+            errors += 1
+    return latencies, successes, errors
 
 
 def run_stress_test(concurrent_users=10, requests_per_user=50):
@@ -45,7 +46,12 @@ def run_stress_test(concurrent_users=10, requests_per_user=50):
 
     all_latencies = [lat for r in results if r for lat in r[0]]
     total_successes = sum(r[1] for r in results if r)
+    total_errors = sum(r[2] for r in results if r)
 
+    if not all_latencies and total_errors:
+        print(f"No requests completed successfully -- {total_errors} request(s) raised "
+              f"an exception (e.g. connection refused). Is the API running at {API_URL}?")
+        return
     if not all_latencies:
         print("No requests completed successfully.")
         return
@@ -60,6 +66,7 @@ def run_stress_test(concurrent_users=10, requests_per_user=50):
     print("--- Stress Test Results ---")
     print(f"Total Requests: {len(all_latencies)}")
     print(f"Successful (200): {total_successes}")
+    print(f"Errors (exceptions): {total_errors}")
     print(f"Total Time: {end_time - start_time:.2f}s")
     print(f"Average Latency: {avg_latency:.2f}ms")
     print(f"P95 Latency: {p95_latency:.2f}ms")

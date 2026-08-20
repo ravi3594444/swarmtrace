@@ -142,7 +142,8 @@ def _get_conn() -> sqlite3.Connection:
     if _conn is not None:
         try:
             _conn.execute("SELECT 1")
-        except Exception:
+        except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
+            _log.debug("cached connection unhealthy, reconnecting: %s", exc)
             _conn = None
 
     if _conn is None:
@@ -253,7 +254,7 @@ def purge_now() -> None:
             conn = _get_conn()
             _purge(conn)
             conn.commit()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
         _log.warning("purge_now warning: %s", exc)
 
 # ---------------------------------------------------------------------------
@@ -304,7 +305,7 @@ def save_trace(
             if _write_count % CHECKPOINT_EVERY == 0:
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
             conn.commit()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
         _log.warning("storage warning: %s", exc)
 
 def get_traces(limit: int = 20) -> list[TraceRow]:
@@ -315,7 +316,8 @@ def get_traces(limit: int = 20) -> list[TraceRow]:
                 "SELECT * FROM traces ORDER BY timestamp DESC LIMIT ?", (limit,)
             ).fetchall()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
+        _log.debug("get_traces failed, returning empty: %s", exc)
         return []
 
 def get_all_traces(limit: int | None = 500) -> list[TraceRow]:
@@ -331,7 +333,8 @@ def get_all_traces(limit: int | None = 500) -> list[TraceRow]:
                     "SELECT * FROM traces ORDER BY timestamp DESC LIMIT ?", (limit,)
                 ).fetchall()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
+        _log.debug("get_all_traces failed, returning empty: %s", exc)
         return []
 
 def get_by_id(trace_id: str) -> TraceRow | None:
@@ -342,7 +345,8 @@ def get_by_id(trace_id: str) -> TraceRow | None:
                 "SELECT * FROM traces WHERE id = ?", (trace_id,)
             ).fetchone()
             return dict(row) if row is not None else None
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
+        _log.debug("get_by_id failed, returning None: %s", exc)
         return None
 
 
@@ -362,7 +366,7 @@ def mark_synced(trace_id: str, synced: int = 1) -> None:
                 (1 if synced else 0, trace_id),
             )
             conn.commit()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
         _log.warning("mark_synced warning: %s", exc)
 
 
@@ -383,7 +387,8 @@ def get_unsynced_traces(limit: int = 100) -> list[TraceRow]:
                 (limit,),
             ).fetchall()
             return [dict(r) for r in rows]
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
+        _log.debug("get_unsynced_traces failed, returning empty: %s", exc)
         return []
 
 def purge_all() -> None:

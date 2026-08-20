@@ -49,7 +49,7 @@ def _run_in_child(fn) -> str:
         try:
             fn()
             result = b"PASS"
-        except BaseException as exc:
+        except BaseException as exc:  # noqa: BLE001 -- deliberately broader than Exception, see docstring above
             result = f"FAIL: {exc!r}".encode()
         os.write(write_fd, result)
         os.close(write_fd)

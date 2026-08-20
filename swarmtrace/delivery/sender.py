@@ -116,14 +116,19 @@ class Sender:
                 if key and url and self._send_with_retries(batch, key, url):
                     for payload in batch:
                         self._repository.mark_synced(payload.get("id", ""))
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- daemon loop must never die, see docstring above
                 _log.error("worker error (thread continues): %s", exc)
             finally:
                 for _ in batch:
                     try:
                         self._queue.task_done()
-                    except Exception:
-                        pass
+                    except ValueError:
+                        # Only raised if task_done() is called more times than
+                        # items were get()'d; batch size always matches the
+                        # get() calls in drain_batch(), so this should never
+                        # fire. Logged at debug so it doesn't spam production
+                        # but is visible if the invariant is ever violated.
+                        _log.debug("task_done() called more times than queued items")
 
     def _send_with_retries(self, batch: list[dict], key: str, url: str) -> bool:
         """Send one batch; return True on confirmed success."""
@@ -131,7 +136,7 @@ class Sender:
             try:
                 self._transport.send_batch(batch, key, url)
                 return True
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 -- network transport failure, retried with backoff then logged
                 if attempt < self._retries - 1:
                     self._sleep(2 ** attempt)  # 1 s then 2 s
                 else:

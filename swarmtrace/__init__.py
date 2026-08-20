@@ -10,7 +10,7 @@ from swarmtrace.storage import get_traces, save_trace
 from swarmtrace.tool_attention import ToolAttention
 from swarmtrace.tracer import init, observe, session
 
-__version__ = '0.7.2'
+__version__ = '0.7.3'
 __all__ = [
     'ToolAttention',
     'alerts',

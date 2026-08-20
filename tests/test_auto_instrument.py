@@ -53,7 +53,7 @@ def _has_openai() -> bool:
     try:
         import openai  # noqa: F401 -- presence check only
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 -- optional-dependency presence check, any failure means "not installed"
         return False
 
 
@@ -217,7 +217,7 @@ def _has_anthropic() -> bool:
     try:
         import anthropic  # noqa: F401 -- presence check only
         return True
-    except Exception:
+    except Exception:  # noqa: BLE001 -- optional-dependency presence check, any failure means "not installed"
         return False
 
 

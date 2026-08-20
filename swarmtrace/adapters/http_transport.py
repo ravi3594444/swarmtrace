@@ -48,7 +48,7 @@ def _ingest_error_from(err: HTTPError) -> IngestHTTPError:
     """Convert urllib's HTTPError into IngestHTTPError (with bounded body)."""
     try:
         body = err.read(_MAX_ERROR_BODY_CHARS + 1).decode("utf-8", errors="replace")
-    except Exception:
+    except Exception:  # noqa: BLE001 -- reading the error body must not mask the original HTTPError
         body = ""
     if len(body) > _MAX_ERROR_BODY_CHARS:
         body = body[:_MAX_ERROR_BODY_CHARS] + "…"

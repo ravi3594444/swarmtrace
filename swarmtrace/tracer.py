@@ -291,7 +291,7 @@ def _safe_str(obj, max_len: int = 32000) -> str:
         return fut.result(timeout=0.1)
     except FuturesTimeout:
         return f"<{type(obj).__name__} (stringify timed out)>"
-    except Exception:
+    except Exception:  # noqa: BLE001 -- str(obj) calls arbitrary user __str__/__repr__, must degrade gracefully
         return f"<{type(obj).__name__} (stringify failed)>"
 
 
@@ -441,7 +441,7 @@ def _flush(
 def _safe_flush(*flush_args) -> None:
     try:
         _flush(*flush_args)
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- storage boundary: must never crash the traced call, already logged
         _log.warning("trace flush warning: %s", exc)
 
 

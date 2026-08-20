@@ -32,7 +32,7 @@ class SqliteRepository(SpanRepository):
         """
         try:
             rows = storage.get_all_traces(limit=None)
-        except Exception:
+        except Exception:  # noqa: BLE001 -- defensive: storage layer already degrades gracefully on its own
             return []
         return [
             SpanRecord.from_storage_row(row)

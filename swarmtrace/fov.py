@@ -181,7 +181,7 @@ def _save_event_local(event: dict) -> None:
             if _event_write_count % EVENT_PURGE_EVERY == 0:
                 _purge_old_events(conn)
             conn.commit()
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 -- storage boundary: must never crash the caller on a persistence hiccup
         _log.warning("event save warning: %s", exc)
 
 
@@ -196,18 +196,18 @@ _fov_worker_started = False
 
 
 def _send_event_remote(payload: dict, key: str, base_url: str) -> None:
-    try:
-        import urllib.request
-        body = json.dumps(payload).encode()
-        req = urllib.request.Request(
-            f"{base_url}/api/events",
-            data=body,
-            headers={"Content-Type": "application/json", "X-API-Key": key},
-            method="POST",
-        )
-        urllib.request.urlopen(req, timeout=5)
-    except Exception as exc:
-        _log.warning("remote event warning: %s", exc)
+    """POST one FOV event to the dashboard. Raises on failure so the caller's
+    retry loop (below) can back off and retry -- this must NOT catch its own
+    exceptions internally, or the retry logic silently never fires."""
+    import urllib.request
+    body = json.dumps(payload).encode()
+    req = urllib.request.Request(
+        f"{base_url}/api/events",
+        data=body,
+        headers={"Content-Type": "application/json", "X-API-Key": key},
+        method="POST",
+    )
+    urllib.request.urlopen(req, timeout=5)
 
 
 def _fov_worker() -> None:
@@ -223,9 +223,11 @@ def _fov_worker() -> None:
                 try:
                     _send_event_remote(payload, key, base)
                     break
-                except Exception:
+                except Exception as exc:  # noqa: BLE001 -- background worker must not die on a bad send
                     if attempt < 2:
                         time.sleep(2 ** attempt)
+                    else:
+                        _log.warning("remote event warning (giving up after 3 attempts): %s", exc)
         _FOV_QUEUE.task_done()
 
 
@@ -383,7 +385,8 @@ async def _screenshot_async(page) -> str:
     try:
         raw = await page.screenshot(type="jpeg", quality=50)
         return _to_data_uri(raw)
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- best-effort screenshot capture, must not raise
+        _log.debug("async screenshot failed: %s", str(exc)[:120])
         return ""
 
 
@@ -453,7 +456,7 @@ def _screen_streamer_loop() -> None:
                         },
                         "timestamp": datetime.now(timezone.utc).isoformat(),
                     })
-            except Exception:
+            except Exception:  # noqa: BLE001 -- catches _screenshot_sync's permanent-error re-raise; closed pages are routine
                 dead.append(pid)
 
         if dead:
@@ -743,8 +746,12 @@ class _StreamWrapper:
             token = ""
             try:
                 token = chunk.choices[0].delta.content or ""
-            except Exception:
-                pass
+            except (IndexError, AttributeError, TypeError) as exc:
+                # Some chunk shapes (e.g. a stream's final chunk) have no
+                # choices or no delta -- expected, not an error. Debug-only:
+                # logging.debug() short-circuits cheaply when disabled, so
+                # this doesn't add meaningful overhead to the per-token loop.
+                _log.debug("stream chunk missing token content: %s", exc)
             if token:
                 self._accum = (self._accum + token)[-_MAX_ACCUM:]
                 _save_event({
@@ -787,8 +794,12 @@ class _AsyncStreamWrapper:
             token = ""
             try:
                 token = chunk.choices[0].delta.content or ""
-            except Exception:
-                pass
+            except (IndexError, AttributeError, TypeError) as exc:
+                # Some chunk shapes (e.g. a stream's final chunk) have no
+                # choices or no delta -- expected, not an error. Debug-only:
+                # logging.debug() short-circuits cheaply when disabled, so
+                # this doesn't add meaningful overhead to the per-token loop.
+                _log.debug("stream chunk missing token content: %s", exc)
             if token:
                 self._accum = (self._accum + token)[-_MAX_ACCUM:]
                 _save_event({
@@ -836,8 +847,12 @@ def patch_streams() -> bool:
 
         _cc.Completions.create = _patched_create
         patched = True
-    except Exception:
-        pass
+    except (ImportError, AttributeError) as exc:
+        # ImportError: openai not installed (same as every other patch_*()
+        # in this file). AttributeError: the SDK's internal class shape
+        # changed across versions -- logged at debug since this is a
+        # best-effort instrumentation patch and must never break the host.
+        _log.debug("openai sync stream patch skipped: %s", exc)
 
     # OpenAI async
     try:
@@ -855,8 +870,8 @@ def patch_streams() -> bool:
 
         _cc.AsyncCompletions.create = _async_patched
         patched = True
-    except Exception:
-        pass
+    except (ImportError, AttributeError) as exc:
+        _log.debug("openai async stream patch skipped: %s", exc)
 
     _STREAMS_PATCHED = True
     return patched
@@ -1122,5 +1137,6 @@ def get_events(agent_id: str, limit: int = 100) -> list:
             )
             cols = [d[0] for d in cur.description]
             return [dict(zip(cols, row)) for row in cur.fetchall()]
-    except Exception:
+    except Exception as exc:  # noqa: BLE001 -- storage boundary: must never crash the caller on a query hiccup
+        _log.debug("get_events failed, returning empty: %s", exc)
         return []

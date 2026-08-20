@@ -35,7 +35,6 @@ from __future__ import annotations
 
 import hashlib
 import os
-import shutil
 import subprocess
 import sys
 import tempfile
@@ -86,12 +85,12 @@ def main() -> None:
     psql = os.path.join(PSQL_BIN, "psql")
 
     def psql_cli(*args: str) -> subprocess.CompletedProcess:
-        return subprocess.run([psql, uri, *args], capture_output=True, text=True)
+        return subprocess.run([psql, uri, *args], capture_output=True, text=True, check=False)
 
     def runner(*args: str) -> subprocess.CompletedProcess:
         return subprocess.run(
             ["node", "scripts/run-migrations.mjs", *args],
-            cwd=FRONTEND_DIR, env=env, capture_output=True, text=True,
+            cwd=FRONTEND_DIR, env=env, capture_output=True, text=True, check=False,
         )
 
     srv.psql(SUPABASE_SHIMS)
@@ -179,14 +178,14 @@ def main() -> None:
     )
     conn = psycopg.connect(uri)
 
-    params = dict(
-        p_key_hash=key_hash, p_id="span-1", p_parent_id=None, p_trace_id="run-1",
-        p_function="my_agent", p_args="{}", p_output="ok", p_latency_sec=1.5,
-        p_error=None, p_timestamp="2026-08-04T12:00:00+00:00",
-        p_input_tokens=10, p_output_tokens=20, p_cost_usd=0.0007, p_kind="agent",
-        p_agent_id="span-1", p_agent_name="my_agent", p_session_id="sess-1",
-        p_attributes='{"framework": "langgraph"}',
-    )
+    params = {
+        "p_key_hash": key_hash, "p_id": "span-1", "p_parent_id": None, "p_trace_id": "run-1",
+        "p_function": "my_agent", "p_args": "{}", "p_output": "ok", "p_latency_sec": 1.5,
+        "p_error": None, "p_timestamp": "2026-08-04T12:00:00+00:00",
+        "p_input_tokens": 10, "p_output_tokens": 20, "p_cost_usd": 0.0007, "p_kind": "agent",
+        "p_agent_id": "span-1", "p_agent_name": "my_agent", "p_session_id": "sess-1",
+        "p_attributes": '{"framework": "langgraph"}',
+    }
     named = ", ".join(f"{k} := %({k})s" for k in params)
     was_insert = conn.execute(f"select public.upsert_trace_for_key({named})", params).fetchone()
     assert was_insert and was_insert[0] is True
