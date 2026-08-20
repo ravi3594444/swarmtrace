@@ -278,3 +278,29 @@ def test_view_tree_shows_status_indicators(cli, storage, capsys, monkeypatch):
     # Both ✓ (OK) and ✗ (ERROR) must appear in the tree output.
     assert "✓" in tree_section, "No ✓ (OK status) in tree output"
     assert "✗" in tree_section, "No ✗ (ERROR status) in tree output"
+
+
+def test_view_tree_keeps_span_visible_when_parent_is_not_loaded(
+    cli, storage, capsys, monkeypatch
+):
+    """A span whose parent is outside the limit must not vanish from the tree."""
+    monkeypatch.setenv("COLUMNS", "100")
+    storage.save_trace(
+        id_="detached-tool",
+        parent_id="parent-outside-current-view",
+        function="search_docs",
+        args="('query',)",
+        output="result",
+        latency_sec=0.2,
+        error=None,
+        timestamp="2026-07-12T10:00:00+00:00",
+        kind="tool",
+        agent_id="agent-1",
+        agent_name="RAG Agent",
+    )
+
+    cli.view(limit=1)
+    tree_section = capsys.readouterr().out.split("=== Agent Tree ===", 1)[-1]
+
+    assert "search_docs" in tree_section
+    assert "detached" in tree_section

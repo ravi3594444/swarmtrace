@@ -170,10 +170,17 @@ def db_conn():
         DROP FUNCTION IF EXISTS public.insert_agent_event_for_key CASCADE;
         DROP FUNCTION IF EXISTS public.resolve_api_key_user_id CASCADE;
         DROP FUNCTION IF EXISTS public.upsert_trace CASCADE;
+        DROP FUNCTION IF EXISTS public.increment_daily_metrics CASCADE;
         DROP PUBLICATION IF EXISTS supabase_realtime;
         DROP FUNCTION IF EXISTS auth.jwt() CASCADE;
         DROP FUNCTION IF EXISTS auth.uid() CASCADE;
         DROP SCHEMA IF EXISTS auth CASCADE;
+        -- Migrations intentionally grant RPC execution to these Supabase
+        -- roles. Revoke every remaining grant before dropping the test-only
+        -- role stubs so a newly added RPC cannot break fixture teardown.
+        DROP OWNED BY service_role;
+        DROP OWNED BY authenticated;
+        DROP OWNED BY anon;
         DROP ROLE IF EXISTS service_role;
         DROP ROLE IF EXISTS authenticated;
         DROP ROLE IF EXISTS anon;
