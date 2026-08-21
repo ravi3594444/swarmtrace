@@ -6,6 +6,18 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Security
+- **Bumped `next` from `16.2.6` to `16.3.2`**, resolving 9 high-severity
+  advisories: Server Actions SSRF (custom servers and rewrites), a
+  middleware/Turbopack proxy bypass, two response-cache confusion bugs,
+  an unbounded Edge Server Action payload, an Image Optimization SVG DoS,
+  and an unauthenticated disclosure of internal Server Function endpoints.
+  The bump also pulled in patched `postcss` (CSS stringify XSS, source-map
+  path traversal) and `sharp`/`libvips` (multiple CVEs) as transitive
+  dependencies. `npm audit` now reports 0 vulnerabilities (was 11: 9 high,
+  1 moderate, 1 low). Verified via `tsc --noEmit`, the full frontend test
+  suite (267/267), and `next build`.
+
 ### Improved
 - **The CLI tree no longer hides spans whose parent is outside the current**
   **`--limit` window.** These spans now render as detached roots, preserving
