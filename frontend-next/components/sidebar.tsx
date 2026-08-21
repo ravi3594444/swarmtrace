@@ -13,15 +13,28 @@ import { useOnboardingTour } from './onboarding/OnboardingTour'
 import { useFocusTrap } from '@/lib/use-focus-trap'
 
 /** "Take a tour" trigger — replays the new-user onboarding tour on demand. */
-function TakeTourButton({ collapsed }: { collapsed: boolean }) {
+function TakeTourButton({
+  collapsed,
+  onStart,
+}: {
+  collapsed: boolean
+  onStart?: () => void
+}) {
   const { startTour } = useOnboardingTour()
+
+  const handleStart = () => {
+    onStart?.()
+    startTour()
+  }
+
   return (
     <button
       type="button"
-      onClick={startTour}
+      onClick={handleStart}
       title="Take a tour"
       aria-label="Take a tour"
-      className={`group flex items-center gap-3 rounded-xl text-sm font-medium text-sidebar-foreground transition-all duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground ${
+      aria-haspopup="dialog"
+      className={`group flex items-center gap-3 rounded-xl text-sm font-medium text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent ${
         collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'
       }`}
     >
@@ -327,7 +340,11 @@ export function Sidebar() {
         </div>
       )}
 
-      <nav aria-label="Dashboard navigation" className={`flex-1 overflow-y-auto overflow-x-hidden py-3 ${open ? 'px-3 space-y-3' : 'px-0 space-y-3 flex flex-col items-center'}`}>
+      <nav
+        aria-label="Dashboard navigation"
+        data-collapsed={!open}
+        className={`sidebar-nav-scroll flex-1 overflow-y-auto overflow-x-hidden overscroll-contain py-3 ${open ? 'px-3 space-y-3' : 'px-0 space-y-3 flex flex-col items-center'}`}
+      >
         {navGroups.map((group, gi) => (
           <div key={group.label} className={open ? 'space-y-0.5' : 'space-y-1 flex flex-col items-center'}>
             {open && (
@@ -344,8 +361,14 @@ export function Sidebar() {
             )}
           </div>
         ))}
-        <TakeTourButton collapsed={!open} />
       </nav>
+
+      {/* Keep the tour trigger outside the scrollable navigation. In the
+          collapsed rail the native scrollbar previously sat over the right
+          side of this button, which made clicks feel delayed or ignored. */}
+      <div className={`shrink-0 border-t border-sidebar-border ${open ? 'px-3 py-2' : 'px-0 py-2'}`}>
+        <TakeTourButton collapsed={!open} onStart={() => setMobileOpen(false)} />
+      </div>
 
       {/* User footer */}
       {open ? (
