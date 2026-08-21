@@ -122,6 +122,41 @@
   background-color: var(--outline);
 }
 
+/* Dashboard rail scrollbar. Chromium on Windows otherwise renders its wide
+   classic scrollbar (including arrow buttons) inside the 56px collapsed rail,
+   where it crowds the navigation icons and steals part of their click target.
+   The expanded rail keeps a subtle, inset thumb; the collapsed rail remains
+   wheel/touch-scrollable but does not paint a scrollbar over its controls. */
+.sidebar-nav-scroll {
+  scrollbar-color: var(--sidebar-border) transparent;
+  scrollbar-gutter: stable;
+  scrollbar-width: thin;
+}
+.sidebar-nav-scroll::-webkit-scrollbar {
+  width: 4px;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-thumb {
+  background-color: var(--sidebar-border);
+  border-radius: 9999px;
+}
+.sidebar-nav-scroll::-webkit-scrollbar-button {
+  display: none;
+  width: 0;
+  height: 0;
+}
+.sidebar-nav-scroll[data-collapsed='true'] {
+  scrollbar-gutter: auto;
+  scrollbar-width: none;
+}
+.sidebar-nav-scroll[data-collapsed='true']::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .dark {
   /* SwarmTrace AI Monitoring - Dark theme.
      Charcoal & Ivory Monochrome — values pulled 1:1 from

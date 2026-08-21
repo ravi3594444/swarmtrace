@@ -241,6 +241,14 @@ function TourOverlay({
   const step = TOUR_STEPS[index]
   const total = TOUR_STEPS.length
 
+  // Warm the next page while the user reads the current step. Each dashboard
+  // page owns its own DashboardLayout, so an unprefetched route can otherwise
+  // make the tour appear to pause while the provider remounts.
+  useEffect(() => {
+    const nextRoute = TOUR_STEPS.slice(index + 1).find((candidate) => candidate.route)?.route
+    if (nextRoute) router.prefetch(nextRoute)
+  }, [index, router])
+
   // Navigate to the step's route before measuring the target. This is what
   // makes the tour actually show each page instead of just spotlighting
   // sidebar entries from /overview. We skip the push when already on the
@@ -252,7 +260,8 @@ function TourOverlay({
     if (!step.route) return
     if (pathname === step.route) return
     if (typeof window === 'undefined') return
-    router.push(step.route)
+    // A tour should not add eight synthetic entries to browser history.
+    router.replace(step.route)
   }, [step.route, pathname, router])
 
   // Locate the target element, retrying briefly while the page mounts.
