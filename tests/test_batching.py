@@ -21,6 +21,7 @@ import gzip
 import importlib
 import json
 import queue
+import threading
 import time
 from unittest.mock import patch
 
@@ -370,6 +371,86 @@ class TestSenderStop:
 
         assert sender.stop(timeout=5.0) is True
         assert [p["id"] for batch in transport.batches for p in batch] == ["a"]
+
+    def test_restart_works_after_a_stop_that_timed_out(self):
+        """A stop() whose join times out must not wedge the sender forever.
+
+        The worker can still be inside a transport call when the timeout
+        expires; it exits later, once it sees the stop flag. stop() can only
+        tidy up state when its own join succeeded, so without authoritative
+        worker-exit cleanup `_started` stayed True, `start()` short-circuited,
+        and every subsequent payload was queued and silently never delivered.
+        """
+        release = threading.Event()
+
+        class SlowTransport:
+            def __init__(self):
+                self.batches = []
+
+            def send_batch(self, payloads, key, url):
+                release.wait(10)          # outlives the stop timeout below
+                self.batches.append(list(payloads))
+
+        slow = SlowTransport()
+        sender = _sender(slow, _NullRepo(), batch_flush_timeout=0.02)
+        sender.enqueue({"id": "in-flight"})
+
+        deadline = time.time() + 5.0
+        while time.time() < deadline and not sender._queue.empty():
+            time.sleep(0.01)              # wait until the worker has the batch
+
+        assert sender.stop(timeout=0.1) is False, "expected the join to time out"
+        release.set()
+
+        deadline = time.time() + 5.0      # worker notices the flag and exits
+        while time.time() < deadline and sender._started:
+            time.sleep(0.01)
+        assert sender._started is False, "worker exit did not repair lifecycle state"
+
+        fresh = FakeTransport()
+        sender._transport = fresh
+        sender.enqueue({"id": "after-timeout-stop"})
+        deadline = time.time() + 5.0
+        while time.time() < deadline and not fresh.batches:
+            time.sleep(0.01)
+        sender.stop(timeout=5.0)
+        assert [p["id"] for b in fresh.batches for p in b] == ["after-timeout-stop"]
+
+    def test_stop_racing_start_never_leaves_a_workerless_started_sender(self, monkeypatch):
+        """`_started=True` must always imply a live worker.
+
+        start() used to publish `_started` AFTER launching the thread while
+        stop() took no lock at all, so a stop landing in that window cleared
+        the state and start() then re-set `_started=True` with `_thread=None`
+        — a sender that accepts payloads forever and delivers none. The window
+        is two bytecodes wide, so it is never hit by chance; widening thread
+        startup makes the interleaving deterministic.
+        """
+        real_start = threading.Thread.start
+
+        def slow_start(self):
+            real_start(self)
+            if self.name.startswith("race-sender"):
+                time.sleep(0.05)
+        monkeypatch.setattr(threading.Thread, "start", slow_start)
+
+        sender = _sender(
+            FakeTransport(), _NullRepo(),
+            batch_flush_timeout=0.001, thread_name="race-sender",
+        )
+        starter = threading.Thread(target=sender.start)
+        starter.start()
+        time.sleep(0.02)                  # land inside the widened window
+        sender.stop(timeout=1.0)
+        starter.join()
+        time.sleep(0.1)
+
+        alive = sender._thread is not None and sender._thread.is_alive()
+        assert not (sender._started and not alive), (
+            "sender reports started with no live worker — payloads would be "
+            "queued and never delivered"
+        )
+        sender.stop(timeout=5.0)
 
     def test_start_after_stop_brings_the_worker_back(self):
         """stop() must not permanently disable the sender."""

@@ -45,6 +45,8 @@ import uuid
 import weakref
 from datetime import datetime, timezone
 
+from swarmtrace import storage as _storage
+
 # ── shared config + context ─────────────────────────────────────────────────
 from swarmtrace.config import (
     normalize_base_url as _normalize_base_url,
@@ -74,7 +76,14 @@ _log = logging.getLogger("swarmtrace.fov")
 # Local SQLite event table — with bounded size (no disk-fill risk)
 # ---------------------------------------------------------------------------
 
-_events_table_ready = False
+# Which DB file we have already created agent_events in — NOT a bool.
+# A boolean latched True forever, so after storage.close() and a DB_PATH
+# rotation (which storage.close() documents as supported) the table was
+# never created in the new file and every event insert failed with
+# "no such table: agent_events", swallowed as a warning. Keying on the path
+# makes the cache self-heal on any rotation while still doing the DDL once
+# per database.
+_events_table_ready_for: str | None = None
 _events_table_lock = threading.Lock()
 
 # FIX #1: cap agent_events table size — was unbounded (would fill disk
@@ -115,12 +124,18 @@ def _ensure_events_table() -> None:
     existence is a fact about the DB file, which survives fork() fine
     regardless of what this in-memory flag says. No register_at_fork
     hook needed here.)
+
+    The cache records WHICH database the table was created in rather than a
+    plain "done" bit, because the table's existence is a fact about a
+    particular file: swapping ``storage.DB_PATH`` makes the previous answer
+    wrong, not stale.
     """
-    global _events_table_ready
-    if _events_table_ready:
+    global _events_table_ready_for
+    db_path = _storage.DB_PATH
+    if _events_table_ready_for == db_path:
         return
     with _events_table_lock:
-        if _events_table_ready:
+        if _events_table_ready_for == db_path:
             return
         with _storage_lock:
             conn = _get_conn()
@@ -140,7 +155,7 @@ def _ensure_events_table() -> None:
                 "ON agent_events(agent_id, timestamp DESC)"
             )
             conn.commit()
-        _events_table_ready = True
+        _events_table_ready_for = db_path
 
 
 def _purge_old_events(conn) -> None:
