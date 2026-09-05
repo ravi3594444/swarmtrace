@@ -164,7 +164,13 @@ class Sender:
         return not alive
 
     def _run(self, stop_event: threading.Event) -> None:
-        """Background send loop. Never dies — outer boundary logs and loops."""
+        """Run the send loop, then repair lifecycle state on the way out.
+
+        The loop survives any per-iteration error — the boundary inside
+        ``_drain_until`` logs and continues — and exits only when *stop_event*
+        is set. It used to have no exit path at all, which is why the old
+        docstring said "never dies"; that is no longer the contract.
+        """
         try:
             self._drain_until(stop_event)
         finally:
