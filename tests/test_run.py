@@ -33,7 +33,7 @@ def records(monkeypatch, fake_runtime):
             )
         ))
         # Convert datetime to the same ISO timestamp string the old tests used.
-        saved[-1] = saved[-1][:7] + (saved[-1][7].isoformat(),) + saved[-1][8:]
+        saved[-1] = (*saved[-1][:7], saved[-1][7].isoformat(), *saved[-1][8:])
 
     monkeypatch.setattr(fake_runtime.repository, "save", _capture)
     return saved

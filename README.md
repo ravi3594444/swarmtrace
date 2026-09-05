@@ -467,12 +467,18 @@ Exposes three tools: `record_trace` (send one trace), `get_metrics` (your usage 
 ## CLI
 
 ```bash
-swarmtrace                       # last 100 traces
+swarmtrace                       # last 100 traces (table + call tree)
 swarmtrace --limit 50            # last 50
-swarmtrace-replay <id>           # replay any trace
-swarmtrace-export --format json
-swarmtrace-export --format csv
+swarmtrace-replay <id>           # replay any trace in full
+swarmtrace-export --format json  # -> ./swarmtrace_export.json
+swarmtrace-export --format csv --output traces.csv
+swarmtrace-resync                # re-send traces the dashboard never got
+swarmtrace-alerts list           # recent alerts
 ```
+
+Every command takes `--help`. They exit `0` on success, `1` on a real
+failure (an unwritable export path, traces that still won't resync), and
+`2` on bad arguments — so they compose in scripts and CI.
 
 ---
 

@@ -28,8 +28,7 @@ def export_mod(tmp_path, monkeypatch):
     importlib.reload(export)
     yield export
     if storage._conn is not None:
-        storage._conn.close()
-        storage._conn = None
+        storage.close()
 
 
 def _save(storage_mod, **overrides):

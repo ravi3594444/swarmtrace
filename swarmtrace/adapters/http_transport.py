@@ -56,30 +56,13 @@ def _ingest_error_from(err: HTTPError) -> IngestHTTPError:
 
 
 def _span_to_payload(span: SpanRecord) -> dict[str, Any]:
-    """Convert a canonical SpanRecord into the legacy /api/ingest payload shape."""
-    payload: dict[str, Any] = {
-        "id": span.span_id,
-        "parent_id": span.parent_span_id,
-        "function": span.name,
-        "args": span.args or "",
-        "output": span.output or "",
-        "latency_sec": span.latency_sec,
-        "error": span.error,
-        "timestamp": span.start_time.isoformat(),
-        "input_tokens": span.input_tokens,
-        "output_tokens": span.output_tokens,
-        "cost_usd": span.cost_usd,
-        "kind": span.kind,
-        "agent_id": span.agent_id,
-        "agent_name": span.agent_name,
-    }
-    if span.session_id is not None:
-        payload["session_id"] = span.session_id
-    if span.trace_id is not None and span.trace_id != span.span_id:
-        payload["trace_id"] = span.trace_id
-    if span.attributes:
-        payload["attributes"] = span.attributes
-    return payload
+    """Convert a canonical SpanRecord into the /api/ingest payload shape.
+
+    Thin alias for :meth:`SpanRecord.to_ingest_payload`, which owns the wire
+    contract. Kept as a module-level name because tests and older internal
+    callers import it from here.
+    """
+    return span.to_ingest_payload()
 
 
 class HttpTransport:
