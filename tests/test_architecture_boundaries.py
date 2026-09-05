@@ -8,6 +8,7 @@ checks, not a full import-linter dependency.
 from __future__ import annotations
 
 import ast
+import re
 from fnmatch import fnmatchcase
 from pathlib import Path
 
@@ -130,3 +131,30 @@ def test_architecture_document_covers_required_sections():
         "## 9. Resilience and privacy invariants",
     ]:
         assert heading in doc
+
+
+def test_declared_version_matches_package_version():
+    """pyproject's version and swarmtrace.__version__ must not drift apart.
+
+    The version is declared twice with nothing keeping them in sync, and they
+    HAVE drifted: across 0.6.6, 0.6.7, 0.6.8 and 0.6.9 the packaging metadata
+    advanced while `swarmtrace.__version__` stayed pinned at 0.6.5. A user on
+    0.6.9 who reported `swarmtrace.__version__` in a bug report gave the wrong
+    number — which matters more than usual for a tracing library, where the
+    version people quote is how you tell which capture behaviour they had.
+
+    Guarding it is cheaper than remembering to edit both files.
+    """
+    config = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    declared = config["project"]["version"]
+
+    # Read __init__ as text rather than importing it: the import pulls in the
+    # whole SDK (and its optional dependencies) just to read one string.
+    init_src = (PACKAGE / "__init__.py").read_text()
+    match = re.search(r"^__version__\s*=\s*['\"]([^'\"]+)['\"]", init_src, re.MULTILINE)
+    assert match, "swarmtrace/__init__.py does not define __version__"
+
+    assert match.group(1) == declared, (
+        f"version drift: pyproject.toml says {declared!r} but "
+        f"swarmtrace.__version__ is {match.group(1)!r} — update both"
+    )

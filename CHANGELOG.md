@@ -26,6 +26,14 @@ adheres to [Semantic Versioning](https://semver.org/).
   suite (267/267), and `next build`.
 
 ### Added
+- **A guard against version drift between `pyproject.toml` and
+  `swarmtrace.__version__`.** The version is declared in two places with nothing
+  keeping them in sync, and they have drifted before: across 0.6.6, 0.6.7, 0.6.8
+  and 0.6.9 the packaging metadata advanced while `swarmtrace.__version__` stayed
+  pinned at `0.6.5`, so anyone on 0.6.9 who quoted `__version__` in a bug report
+  gave the wrong number — which matters for a tracing library, where the version
+  tells you which capture behaviour was running. Now asserted by a test, verified
+  against that exact historical drift.
 - **`tests/test_end_to_end.py` — the first test that wires the real stack**
   **together with no fakes**: `@observe`'d functions → `tracer._flush` →
   `SpanRecord` → `Runtime.record` → a real SQLite file → the real background
