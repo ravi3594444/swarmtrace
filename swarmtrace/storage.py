@@ -303,10 +303,25 @@ def save_trace(
             _write_count += 1
             if _write_count % PURGE_EVERY == 0:
                 _purge(conn)
-            # Periodic WAL checkpoint — keeps WAL file from growing to hundreds of MB
+            conn.commit()
+            # Periodic WAL checkpoint.
+            #
+            # This MUST run after commit(). A checkpoint cannot execute inside
+            # an open write transaction, and the INSERT above opens one
+            # implicitly — so issuing it before the commit (as this used to)
+            # made SQLite refuse every single checkpoint with
+            # SQLITE_LOCKED, which the outer handler swallowed as a
+            # "storage warning: database table is locked" log line. The
+            # explicit checkpoint had therefore never once run, and every
+            # CHECKPOINT_EVERY writes a bogus warning reached the host's logs.
+            #
+            # Measured: the WAL stays ~3.9 MB at 1k/4k/12k writes either way —
+            # SQLite's own wal_autocheckpoint (1000 pages) already bounds it,
+            # so this is a correctness and log-noise fix, not a disk-growth
+            # one. Keeping the explicit checkpoint means the interval is ours
+            # to tune rather than SQLite's default.
             if _write_count % CHECKPOINT_EVERY == 0:
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
-            conn.commit()
     except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
         _log.warning("storage warning: %s", exc)
 
