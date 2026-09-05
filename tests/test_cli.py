@@ -303,3 +303,23 @@ def test_view_tree_keeps_span_visible_when_parent_is_not_loaded(
 
     assert "search_docs" in tree_section
     assert "detached" in tree_section
+
+
+def test_view_survives_a_null_latency_row(cli, storage, capsys):
+    """A NULL latency_sec must not take down the whole view.
+
+    traces.latency_sec is a nullable REAL column, so a row written by an older
+    SDK, a migration, or direct SQL can carry NULL. The tree label formats it
+    with `.3f`, which raised `TypeError: unsupported format string passed to
+    NoneType.__format__` and aborted the entire `swarmtrace` command — every
+    other trace included.
+    """
+    _seed_tree(storage)
+    conn = storage._get_conn()
+    conn.execute("UPDATE traces SET latency_sec = NULL WHERE id = 'root-1'")
+    conn.commit()
+
+    cli.view(limit=10)  # must not raise
+    out = capsys.readouterr().out
+    assert "rag_agent" in out
+    assert "mistral_answer" in out, "the sibling row was lost with the NULL one"

@@ -296,3 +296,57 @@ def test_export_json_does_not_apply_csv_sanitization(export_mod, tmp_path):
 
     data = json.loads(out.read_text())
     assert data[0]["output"] == "=cmd|'/c calc'!A1", data[0]["output"]
+
+
+# ---------------------------------------------------------------------------
+# CLI error paths
+#
+# main() documents 0 = written, 1 = destination unwritable, 2 = bad arguments,
+# and the README repeats those codes. Only the success path was covered.
+# ---------------------------------------------------------------------------
+
+def test_main_rejects_an_unknown_format_with_exit_2(export_mod, tmp_path, monkeypatch, capsys):
+    """A typo'd format must not silently fall back to JSON."""
+    monkeypatch.chdir(tmp_path)
+    assert export_mod.main(["--format", "yaml"]) == 2
+    assert "unknown --format" in capsys.readouterr().err
+    assert not (tmp_path / "swarmtrace_export.json").exists(), (
+        "a rejected format still wrote an export file"
+    )
+
+
+def test_main_rejects_an_unknown_flag_with_exit_2(export_mod, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    assert export_mod.main(["--outpt", "x.json"]) == 2
+    assert "unknown argument" in capsys.readouterr().err
+
+
+def test_main_reports_a_missing_flag_value_with_exit_2(export_mod, tmp_path, monkeypatch, capsys):
+    monkeypatch.chdir(tmp_path)
+    assert export_mod.main(["--output"]) == 2
+    assert "requires a value" in capsys.readouterr().err
+
+
+def test_main_returns_1_when_the_destination_cannot_be_written(
+    export_mod, tmp_path, monkeypatch, capsys
+):
+    """An unwritable path exits 1 with a clean message, not a traceback."""
+    from swarmtrace import storage
+    _save(storage, id_="a")
+
+    monkeypatch.chdir(tmp_path)
+    a_directory = tmp_path / "not-a-file"
+    a_directory.mkdir()
+
+    assert export_mod.main(["--output", str(a_directory)]) == 1
+    err = capsys.readouterr().err
+    assert "could not write" in err
+    assert "Traceback" not in err
+
+
+def test_main_help_prints_usage_and_writes_nothing(export_mod, tmp_path, monkeypatch, capsys):
+    """--help used to fall through the flag parsing and export a file."""
+    monkeypatch.chdir(tmp_path)
+    assert export_mod.main(["--help"]) == 0
+    assert "swarmtrace-export" in capsys.readouterr().out
+    assert list(tmp_path.iterdir()) == [], "--help wrote files into the cwd"
