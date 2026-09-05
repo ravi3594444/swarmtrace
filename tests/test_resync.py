@@ -13,6 +13,7 @@ Also covers:
 
 from __future__ import annotations
 
+import contextlib
 import importlib
 
 import pytest
@@ -40,8 +41,7 @@ def fresh_storage(tmp_path, monkeypatch):
     tracer.mark_synced = storage.mark_synced
     yield storage
     if storage._conn is not None:
-        storage._conn.close()
-        storage._conn = None
+        storage.close()
 
 
 @pytest.fixture()
@@ -277,10 +277,8 @@ class TestResyncCLI:
         _save_trace(storage, "t1")
         _save_trace(storage, "t2")
         from swarmtrace.cli import main_resync
-        try:
+        with contextlib.suppress(SystemExit):
             main_resync()
-        except SystemExit:
-            pass
         out = capsys.readouterr().out
         assert "2/2" in out
         assert "successfully" in out
@@ -299,9 +297,7 @@ class TestResyncCLI:
     def test_cli_nothing_to_send(self, resync_runtime, capsys):
         # No unsynced rows — should print "No unsynced traces found" and exit 0.
         from swarmtrace.cli import main_resync
-        try:
+        with contextlib.suppress(SystemExit):
             main_resync()
-        except SystemExit:
-            pass
         out = capsys.readouterr().out
         assert "No unsynced" in out

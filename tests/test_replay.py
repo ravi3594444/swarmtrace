@@ -26,8 +26,7 @@ def replay_mod(tmp_path, monkeypatch):
     importlib.reload(replay)
     yield replay
     if storage._conn is not None:
-        storage._conn.close()
-        storage._conn = None
+        storage.close()
 
 
 def _save(function="fn", error=None, trace_id="t1", **overrides):

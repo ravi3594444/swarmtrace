@@ -772,6 +772,8 @@ class _StreamWrapper:
     def __exit__(self, *a):
         if hasattr(self._stream, "__exit__"):
             return self._stream.__exit__(*a)
+        # No wrapped __exit__ to delegate to — don't suppress the exception.
+        return False
 
     def __getattr__(self, name):
         return getattr(self._stream, name)
@@ -820,6 +822,8 @@ class _AsyncStreamWrapper:
     async def __aexit__(self, *a):
         if hasattr(self._stream, "__aexit__"):
             return await self._stream.__aexit__(*a)
+        # No wrapped __aexit__ to delegate to — don't suppress the exception.
+        return False
 
     def __getattr__(self, name):
         return getattr(self._stream, name)
@@ -1135,7 +1139,7 @@ def get_events(agent_id: str, limit: int = 100) -> list:
                 (agent_id, limit),
             )
             cols = [d[0] for d in cur.description]
-            return [dict(zip(cols, row)) for row in cur.fetchall()]
+            return [dict(zip(cols, row, strict=True)) for row in cur.fetchall()]
     except Exception as exc:  # noqa: BLE001 -- storage boundary: must never crash the caller on a query hiccup
         _log.debug("get_events failed, returning empty: %s", exc)
         return []

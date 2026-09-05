@@ -51,6 +51,8 @@ class Sender:
         self._queue: queue.Queue[dict] = queue.Queue(maxsize=queue_max)
         self._started = False
         self._lock = threading.Lock()
+        self._stopping = threading.Event()
+        self._thread: threading.Thread | None = None
 
     # ------------------------------------------------------------------ queue
 
@@ -99,14 +101,46 @@ class Sender:
             return
         with self._lock:
             if not self._started:
-                threading.Thread(
+                self._stopping.clear()
+                self._thread = threading.Thread(
                     target=self._run, daemon=True, name=self._thread_name
-                ).start()
+                )
+                self._thread.start()
                 self._started = True
+
+    def stop(self, timeout: float | None = 5.0) -> bool:
+        """Ask the worker to finish its current batch and exit; join it.
+
+        Returns ``True`` if the thread is gone by the time this returns.
+
+        The worker used to be unstoppable: a daemon thread looping forever
+        with no exit path. That is survivable in a long-lived app, but it
+        leaves anything that tears its process state down — tests rotating
+        the SQLite DB, an embedder swapping runtimes — with a live thread
+        still writing through a connection the caller is about to close.
+        That race segfaults the interpreter (see ``storage.close``), so the
+        worker needs a way to be shut down before the DB goes away.
+
+        The worker checks the stop flag once per loop, and its queue read
+        blocks for at most ``batch_flush_timeout``, so it exits within
+        roughly one flush interval. Anything still queued stays durable in
+        SQLite and is picked up by ``swarmtrace-resync``.
+        """
+        self._stopping.set()
+        thread = self._thread
+        if thread is not None:
+            thread.join(timeout)
+            alive = thread.is_alive()
+        else:
+            alive = False
+        if not alive:
+            self._started = False
+            self._thread = None
+        return not alive
 
     def _run(self) -> None:
         """Background send loop. Never dies — outer boundary logs and loops."""
-        while True:
+        while not self._stopping.is_set():
             batch: list[dict] = []
             try:
                 batch = self.drain_batch(self._batch_max_items, self._batch_flush_timeout)
@@ -155,4 +189,6 @@ class Sender:
         durable in SQLite.
         """
         self._started = False
+        self._thread = None
+        self._stopping.clear()
         self._queue = queue.Queue(maxsize=self._queue_max)

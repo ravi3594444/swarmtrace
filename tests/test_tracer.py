@@ -720,9 +720,10 @@ def test_args_and_output_caps_are_symmetric(records):
     output    = records[0][4]
     # Both should be capped to ~32000 — within a small tolerance for redact()
     # post-processing. The bug would show args at ~200,005 and output at 32,000.
-    assert abs(len(args_repr) - len(output)) <= 200, \
-        f"asymmetry! args={len(args_repr)}, output={len(output)} " \
+    assert abs(len(args_repr) - len(output)) <= 200, (
+        f"asymmetry! args={len(args_repr)}, output={len(output)} "
         f"(diff={len(args_repr) - len(output)})"
+    )
 
 
 def test_kwargs_keys_appended_after_args_cap(records):

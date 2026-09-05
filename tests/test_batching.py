@@ -84,8 +84,7 @@ def fresh_storage(tmp_path, monkeypatch):
             break
     yield storage
     if storage._conn is not None:
-        storage._conn.close()
-        storage._conn = None
+        storage.close()
 
 
 # --------------------------------------------------------------------------
@@ -334,3 +333,54 @@ class TestResyncStillSingleObject:
         assert (attempted, succeeded, failed) == (1, 1, 0)
         assert len(fake_runtime.transport.singles) == 1
         assert fake_runtime.transport.batches == []
+
+
+# --------------------------------------------------------------------------
+# Sender.stop — deterministic worker shutdown
+#
+# The worker used to loop forever with no exit path. Anything that tears down
+# process state underneath it (a test rotating the SQLite DB, an embedder
+# swapping runtimes) left a live thread writing through a connection the
+# caller was about to close — a use-after-free that segfaults the interpreter.
+# --------------------------------------------------------------------------
+
+class TestSenderStop:
+    def test_stop_joins_the_worker_thread(self):
+        sender = _sender(FakeTransport(), _NullRepo(), batch_flush_timeout=0.02)
+        sender.start()
+        assert sender._thread is not None and sender._thread.is_alive()
+
+        assert sender.stop(timeout=5.0) is True
+        assert sender._thread is None
+        assert sender._started is False
+
+    def test_stop_is_safe_when_never_started(self):
+        sender = _sender(FakeTransport(), _NullRepo(), batch_flush_timeout=0.02)
+        assert sender.stop(timeout=1.0) is True
+
+    def test_stop_drains_what_it_already_picked_up(self):
+        """A batch already in flight is still delivered before the worker exits."""
+        transport = FakeTransport()
+        sender = _sender(transport, _NullRepo(), batch_flush_timeout=0.02)
+        sender.enqueue({"id": "a"})
+
+        deadline = time.time() + 5.0
+        while time.time() < deadline and not transport.batches:
+            time.sleep(0.01)
+
+        assert sender.stop(timeout=5.0) is True
+        assert [p["id"] for batch in transport.batches for p in batch] == ["a"]
+
+    def test_start_after_stop_brings_the_worker_back(self):
+        """stop() must not permanently disable the sender."""
+        transport = FakeTransport()
+        sender = _sender(transport, _NullRepo(), batch_flush_timeout=0.02)
+        sender.start()
+        assert sender.stop(timeout=5.0) is True
+
+        sender.enqueue({"id": "after-restart"})
+        deadline = time.time() + 5.0
+        while time.time() < deadline and not transport.batches:
+            time.sleep(0.01)
+        assert sender.stop(timeout=5.0) is True
+        assert [p["id"] for batch in transport.batches for p in batch] == ["after-restart"]
