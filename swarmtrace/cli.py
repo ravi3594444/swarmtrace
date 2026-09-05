@@ -74,6 +74,12 @@ def _parse_limit(default: int = DEFAULT_VIEW_LIMIT) -> int:
 # ---------- helpers ----------
 
 def _wants_help(args: list[str]) -> bool:
+    """Return True if *args* asks for help anywhere, not just in first position.
+
+    Checked across the whole list because `swarmtrace-alerts list --help` puts
+    the flag after the subcommand, and matching only ``args[0]`` made that
+    print the alert table instead of the usage text.
+    """
     return any(a in ("-h", "--help") for a in args)
 
 
@@ -203,6 +209,7 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
         *,
         detached: bool = False,
     ):
+        """Build one no-wrap tree row: func → status → kind → latency → cost → id."""
         status = "[red]✗[/red]" if error else "[green]✓[/green]"
         tag = "" if kind == "agent" else f" [dim]({kind})[/dim]"
         detached_tag = " [yellow](detached)[/yellow]" if detached else ""
@@ -224,6 +231,7 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
     ordered = _chronological(traces)
 
     def add_children(tree_node, pid):
+        """Attach every child of *pid* under *tree_node*, recursing depth-first."""
         for child in [t for t in ordered if t["parent_id"] == pid]:
             cid, cfunc, cerror, ckind = (
                 child["id"], child["function"], child["error"], child["kind"],
