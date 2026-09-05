@@ -50,9 +50,16 @@ class Sender:
 
         self._queue: queue.Queue[dict] = queue.Queue(maxsize=queue_max)
         self._started = False
+        # _lock guards the whole worker lifecycle: _started, _thread and
+        # _stop_event always change together, under it. Never hold it across
+        # a join() — enqueue() takes it on the traced application's hot path.
         self._lock = threading.Lock()
-        self._stopping = threading.Event()
         self._thread: threading.Thread | None = None
+        # Each worker gets its OWN stop event rather than sharing one on the
+        # instance. With a shared flag, a start() that cleared it would revive
+        # a previous worker still winding down out of a timed-out stop(),
+        # leaving two workers draining one queue.
+        self._stop_event: threading.Event | None = None
 
     # ------------------------------------------------------------------ queue
 
@@ -100,13 +107,21 @@ class Sender:
         if self._started:
             return
         with self._lock:
-            if not self._started:
-                self._stopping.clear()
-                self._thread = threading.Thread(
-                    target=self._run, daemon=True, name=self._thread_name
-                )
-                self._thread.start()
-                self._started = True
+            if self._started:
+                return
+            stop_event = threading.Event()
+            thread = threading.Thread(
+                target=self._run, args=(stop_event,), daemon=True, name=self._thread_name
+            )
+            # Publish the state BEFORE starting the thread and while still
+            # holding the lock, so no concurrent stop() can observe a
+            # half-built lifecycle (a live thread with _started still False,
+            # which used to end as _started=True with _thread=None — a sender
+            # that accepts payloads forever and never delivers one).
+            self._thread = thread
+            self._stop_event = stop_event
+            self._started = True
+            thread.start()
 
     def stop(self, timeout: float | None = 5.0) -> bool:
         """Ask the worker to finish its current batch and exit; join it.
@@ -126,21 +141,47 @@ class Sender:
         roughly one flush interval. Anything still queued stays durable in
         SQLite and is picked up by ``swarmtrace-resync``.
         """
-        self._stopping.set()
-        thread = self._thread
-        if thread is not None:
-            thread.join(timeout)
-            alive = thread.is_alive()
-        else:
-            alive = False
-        if not alive:
-            self._started = False
-            self._thread = None
+        with self._lock:
+            thread = self._thread
+            if self._stop_event is not None:
+                self._stop_event.set()
+            if thread is None:
+                self._started = False
+                return True
+
+        # Join OUTSIDE the lock: a slow in-flight send would otherwise block
+        # every enqueue() on the traced application's hot path for `timeout`.
+        thread.join(timeout)
+        alive = thread.is_alive()
+
+        with self._lock:
+            # `is thread` guards against clearing a NEWER worker that started
+            # while we were joining the old one.
+            if self._thread is thread and not alive:
+                self._started = False
+                self._thread = None
+                self._stop_event = None
         return not alive
 
-    def _run(self) -> None:
+    def _run(self, stop_event: threading.Event) -> None:
         """Background send loop. Never dies — outer boundary logs and loops."""
-        while not self._stopping.is_set():
+        try:
+            self._drain_until(stop_event)
+        finally:
+            # Worker-exit cleanup is AUTHORITATIVE. stop() can only tidy up
+            # when its join() succeeds; if a send outlives the timeout the
+            # worker exits later, and without this the sender was wedged
+            # forever — _started stayed True, so start() short-circuited and
+            # every subsequent span was queued and silently never delivered.
+            with self._lock:
+                if self._thread is threading.current_thread():
+                    self._started = False
+                    self._thread = None
+                    self._stop_event = None
+
+    def _drain_until(self, stop_event: threading.Event) -> None:
+        """Drain and send batches until *stop_event* is set."""
+        while not stop_event.is_set():
             batch: list[dict] = []
             try:
                 batch = self.drain_batch(self._batch_max_items, self._batch_flush_timeout)
@@ -190,5 +231,5 @@ class Sender:
         """
         self._started = False
         self._thread = None
-        self._stopping.clear()
+        self._stop_event = None
         self._queue = queue.Queue(maxsize=self._queue_max)

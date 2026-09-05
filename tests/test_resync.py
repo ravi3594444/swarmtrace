@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import contextlib
 import importlib
+import sys
 
 import pytest
 
@@ -273,6 +274,18 @@ class TestResyncFunction:
 # --------------------------------------------------------------------------
 
 class TestResyncCLI:
+    """Drive the console-script entry point.
+
+    Each test sets ``sys.argv`` explicitly. Without it pytest's own argv
+    (``-q``, test paths, ...) leaks into the command under test — harmless
+    only while the parser silently ignored unrecognized arguments, which is
+    the very bug ``parse_limit`` now rejects.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _argv(self, monkeypatch):
+        monkeypatch.setattr(sys, "argv", ["swarmtrace-resync"])
+
     def test_cli_reports_success(self, resync_runtime, capsys):
         _save_trace(storage, "t1")
         _save_trace(storage, "t2")
@@ -301,3 +314,22 @@ class TestResyncCLI:
             main_resync()
         out = capsys.readouterr().out
         assert "No unsynced" in out
+
+    def test_cli_rejects_an_unknown_flag(self, resync_runtime, capsys, monkeypatch):
+        """`--limti 5` must not run with defaults and report success."""
+        monkeypatch.setattr(sys, "argv", ["swarmtrace-resync", "--limti", "5"])
+        from swarmtrace.cli import main_resync
+        with pytest.raises(SystemExit) as exc_info:
+            main_resync()
+        assert exc_info.value.code == 2
+        assert "unknown argument" in capsys.readouterr().err
+
+    def test_cli_honours_a_valid_limit(self, resync_runtime, capsys, monkeypatch):
+        """The rejection must not break the flag it is guarding."""
+        monkeypatch.setattr(sys, "argv", ["swarmtrace-resync", "--limit", "1"])
+        _save_trace(storage, "t1")
+        _save_trace(storage, "t2")
+        from swarmtrace.cli import main_resync
+        with contextlib.suppress(SystemExit):
+            main_resync()
+        assert "1/1" in capsys.readouterr().out
