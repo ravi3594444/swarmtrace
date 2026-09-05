@@ -1,6 +1,7 @@
 """Tests for the SQLite trace storage layer."""
 
 import importlib
+import logging
 import os
 import stat
 
@@ -479,7 +480,14 @@ def test_periodic_checkpoint_runs_without_warnings(storage, caplog, monkeypatch)
         for i in range(12):
             _save(storage, trace_id=f"ckpt-{i}")
 
-    warnings = [r.getMessage() for r in caplog.records]
+    # caplog.at_level() sets the level but does NOT filter caplog.records, so
+    # narrow to this library's own warnings — an unrelated record from another
+    # logger would otherwise fail this assertion for the wrong reason.
+    warnings = [
+        r.getMessage()
+        for r in caplog.records
+        if r.name.startswith("swarmtrace") and r.levelno >= logging.WARNING
+    ]
     assert not warnings, f"checkpoint path logged storage warnings: {warnings}"
 
     # And every row still landed.

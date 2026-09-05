@@ -217,9 +217,13 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
         # parser treats them as literal brackets, not style tags. Without
         # escaping, [root-1] is interpreted as a (nonexistent) style tag
         # and silently dropped from the output.
+        # `latency or 0`: traces.latency_sec is a nullable REAL column, and a
+        # NULL reaches `.3f` as None, raising TypeError — which aborted the
+        # WHOLE rich view, not just the offending row. (The plain fallback
+        # survived it because it interpolates without a format spec.)
         label = (
             f"[blue]{func}()[/blue] {status}{tag}{detached_tag} "
-            f"[yellow]{latency:.3f}s[/yellow] "
+            f"[yellow]{(latency or 0):.3f}s[/yellow] "
             f"[magenta]${cost or 0}[/magenta] \\[{tid}]"
         )
         text = Text.from_markup(label)

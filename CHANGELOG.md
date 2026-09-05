@@ -70,6 +70,13 @@ adheres to [Semantic Versioning](https://semver.org/).
   list` and `swarmtrace-resync`, which each carried their own copy.
 
 ### Fixed
+- **A single NULL `latency_sec` took down the entire `swarmtrace` view.**
+  `traces.latency_sec` is a nullable REAL column, so a row from an older SDK,
+  a migration, or direct SQL can carry NULL — and the tree label formatted it
+  with `.3f`, raising `TypeError: unsupported format string passed to
+  NoneType.__format__` and aborting the whole command, every other trace
+  included. (The plain-text fallback survived it, so this only bit users with
+  rich installed — i.e. almost all of them.) Found by review on PR #42.
 - **The background sender could be left accepting spans with no worker to
   deliver them** — two lifecycle defects in `Sender`, both found by review on
   PR #42 and both reproduced before fixing:
