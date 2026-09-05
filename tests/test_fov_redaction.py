@@ -28,6 +28,8 @@ reassembled from earlier chunks.
 
 from __future__ import annotations
 
+import contextlib
+
 from swarmtrace import fov
 
 # ---------------------------------------------------------------------------
@@ -305,10 +307,8 @@ def test_wrapped_fill_redacts_value_repeated_in_error(monkeypatch):
 
     wrapped = fov._wrap_sync_method("fill", FakePage.fill)
     secret = "CorrectHorseBatteryStaple!"
-    try:
+    with contextlib.suppress(RuntimeError):
         wrapped(FakePage(), "#password", secret)
-    except RuntimeError:
-        pass
 
     error = captured_events[-1]
     assert error["status"] == "error"

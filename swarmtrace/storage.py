@@ -118,7 +118,9 @@ def _secure_db_path(path: str) -> None:
     except FileExistsError:
         expected = os.lstat(path)
         if stat.S_ISLNK(expected.st_mode) or not stat.S_ISREG(expected.st_mode):
-            raise OSError(f"refusing non-regular SwarmTrace DB path: {path}")
+            raise OSError(
+                f"refusing non-regular SwarmTrace DB path: {path}"
+            ) from None
         fd = os.open(path, flags)
 
     try:
@@ -390,6 +392,30 @@ def get_unsynced_traces(limit: int = 100) -> list[TraceRow]:
     except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
         _log.debug("get_unsynced_traces failed, returning empty: %s", exc)
         return []
+
+def close() -> None:
+    """Close the shared SQLite connection under the module lock.
+
+    Callers must never close ``_conn`` themselves. The connection is opened
+    with ``check_same_thread=False`` so the background sender thread can write
+    to it, which makes ``_lock`` the *only* thing serializing access. Closing
+    outside the lock frees the sqlite3 object while another thread may be
+    inside a query — a use-after-free that segfaults the interpreter, not a
+    Python-level exception you can catch. (Reproduced 3/3 before this
+    function existed; the sender's ``mark_synced`` was the racing caller.)
+
+    The next storage call transparently reopens the connection, so this is
+    safe to call at shutdown, between tests, or when rotating the DB path.
+    """
+    global _conn
+    with _lock:
+        if _conn is not None:
+            try:
+                _conn.close()
+            except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
+                _log.debug("close failed, dropping the connection anyway: %s", exc)
+            _conn = None
+
 
 def purge_all() -> None:
     global _write_count

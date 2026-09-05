@@ -43,7 +43,7 @@ class _FakeIndex:
         self.search_calls.append((query_vec, k))
         import numpy as np
         distances = np.zeros((1, k), dtype="float32")
-        indices = np.array([[i for i in range(min(k, 999))]], dtype="int64")
+        indices = np.array([list(range(min(k, 999)))], dtype="int64")
         return distances, indices
 
 

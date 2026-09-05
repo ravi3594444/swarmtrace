@@ -15,8 +15,7 @@ def storage(tmp_path, monkeypatch):
     importlib.reload(s)
     yield s
     if s._conn is not None:
-        s._conn.close()
-        s._conn = None
+        s.close()
 
 
 def _save(storage, trace_id="abc", error=None):
@@ -381,3 +380,80 @@ def test_secure_db_path_rejects_other_writable_parent(tmp_path):
     os.chmod(tmp_path, 0o777)
     with pytest.raises(PermissionError, match="group/other-writable"):
         storage_mod._secure_db_path(str(tmp_path / "traces.db"))
+
+
+# ---------------------------------------------------------------------------
+# close() — lock-safe connection teardown
+#
+# The connection is opened with check_same_thread=False so the background
+# sender can write through it, which makes storage._lock the only thing
+# serializing access. Closing the raw _conn from outside the lock while
+# another thread is mid-query is a use-after-free: it takes the interpreter
+# down with SIGSEGV, not a catchable Python exception. Reproduced 3/3 before
+# close() existed.
+# ---------------------------------------------------------------------------
+
+_CLOSE_RACE_SCRIPT = """
+import os, sys, threading, time
+os.environ["SWARMTRACE_DB_PATH"] = sys.argv[1]
+import swarmtrace.storage as s
+
+s.save_trace(id_="x", function="f", timestamp="2026-01-01T00:00:00+00:00")
+
+stop = False
+def hammer():
+    while not stop:
+        s.mark_synced("x", 1)
+        s.get_traces(limit=1)
+
+threads = [threading.Thread(target=hammer, daemon=True) for _ in range(4)]
+for t in threads:
+    t.start()
+
+for _ in range(200):
+    time.sleep(0.005)
+    s.close()
+
+stop = True
+for t in threads:
+    t.join(timeout=2)
+print("OK")
+"""
+
+
+def test_close_is_safe_while_other_threads_are_querying(tmp_path):
+    """close() must not race the worker threads into a segfault.
+
+    Run in a subprocess: if this regresses the failure mode is SIGSEGV, which
+    would take the whole pytest process down rather than failing one test.
+    """
+    import subprocess
+    import sys
+
+    script = tmp_path / "close_race.py"
+    script.write_text(_CLOSE_RACE_SCRIPT)
+    proc = subprocess.run(
+        [sys.executable, str(script), str(tmp_path / "race.db")],
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert proc.returncode == 0, (
+        f"close() raced into a crash (returncode {proc.returncode}); "
+        f"stderr:\n{proc.stderr}"
+    )
+    assert "OK" in proc.stdout
+
+
+def test_close_lets_the_next_call_reopen(storage):
+    _save(storage, trace_id="reopen-me")
+    storage.close()
+    assert storage._conn is None
+    # The next call transparently reconnects rather than raising.
+    assert storage.get_by_id("reopen-me") is not None
+
+
+def test_close_is_idempotent(storage):
+    storage.close()
+    storage.close()
+    assert storage._conn is None

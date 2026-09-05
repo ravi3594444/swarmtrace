@@ -80,6 +80,44 @@ class SpanRecord:
             "attributes": json.dumps(attrs) if attrs else None,
         }
 
+    def to_ingest_payload(self) -> dict[str, Any]:
+        """Return this span in the ``/api/ingest`` wire shape.
+
+        This is the single definition of the SDK→dashboard wire contract.
+        It used to be copy-pasted into both ``runtime.py`` and
+        ``adapters/http_transport.py``; two copies of a wire format is two
+        chances for the live sender and the resync path to disagree about
+        what a trace looks like. Keep it here, next to ``to_storage_dict``,
+        so both mappings for a span live side by side.
+
+        ``session_id``, ``trace_id`` and ``attributes`` are omitted when
+        empty (and ``trace_id`` also when it merely repeats ``span_id``) so
+        the payload stays compatible with dashboards predating those fields.
+        """
+        payload: dict[str, Any] = {
+            "id": self.span_id,
+            "parent_id": self.parent_span_id,
+            "function": self.name,
+            "args": self.args or "",
+            "output": self.output or "",
+            "latency_sec": self.latency_sec,
+            "error": self.error,
+            "timestamp": self.start_time.isoformat(),
+            "input_tokens": self.input_tokens,
+            "output_tokens": self.output_tokens,
+            "cost_usd": self.cost_usd,
+            "kind": self.kind,
+            "agent_id": self.agent_id,
+            "agent_name": self.agent_name,
+        }
+        if self.session_id is not None:
+            payload["session_id"] = self.session_id
+        if self.trace_id is not None and self.trace_id != self.span_id:
+            payload["trace_id"] = self.trace_id
+        if self.attributes:
+            payload["attributes"] = self.attributes
+        return payload
+
     @classmethod
     def from_storage_row(cls, row: dict[str, Any]) -> SpanRecord:
         """Build a SpanRecord from a sqlite3.Row dict."""

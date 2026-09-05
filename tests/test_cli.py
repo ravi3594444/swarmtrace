@@ -22,8 +22,7 @@ def storage(tmp_path, monkeypatch):
     importlib.reload(s)
     yield s
     if s._conn is not None:
-        s._conn.close()
-        s._conn = None
+        s.close()
 
 
 @pytest.fixture()

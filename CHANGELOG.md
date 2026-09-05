@@ -18,12 +18,75 @@ adheres to [Semantic Versioning](https://semver.org/).
   1 moderate, 1 low). Verified via `tsc --noEmit`, the full frontend test
   suite (267/267), and `next build`.
 
+### Added
+- **`tests/test_end_to_end.py` — the first test that wires the real stack**
+  **together with no fakes**: `@observe`'d functions → `tracer._flush` →
+  `SpanRecord` → `Runtime.record` → a real SQLite file → the real background
+  `Sender` thread → `HttpTransport` (real gzip + urllib) → a real HTTP server
+  on `127.0.0.1` → `synced=1` write-back → the CLI view and export rendering
+  the same DB. Every other test substitutes at least one of those layers, so
+  the seams between them were untested — which is where this project's
+  shipped bugs have lived. It covers the happy path, wire format
+  (gzip + `X-API-Key` + `{"traces": [...]}`), client-side redaction, a
+  dashboard outage followed by resync recovery, and the CLI/export output.
+  It found the `storage.close()` segfault below on its first run.
+- **`storage.close()`** — the lock-safe way to release the shared SQLite
+  connection. The next storage call transparently reopens it.
+- **`Sender.stop(timeout)`** — shuts the background worker down and joins it.
+
 ### Improved
 - **The CLI tree no longer hides spans whose parent is outside the current**
   **`--limit` window.** These spans now render as detached roots, preserving
   visibility without inventing a false parent-child relationship.
+- **The tree view reads in execution order.** `get_traces()` returns
+  newest-first, which is right for the table but was reused verbatim for the
+  tree — so an agent's *last* tool call rendered above its first, and the
+  call tree read backwards against the execution it depicts. Siblings are
+  now sorted chronologically; the table keeps its newest-first ordering.
+- **CI lints the whole configured rule set** (`ruff check swarmtrace tests`)
+  instead of `--select E9,F63,F7,F82` ("critical errors only"). The enforced
+  set now lives in `pyproject.toml` and adds bugbear, blind-except,
+  naive-datetime, import-order, pyupgrade and simplify checks. All 27
+  findings this surfaced are fixed, including a `zip()` without `strict=`
+  and an `OSError` re-raised without `from`.
+- **The `/api/ingest` payload mapping has one definition again.** It was
+  copy-pasted into both `runtime.py` and `adapters/http_transport.py`; two
+  copies of a wire format is two chances for the live sender and the resync
+  path to disagree. Both now delegate to `SpanRecord.to_ingest_payload()`.
+- **`--limit` is parsed in one place** by `swarmtrace`, `swarmtrace-alerts
+  list` and `swarmtrace-resync`, which each carried their own copy.
 
 ### Fixed
+- **Segfault: closing the SQLite connection raced the background sender.**
+  The connection is opened with `check_same_thread=False` so the sender can
+  write through it, which makes `storage._lock` the only thing serializing
+  access — but `storage.py` exposed no lock-safe close, so every caller
+  reached for the private `_conn` and closed it from outside the lock. With
+  the sender mid-`mark_synced`, that is a use-after-free: SIGSEGV, not a
+  catchable Python exception (reproduced 3/3). `storage.close()` and
+  `Sender.stop()` close the race; a subprocess regression test asserts the
+  crash stays fixed (it fails with returncode -11 if the lock is removed).
+- **`swarmtrace-export --help` wrote a file instead of printing help.**
+  `--help` fell through the flag parsing and exported to
+  `./swarmtrace_export.json`, silently, exit 0.
+- **`swarmtrace-export --format <typo>` silently exported JSON.** An
+  unrecognized format now errors and exits 2 rather than producing a
+  `.json` the user did not ask for.
+- **`swarmtrace-export` gave no sign it had run.** Success was reported via
+  `_log.info`, and the SDK never installs a logging handler — so the command
+  printed nothing at all. It now prints the row count and destination path,
+  and exits 1 with a clean message (not a traceback) when the destination
+  cannot be written.
+- **`swarmtrace --help` dumped the trace table**; `swarmtrace-replay --help`
+  looked up a trace whose id was `--help`. Both print usage now.
+- **A bad `--limit` value was silently ignored.** `swarmtrace --limit twenty`
+  looked like it had honoured the flag while showing the default 100 rows.
+  All three commands that take `--limit` now reject it with exit code 2.
+- **`cli.py`'s rich rendering was wrapped in `except ImportError`** — about
+  100 lines of it, in `view()`, `replay()` and `_alerts_list()`. Any
+  ImportError raised from *inside* the rendering code was indistinguishable
+  from "rich isn't installed" and silently downgraded the CLI to plain text.
+  The guard now covers only the imports.
 - **Postgres integration-test teardown now removes every migration function**
   **and revokes role-owned grants before dropping its Supabase role stubs.**
   This fixes CI failing after all 14 assertions passed because

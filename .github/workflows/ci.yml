@@ -18,8 +18,12 @@ jobs:
           cache: 'pip'
       - name: Install dependencies
         run: pip install -e ".[all]" pytest ruff openai anthropic
-      - name: Lint (critical errors only)
-        run: ruff check --select E9,F63,F7,F82 swarmtrace tests
+      - name: Lint
+        # Rule set is configured in pyproject.toml ([tool.ruff.lint]). This
+        # used to be `--select E9,F63,F7,F82` ("critical errors only"), which
+        # let bugbear, blind-except, naive-datetime and import-order findings
+        # through unnoticed.
+        run: ruff check swarmtrace tests
       - name: Tests
         # Exclude tests/integration/ — those need a real Postgres and run in
         # the dedicated "integration" job below. Collecting them here either

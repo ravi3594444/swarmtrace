@@ -76,7 +76,7 @@ def _load_upstream(name: str, data: dict[str, Any]) -> UpstreamServer:
         # This validates parsed JSON config, not a Python call argument --
         # ValueError matches every other schema check in this module (see
         # env/cwd checks above, which TRY004 doesn't flag).
-        raise ValueError(f"upstream {name!r}: args must be a list of strings")  # noqa: TRY004
+        raise ValueError(f"upstream {name!r}: args must be a list of strings")
 
     command = data.get("command")
     if not command or not isinstance(command, str):
@@ -103,13 +103,13 @@ def load_config(path: str) -> GatewayConfig:
     if not os.path.isfile(path):
         raise FileNotFoundError(f"gateway config not found: {path}")
 
-    with open(path, "r", encoding="utf-8") as f:
+    with open(path, encoding="utf-8") as f:
         data = json.load(f)
 
     if not isinstance(data, dict):
         # JSON-schema validation, not arg type-checking -- kept as ValueError
         # to match the rest of this module's contract.
-        raise ValueError("gateway config must be a JSON object")  # noqa: TRY004
+        raise ValueError("gateway config must be a JSON object")
 
     servers: list[UpstreamServer] = []
 
@@ -120,7 +120,7 @@ def load_config(path: str) -> GatewayConfig:
         for entry in generic_servers:
             if not isinstance(entry, dict):
                 # JSON-schema validation, not arg type-checking.
-                raise ValueError("each entry in 'servers' must be an object")  # noqa: TRY004
+                raise ValueError("each entry in 'servers' must be an object")
             name = entry.get("name")
             if not name:
                 raise ValueError("each server entry must have a 'name'")
@@ -133,7 +133,7 @@ def load_config(path: str) -> GatewayConfig:
         for name, entry in mcp_servers.items():
             if not isinstance(entry, dict):
                 # JSON-schema validation, not arg type-checking.
-                raise ValueError(f"mcpServers.{name} must be an object")  # noqa: TRY004
+                raise ValueError(f"mcpServers.{name} must be an object")
             servers.append(_load_upstream(str(name), entry))
 
     if not servers:

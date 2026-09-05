@@ -52,6 +52,46 @@ swarmtrace = ["py.typed"]
 line-length = 100
 target-version = "py310"
 
+[tool.ruff.lint]
+# CI used to lint only E9,F63,F7,F82 ("critical errors only"), which let real
+# defect classes through: bare `except Exception` with no justification (BLE),
+# mutable-default / loop-variable-capture bugs (B), naive datetimes (DTZ),
+# unsorted imports (I). This is the enforced set — `ruff check swarmtrace
+# tests` must stay clean.
+select = [
+    "E", "W",   # pycodestyle
+    "F",        # pyflakes
+    "I",        # import sorting
+    "B",        # bugbear
+    "C4",       # comprehensions
+    "UP",       # pyupgrade
+    "SIM",      # simplify
+    "RET",      # return consistency
+    "PIE",      # misc lints
+    "ISC",      # implicit string concat
+    "TID",      # tidy imports
+    "DTZ",      # naive datetimes
+    "RUF",      # ruff-specific (incl. RUF100 unused-noqa)
+    "BLE",      # blind except — every one must carry a `# noqa: BLE001 -- why`
+]
+ignore = [
+    # Line length is a formatting concern; the existing code wraps at 100 by
+    # convention but several justification comments run over and reflowing
+    # them would churn more than it clarifies.
+    "E501",
+    # The codebase deliberately uses en/em dashes and arrows in prose.
+    "RUF002", "RUF003",
+    # RET504 misfires on `result = f(); return result` when a `finally` block
+    # also reads `result` (budget.py) — and elsewhere the named intermediate
+    # is what makes a transform chain readable.
+    "RET504",
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Test doubles implement protocol methods they don't need, and asserting on
+# private helpers is the point of several regression tests.
+"tests/*" = ["B011"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 # Integration tests require a live Postgres (POSTGRES_TEST_URL) and are run
