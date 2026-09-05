@@ -11,7 +11,25 @@ import ast
 from fnmatch import fnmatchcase
 from pathlib import Path
 
-import tomllib
+import pytest
+
+try:  # Python 3.11+
+    import tomllib
+except ModuleNotFoundError:  # Python 3.10 — tomllib landed in 3.11
+    try:
+        import tomli as tomllib
+    except ModuleNotFoundError:  # pragma: no cover - pytest supplies tomli here
+        # In practice unreachable: pytest itself declares
+        # `tomli>=1; python_version < "3.11"`, so anywhere pytest runs on 3.10
+        # tomli is already installed and these checks really do run. This
+        # branch only guards a hand-built environment — and it skips rather
+        # than erroring, because a bare `import tomllib` here took the WHOLE
+        # suite down at collection time on 3.10 (the version pyproject.toml
+        # claims to support), which is how 3.10 went untested for so long.
+        pytest.skip(
+            "needs tomllib (Python 3.11+) or tomli",
+            allow_module_level=True,
+        )
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = ROOT / "swarmtrace"
