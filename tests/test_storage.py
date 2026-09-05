@@ -457,3 +457,58 @@ def test_close_is_idempotent(storage):
     storage.close()
     storage.close()
     assert storage._conn is None
+
+
+# ---------------------------------------------------------------------------
+# Periodic WAL checkpoint
+#
+# The checkpoint used to be issued before conn.commit(), i.e. inside the write
+# transaction the INSERT opens implicitly. SQLite cannot checkpoint inside a
+# transaction, so every attempt raised SQLITE_LOCKED, the outer handler
+# swallowed it as "storage warning: database table is locked", and the
+# explicit checkpoint never once ran.
+# ---------------------------------------------------------------------------
+
+def test_periodic_checkpoint_runs_without_warnings(storage, caplog, monkeypatch):
+    """Crossing the checkpoint interval must not log a storage warning."""
+    # Checkpoint on the 5th write so the test stays fast.
+    monkeypatch.setattr(storage, "CHECKPOINT_EVERY", 5)
+    monkeypatch.setattr(storage, "_write_count", 0)
+
+    with caplog.at_level("WARNING", logger="swarmtrace"):
+        for i in range(12):
+            _save(storage, trace_id=f"ckpt-{i}")
+
+    warnings = [r.getMessage() for r in caplog.records]
+    assert not warnings, f"checkpoint path logged storage warnings: {warnings}"
+
+    # And every row still landed.
+    assert len(storage.get_traces(limit=50)) == 12
+
+
+def test_checkpoint_actually_executes(storage, monkeypatch):
+    """The PRAGMA must reach SQLite, not be swallowed by the error handler.
+
+    Uses sqlite3's trace callback, which reports every statement the
+    connection actually executes — so this fails if the checkpoint raises
+    SQLITE_LOCKED and gets swallowed, and it fails if the call is dropped.
+    """
+    monkeypatch.setattr(storage, "CHECKPOINT_EVERY", 3)
+    monkeypatch.setattr(storage, "_write_count", 0)
+
+    conn = storage._get_conn()
+    statements: list[str] = []
+    conn.set_trace_callback(statements.append)
+    try:
+        for i in range(6):
+            _save(storage, trace_id=f"exec-{i}")
+    finally:
+        conn.set_trace_callback(None)
+
+    checkpoints = [s for s in statements if "wal_checkpoint" in s]
+    assert len(checkpoints) == 2, (
+        f"expected 2 checkpoints across 6 writes, saw {checkpoints}"
+    )
+    # A checkpoint issued inside the write transaction raises and leaves the
+    # connection mid-transaction; after the fix it runs on a clean one.
+    assert conn.in_transaction is False

@@ -7,6 +7,13 @@ adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Security
+- **`npm audit` back to 0 vulnerabilities** (was 4: 2 high, 1 moderate, 1 low).
+  Advisories published since the last audit affected `fast-uri` and `qs` (via
+  `@modelcontextprotocol/sdk`, a production dependency) and `browserslist` /
+  `postcss-selector-parser` (via `shadcn`, dev-only). All four resolved by
+  transitive patch bumps in the lockfile — `package.json` unchanged.
+  Re-verified with `tsc --noEmit`, 267/267 frontend tests, eslint, and a
+  production `next build`.
 - **Bumped `next` from `16.2.6` to `16.3.2`**, resolving 9 high-severity
   advisories: Server Actions SSRF (custom servers and rewrites), a
   middleware/Turbopack proxy bypass, two response-cache confusion bugs,
@@ -57,6 +64,16 @@ adheres to [Semantic Versioning](https://semver.org/).
   list` and `swarmtrace-resync`, which each carried their own copy.
 
 ### Fixed
+- **The periodic WAL checkpoint had never once run.** `save_trace` issued
+  `PRAGMA wal_checkpoint(PASSIVE)` *before* `conn.commit()` — i.e. inside the
+  write transaction the INSERT opens implicitly. SQLite cannot checkpoint
+  inside a transaction, so every attempt raised `SQLITE_LOCKED` and the outer
+  handler swallowed it as `storage warning: database table is locked`,
+  emitting a bogus warning into the host's logs every 500 writes. Moved after
+  the commit. Measured impact: the WAL stays ~3.9 MB at 1k/4k/12k writes
+  either way — SQLite's own `wal_autocheckpoint` was already bounding it — so
+  this is a correctness and log-noise fix, not the disk-growth problem the
+  original comment feared. No rows were ever lost.
 - **Segfault: closing the SQLite connection raced the background sender.**
   The connection is opened with `check_same_thread=False` so the sender can
   write through it, which makes `storage._lock` the only thing serializing
