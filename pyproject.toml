@@ -10,8 +10,21 @@ readme = "README.md"
 authors = [{ name = "Ravi" }]
 license = { text = "MIT" }
 classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    # Every version listed here is exercised: 3.10 and 3.12 in CI's matrix,
+    # and the full suite was run against a clean wheel install on 3.10, 3.11,
+    # 3.12 and 3.13 before they were added. Don't list a version CI can't back.
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Debuggers",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
 ]
 requires-python = ">=3.10"
 dependencies = ["click", "rich"]

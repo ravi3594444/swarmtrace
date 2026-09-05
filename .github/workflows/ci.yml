@@ -8,13 +8,22 @@ on:
 
 jobs:
   python:
-    name: Python tests
+    name: Python tests (${{ matrix.python-version }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # pyproject.toml declares requires-python = ">=3.10", so the floor has
+        # to be tested. It wasn't: CI ran 3.12 only, and on 3.10 the suite
+        # didn't merely fail — `import tomllib` in test_architecture_boundaries
+        # aborted collection, so ALL 421 tests were unrunnable on the version
+        # the package advertises. Both ends of the supported range now run.
+        python-version: ['3.10', '3.12']
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.12'
+          python-version: ${{ matrix.python-version }}
           cache: 'pip'
       - name: Install dependencies
         run: pip install -e ".[all]" pytest ruff openai anthropic
@@ -22,7 +31,9 @@ jobs:
         # Rule set is configured in pyproject.toml ([tool.ruff.lint]). This
         # used to be `--select E9,F63,F7,F82` ("critical errors only"), which
         # let bugbear, blind-except, naive-datetime and import-order findings
-        # through unnoticed.
+        # through unnoticed. Ruff's verdict doesn't vary by interpreter, so
+        # run it once rather than once per matrix entry.
+        if: matrix.python-version == '3.12'
         run: ruff check swarmtrace tests
       - name: Tests
         # Exclude tests/integration/ — those need a real Postgres and run in

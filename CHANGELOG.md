@@ -42,6 +42,12 @@ adheres to [Semantic Versioning](https://semver.org/).
 - **`Sender.stop(timeout)`** — shuts the background worker down and joins it.
 
 ### Improved
+- **CI tests both ends of the supported Python range** (3.10 and 3.12) instead
+  of 3.12 alone, so the `requires-python = ">=3.10"` claim is now backed by a
+  run. Ruff runs once, on 3.12 only — its verdict doesn't vary by interpreter.
+- **`pyproject.toml` classifiers now list 3.10–3.13**, plus license, audience,
+  topic and `Typing :: Typed`. Each version listed was verified against a
+  clean wheel install before being added.
 - **The CLI tree no longer hides spans whose parent is outside the current**
   **`--limit` window.** These spans now render as detached roots, preserving
   visibility without inventing a false parent-child relationship.
@@ -64,6 +70,16 @@ adheres to [Semantic Versioning](https://semver.org/).
   list` and `swarmtrace-resync`, which each carried their own copy.
 
 ### Fixed
+- **The test suite could not run at all on Python 3.10** — the version
+  `pyproject.toml` advertises as the floor. `tests/test_architecture_boundaries.py`
+  imports `tomllib`, which is stdlib only from 3.11, so on 3.10 pytest aborted
+  during *collection* and all 421 tests were unrunnable. CI never noticed
+  because it tested 3.12 only. The import now falls back to `tomli` (which
+  pytest itself already requires on <3.11, so the checks really do run there)
+  and skips rather than erroring in a hand-built environment. **The package
+  itself was always fine on 3.10** — verified by installing the built wheel
+  into clean 3.10 / 3.11 / 3.12 / 3.13 venvs and running the full suite plus
+  every console script on each.
 - **The periodic WAL checkpoint had never once run.** `save_trace` issued
   `PRAGMA wal_checkpoint(PASSIVE)` *before* `conn.commit()` — i.e. inside the
   write transaction the INSERT opens implicitly. SQLite cannot checkpoint
