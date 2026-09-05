@@ -36,7 +36,8 @@ from swarmtrace import fov
 
 @pytest.fixture(autouse=True)
 def reset_events_table_state(monkeypatch):
-    monkeypatch.setattr(fov, "_events_table_ready", False)
+    # None = "not created in any database yet", the cache's cold state.
+    monkeypatch.setattr(fov, "_events_table_ready_for", None)
     yield
 
 
@@ -96,17 +97,50 @@ def test_concurrent_first_calls_create_the_table_exactly_once(monkeypatch):
         f"expected exactly 1 commit, got {len(commit_calls)} — the table "
         f"setup should only run once even under concurrent first calls"
     )
-    assert fov._events_table_ready is True
+    assert fov._events_table_ready_for == fov._storage.DB_PATH
 
 
 def test_already_ready_short_circuits_without_touching_storage(monkeypatch):
-    """Once the flag is set, repeated calls must not touch storage at all
-    — pure fast-path check."""
-    fov._events_table_ready = True
+    """Once the current DB is marked ready, repeated calls must not touch
+    storage at all — pure fast-path check."""
+    monkeypatch.setattr(fov, "_events_table_ready_for", fov._storage.DB_PATH)
 
     def _boom():
         raise AssertionError("_get_conn() should not be called on the fast path")
 
     monkeypatch.setattr(fov, "_get_conn", _boom)
     fov._ensure_events_table()  # must not raise
-    assert fov._events_table_ready is True
+    assert fov._events_table_ready_for == fov._storage.DB_PATH
+
+
+def test_rotating_the_database_recreates_the_table(tmp_path, monkeypatch):
+    """The cache must not survive a DB_PATH rotation.
+
+    storage.close() documents rotating the database as supported. While this
+    cache was a plain boolean it latched True forever, so agent_events was
+    never created in the second database and every insert failed with
+    "no such table: agent_events" — swallowed as a warning, events silently
+    lost.
+    """
+    def _event(event_id: str) -> dict:
+        return {
+            "id": event_id, "agent_id": "a1", "agent_name": "AgentOne",
+            "event_type": "http", "status": "info", "data": "{}",
+            "timestamp": "2026-01-01T00:00:00+00:00",
+        }
+
+    monkeypatch.setattr(fov._storage, "DB_PATH", str(tmp_path / "first.db"))
+    fov._storage.close()
+    fov._save_event_local(_event("e1"))
+    assert len(fov.get_events("a1")) == 1
+
+    # Exactly what storage.close()'s docstring says is supported.
+    fov._storage.close()
+    monkeypatch.setattr(fov._storage, "DB_PATH", str(tmp_path / "second.db"))
+
+    fov._save_event_local(_event("e2"))
+    assert len(fov.get_events("a1")) == 1, (
+        "event lost after rotating the database — agent_events was never "
+        "created in the new file"
+    )
+    fov._storage.close()

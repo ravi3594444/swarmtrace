@@ -29,28 +29,41 @@ class UsageError(ValueError):
 
 
 def parse_limit(args: list[str], default: int) -> int:
-    """Parse ``--limit N`` / ``--limit=N`` out of *args*.
+    """Parse ``--limit N`` / ``--limit=N`` out of *args*, rejecting anything else.
 
     Shared by `swarmtrace`, `swarmtrace-alerts list` and `swarmtrace-resync`,
     which each used to carry their own copy of this loop — and each silently
     fell back to the default on a non-integer value, so
     ``swarmtrace --limit twenty`` looked like it had honoured the flag while
-    showing 100 rows. Bad input now raises :class:`UsageError`.
+    showing 100 rows.
+
+    Unrecognized arguments are rejected too. Skipping them left exactly the
+    same silent failure one typo over: ``swarmtrace --limti 5`` printed 100
+    rows and exited 0, so the flag looked accepted. ``--limit`` is the only
+    option these three commands take, so anything else is a mistake worth
+    reporting rather than ignoring.
     """
-    for i, arg in enumerate(args):
+    limit = default
+    seen = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
         if arg == "--limit":
             if i + 1 >= len(args):
                 raise UsageError("--limit requires a value")
             raw = args[i + 1]
+            i += 2
         elif arg.startswith("--limit="):
             raw = arg.split("=", 1)[1]
+            i += 1
         else:
-            continue
+            raise UsageError(f"unknown argument: {arg}")
         try:
-            return max(1, int(raw))
+            limit = max(1, int(raw))
         except ValueError:
             raise UsageError(f"--limit expects an integer, got {raw!r}") from None
-    return default
+        seen = True
+    return limit if seen else default
 
 
 def _parse_limit(default: int = DEFAULT_VIEW_LIMIT) -> int:
@@ -436,7 +449,9 @@ def main_alerts():
       ack <alert_id>    Mark an alert as acknowledged
     """
     args = sys.argv[1:]
-    if not args or args[0] in ("-h", "--help"):
+    # Check the whole argv, not just args[0]: `swarmtrace-alerts list --help`
+    # used to fall through to the subcommand and print the alert table.
+    if not args or _wants_help(args):
         print(main_alerts.__doc__)
         return
     sub = args[0]

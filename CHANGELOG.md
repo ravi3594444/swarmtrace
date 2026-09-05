@@ -70,6 +70,39 @@ adheres to [Semantic Versioning](https://semver.org/).
   list` and `swarmtrace-resync`, which each carried their own copy.
 
 ### Fixed
+- **The background sender could be left accepting spans with no worker to
+  deliver them** — two lifecycle defects in `Sender`, both found by review on
+  PR #42 and both reproduced before fixing:
+  - A `stop()` whose `join()` timed out (a send still in flight) left
+    `_started=True` and a stale `_thread` forever. The worker exited later
+    when it saw the stop flag, but nothing repaired the state, so `start()`
+    short-circuited and every subsequent span was queued and **silently never
+    delivered**. Worker-exit cleanup is now authoritative, guarded by a
+    `self._thread is threading.current_thread()` identity check so a dying
+    worker can't clobber a newer one.
+  - `stop()` took no lock while `start()` did, so a stop landing between
+    `thread.start()` and `_started = True` produced `_started=True` with
+    `_thread=None` — same undeliverable state. The window is two bytecodes
+    wide and never hit by chance; widening thread startup made it reproduce
+    every time. The whole lifecycle now moves under one lock (never held
+    across the `join()`, which would block `enqueue()` on the traced app's
+    hot path), and each worker gets its **own** stop `Event` so a restart
+    can't revive a predecessor still winding down.
+- **`swarmtrace --limti 5` exited 0 and showed the default 100 rows.**
+  `parse_limit()` skipped every argument it didn't recognize, so a typo'd
+  flag or a stray positional ran the command with defaults and reported
+  success — the same silent failure this release claims to remove, one typo
+  over, and contradicting the documented "exit 2 on bad arguments".
+  Unrecognized arguments are now rejected by `swarmtrace`,
+  `swarmtrace-alerts list` and `swarmtrace-resync`. Also fixed:
+  `swarmtrace-alerts list --help` printed the alert table instead of help.
+- **FOV events were silently lost after a database rotation.**
+  `storage.close()` documents swapping `DB_PATH` as supported, but FOV's
+  `_events_table_ready` latched `True` for the process lifetime, so
+  `agent_events` was never created in the second database and every insert
+  failed with `no such table: agent_events` — swallowed as a warning. The
+  cache is now keyed on the database path it created the table in, which is
+  what the flag always meant.
 - **The test suite could not run at all on Python 3.10** — the version
   `pyproject.toml` advertises as the floor. `tests/test_architecture_boundaries.py`
   imports `tomllib`, which is stdlib only from 3.11, so on 3.10 pytest aborted
