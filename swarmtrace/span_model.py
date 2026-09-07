@@ -115,7 +115,15 @@ class SpanRecord:
         if self.trace_id is not None and self.trace_id != self.span_id:
             payload["trace_id"] = self.trace_id
         if self.attributes:
-            payload["attributes"] = self.attributes
+            # dict(...) not the live object: run.py stores the CALLER's dict by
+            # reference, and this payload sits on the sender queue for up to
+            # batch_flush_timeout before it is serialized. to_storage_dict()
+            # snapshots via json.dumps, so aliasing here made SQLite and the
+            # wire disagree about the same span — the exact divergence this
+            # single definition exists to prevent — and a caller mutating the
+            # dict mid-send could raise "dictionary changed size during
+            # iteration" inside the worker, failing the whole batch.
+            payload["attributes"] = dict(self.attributes)
         return payload
 
     @classmethod

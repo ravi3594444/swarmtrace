@@ -46,6 +46,13 @@ def _sanitize_csv_cell(value):
     return value
 
 
+# get_all_traces() defaults to limit=500. Export means EXPORT: passing None
+# was the difference between "Exported 500 trace(s)" on a 600-row database and
+# telling the truth. sqlite_repository.py already passes limit=None for the
+# same reason. MAX_ROWS bounds the table, so this cannot run away.
+_ALL_ROWS = None
+
+
 def _traces_to_dicts(rows):
     # storage.get_all_traces() now returns dicts (one key per column) rather
     # than positional tuples, so every column -- including session_id and
@@ -56,7 +63,7 @@ def _traces_to_dicts(rows):
 
 def export_json(path="swarmtrace_export.json") -> int:
     """Write every stored trace to *path* as JSON. Returns the row count."""
-    data = _traces_to_dicts(get_all_traces())
+    data = _traces_to_dicts(get_all_traces(limit=_ALL_ROWS))
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
     _log.info("Exported %d traces to %s", len(data), path)
@@ -69,7 +76,7 @@ def export_csv(path="swarmtrace_export.csv") -> int:
     Writes nothing (not even a header) when there are no traces, so an
     empty export can't be mistaken for a successful one downstream.
     """
-    data = _traces_to_dicts(get_all_traces())
+    data = _traces_to_dicts(get_all_traces(limit=_ALL_ROWS))
     if not data:
         _log.info("No traces to export.")
         return 0

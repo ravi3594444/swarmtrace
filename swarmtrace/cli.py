@@ -153,13 +153,15 @@ def _load_rich():
     """
     try:
         from rich.console import Console
+        from rich.markup import escape
         from rich.panel import Panel
         from rich.table import Table
         from rich.text import Text
         from rich.tree import Tree
     except ImportError:
         return None
-    return {"Console": Console, "Panel": Panel, "Table": Table, "Text": Text, "Tree": Tree}
+    return {"Console": Console, "Panel": Panel, "Table": Table, "Text": Text,
+            "Tree": Tree, "escape": escape}
 
 
 # ---------- view ----------
@@ -168,6 +170,11 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
     """Render the trace table + agent tree with rich."""
     console = rich["Console"]()
     Table, Text, Tree = rich["Table"], rich["Text"], rich["Tree"]
+    escape = rich["escape"]
+
+    def esc(value):
+        """Render a DB value as literal text, never as rich console markup."""
+        return escape("" if value is None else str(value))
 
     table = Table(title="swarmtrace — Trace View", border_style="cyan")
     table.add_column("ID",       style="cyan",    width=10)
@@ -178,6 +185,11 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
     table.add_column("Cost",     style="magenta", width=12)
     table.add_column("Status",   width=8)
 
+    # Every value below comes out of the traces table, i.e. from a function
+    # name, an LLM prompt or a tool result. rich parses cell text as console
+    # markup, so an unescaped "[/INST]" (the standard Mistral/Llama prompt
+    # delimiter) raised MarkupError and killed the whole view, and a stray
+    # "[bold]" was silently deleted from what the user was trying to debug.
     for t in traces:
         id_, func, error, kind = t["id"], t["function"], t["error"], t["kind"]
         latency, in_tok, out_tok, cost = (
@@ -185,7 +197,8 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
         )
         status     = "[red]ERROR[/red]" if error else "[green]OK[/green]"
         tokens_str = f"{in_tok or 0}in/{out_tok or 0}out"
-        table.add_row(id_, func, kind, f"{latency}s", tokens_str, f"${cost or 0}", status)
+        table.add_row(esc(id_), esc(func), esc(kind), f"{latency}s",
+                      tokens_str, f"${cost or 0}", status)
 
     console.print(table)
 
@@ -211,7 +224,7 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
     ):
         """Build one no-wrap tree row: func → status → kind → latency → cost → id."""
         status = "[red]✗[/red]" if error else "[green]✓[/green]"
-        tag = "" if kind == "agent" else f" [dim]({kind})[/dim]"
+        tag = "" if kind == "agent" else f" [dim]({esc(kind)})[/dim]"
         detached_tag = " [yellow](detached)[/yellow]" if detached else ""
         # Escape [ and ] around the trace ID with \[ \] so rich's markup
         # parser treats them as literal brackets, not style tags. Without
@@ -222,7 +235,7 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
         # WHOLE rich view, not just the offending row. (The plain fallback
         # survived it because it interpolates without a format spec.)
         label = (
-            f"[blue]{func}()[/blue] {status}{tag}{detached_tag} "
+            f"[blue]{esc(func)}()[/blue] {status}{tag}{detached_tag} "
             f"[yellow]{(latency or 0):.3f}s[/yellow] "
             f"[magenta]${cost or 0}[/magenta] \\[{tid}]"
         )
@@ -346,10 +359,16 @@ def replay(trace_id):
         return 0
 
     console = rich["Console"]()
+    escape = rich["escape"]
     # Pad the plain label (not the markup) so the colons line up — padding
     # the marked-up string counts the tag characters and skews the column.
+    #
+    # escape(value): args/output/error are recorded prompts and tool results.
+    # Interpolated raw, "[INST] ... [/INST]" raised MarkupError and made the
+    # trace unviewable, and "[bold]" was silently dropped — a debugger showing
+    # text the model never produced.
     body = "\n".join(
-        f"[cyan]{label + ':':<10}[/cyan] {value}" for label, value in fields
+        f"[cyan]{label + ':':<10}[/cyan] {escape(str(value))}" for label, value in fields
     )
     console.print(rich["Panel"](
         body,

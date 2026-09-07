@@ -121,7 +121,28 @@ class Sender:
             self._thread = thread
             self._stop_event = stop_event
             self._started = True
-            thread.start()
+            try:
+                thread.start()
+            except BaseException as exc:  # noqa: BLE001 -- rolled back and logged; must not break the traced call
+                # thread.start() can fail for real: "can't create new thread at
+                # interpreter shutdown", or the process hitting its thread
+                # limit. Publishing the state first is deliberate (the worker's
+                # exit cleanup identifies itself via self._thread), so on
+                # failure we have to roll it back by hand — otherwise _started
+                # stays True with a thread that never ran, start()'s fast path
+                # short-circuits forever, every later span is queued and never
+                # delivered, and stop() raises "cannot join thread before it is
+                # started" on the dead handle.
+                self._thread = None
+                self._stop_event = None
+                self._started = False
+                # Swallow rather than raise: enqueue() is on the traced
+                # application's hot path and reaches user code through
+                # run.py's Span.__exit__, which has no guard — a tracing
+                # library must not replace the user's in-flight exception with
+                # its own. The span is already durable in SQLite and
+                # swarmtrace-resync can replay it.
+                _log.error("could not start the sender thread: %s", exc)
 
     def stop(self, timeout: float | None = 5.0) -> bool:
         """Ask the worker to finish its current batch and exit; join it.

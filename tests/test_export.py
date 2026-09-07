@@ -350,3 +350,19 @@ def test_main_help_prints_usage_and_writes_nothing(export_mod, tmp_path, monkeyp
     assert export_mod.main(["--help"]) == 0
     assert "swarmtrace-export" in capsys.readouterr().out
     assert list(tmp_path.iterdir()) == [], "--help wrote files into the cwd"
+
+
+def test_export_does_not_stop_at_the_500_row_default(export_mod, tmp_path):
+    """`get_all_traces()` defaults to limit=500; export must ask for all of them.
+
+    A 600-trace database exported as "Exported 500 trace(s)" with exit 0 and no
+    warning — 100 rows silently missing from a file the docstring calls "every
+    stored trace". MAX_ROWS defaults to 10 000, so up to 9 500 rows could vanish.
+    """
+    from swarmtrace import storage
+    for i in range(520):
+        _save(storage, id_=f"r{i:04d}")
+
+    out = tmp_path / "all.json"
+    assert export_mod.export_json(str(out)) == 520
+    assert len(json.loads(out.read_text())) == 520

@@ -465,3 +465,53 @@ class TestSenderStop:
             time.sleep(0.01)
         assert sender.stop(timeout=5.0) is True
         assert [p["id"] for batch in transport.batches for p in batch] == ["after-restart"]
+
+
+class TestSenderStartFailure:
+    """A thread that cannot be created must not wedge the sender or the caller.
+
+    `_started` is published BEFORE `thread.start()` so the worker's exit cleanup
+    can identify itself via `self._thread`. That ordering means a failed start
+    has to be rolled back by hand — otherwise `_started` stays True with a
+    thread that never ran, `start()`'s fast path short-circuits forever, every
+    later span is queued and never delivered, and `stop()` raises "cannot join
+    thread before it is started" on the dead handle. The pre-PR code set
+    `_started` after `.start()`, so this was a regression.
+    """
+
+    @staticmethod
+    def _break_thread_start(monkeypatch, name_prefix):
+        real_start = threading.Thread.start
+
+        def failing_start(self):
+            if self.name.startswith(name_prefix):
+                raise RuntimeError("can't create new thread at interpreter shutdown")
+            return real_start(self)
+
+        monkeypatch.setattr(threading.Thread, "start", failing_start)
+
+    def test_failed_thread_start_does_not_raise_into_the_traced_call(self, monkeypatch):
+        """enqueue() reaches user code via run.py's Span.__exit__, which has no guard."""
+        self._break_thread_start(monkeypatch, "fail-sender")
+        sender = _sender(FakeTransport(), _NullRepo(), thread_name="fail-sender")
+        sender.enqueue({"id": "a"})  # must not propagate RuntimeError
+
+    def test_failed_thread_start_leaves_the_sender_restartable(self, monkeypatch):
+        self._break_thread_start(monkeypatch, "fail-sender")
+        transport = FakeTransport()
+        sender = _sender(transport, _NullRepo(), batch_flush_timeout=0.02,
+                         thread_name="fail-sender")
+        sender.enqueue({"id": "dropped"})
+
+        assert sender._started is False, "a failed start left the sender wedged"
+        assert sender._thread is None
+        assert sender.stop(timeout=1.0) is True, "stop() choked on a never-started thread"
+
+        # Thread creation works again -> the next enqueue must deliver.
+        monkeypatch.undo()
+        sender.enqueue({"id": "delivered"})
+        deadline = time.time() + 5.0
+        while time.time() < deadline and not transport.batches:
+            time.sleep(0.01)
+        sender.stop(timeout=5.0)
+        assert "delivered" in [p["id"] for b in transport.batches for p in b]

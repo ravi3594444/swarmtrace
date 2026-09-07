@@ -169,3 +169,29 @@ def test_attributes_redacted_in_transport_payload():
     # and the attribute values should be redacted by the caller before placing
     # secrets into attributes. We assert the payload faithfully carries them.
     assert payload["attributes"]["secret"] == "token=sk-12345678901234567890abcdef"
+
+
+def test_ingest_payload_snapshots_attributes_instead_of_aliasing_them():
+    """The wire payload must not track later mutations of the caller's dict.
+
+    run.py stores the caller's attributes dict by reference, and the payload
+    sits on the sender queue for up to batch_flush_timeout before it is
+    serialized. to_storage_dict() snapshots via json.dumps, so aliasing here
+    made SQLite and the dashboard hold different attributes for the same span —
+    and resync would later overwrite the dashboard with the SQLite copy. That
+    is exactly the divergence this single definition exists to prevent.
+    """
+    caller_ctx = {"stage": "retrieval"}
+    span = SpanRecord(
+        span_id="attr-1", name="retrieve", kind="tool",
+        start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        attributes=caller_ctx,
+    )
+    stored = json.loads(span.to_storage_dict()["attributes"])
+    payload = span.to_ingest_payload()
+
+    caller_ctx["stage"] = "done"          # caller keeps using its own dict
+
+    assert payload["attributes"] is not caller_ctx, "payload aliases the caller's dict"
+    assert payload["attributes"] == {"stage": "retrieval"}
+    assert payload["attributes"] == stored, "wire and SQLite disagree about the same span"

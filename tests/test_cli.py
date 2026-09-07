@@ -323,3 +323,54 @@ def test_view_survives_a_null_latency_row(cli, storage, capsys):
     out = capsys.readouterr().out
     assert "rag_agent" in out
     assert "mistral_answer" in out, "the sibling row was lost with the NULL one"
+
+
+# ---------------------------------------------------------------------------
+# rich markup injection from recorded trace content
+#
+# args/output/error/function are recorded prompts, tool results and span names.
+# rich parses cell and panel text as console markup, so interpolating them raw
+# meant "[INST] ... [/INST]" — the standard Mistral/Llama prompt delimiter, and
+# this repo ships Mistral examples — raised MarkupError and made the trace
+# unviewable, while "[bold]" was silently deleted from the text the user was
+# trying to debug.
+# ---------------------------------------------------------------------------
+
+_MARKUPY_OUTPUT = "See the [install guide](https://x.dev) and the [bold] section."
+
+
+def test_replay_renders_llm_prompt_delimiters_instead_of_crashing(cli, storage, capsys):
+    storage.save_trace(
+        id_="m1", function="chat", args="[INST] hi [/INST]", output="ok",
+        timestamp="2026-01-01T00:00:00+00:00", latency_sec=0.1,
+    )
+    cli.replay("m1")  # used to raise rich.errors.MarkupError
+    assert "[INST] hi [/INST]" in capsys.readouterr().out
+
+
+def test_replay_does_not_silently_delete_bracketed_output(cli, storage, capsys):
+    """A debugger must show what the model returned, not a markup-stripped copy."""
+    storage.save_trace(
+        id_="m2", function="chat", args="()", output=_MARKUPY_OUTPUT,
+        timestamp="2026-01-01T00:00:00+00:00", latency_sec=0.1,
+    )
+    cli.replay("m2")
+    out = capsys.readouterr().out
+    assert "[install guide]" in out, "markdown link label was stripped"
+    assert "[bold]" in out, "bracketed text was swallowed as a style tag"
+
+
+def test_view_survives_a_bracketed_function_name(cli, storage, capsys):
+    """One bad span name must not abort the table and tree for every trace."""
+    storage.save_trace(
+        id_="m3", function="tool[/INST]", args="()", output="ok",
+        timestamp="2026-01-01T00:00:00+00:00", latency_sec=0.1,
+    )
+    storage.save_trace(
+        id_="m4", function="healthy_tool", args="()", output="ok",
+        timestamp="2026-01-01T00:00:01+00:00", latency_sec=0.1,
+    )
+    cli.view(limit=10)  # used to raise rich.errors.MarkupError
+    out = capsys.readouterr().out
+    assert "tool[/INST]" in out
+    assert "healthy_tool" in out, "the sibling row was lost with the bad one"

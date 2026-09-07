@@ -6,6 +6,51 @@ adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+- **`swarmtrace-replay` crashed on Mistral/Llama prompt delimiters, and silently
+  deleted bracketed text everywhere else.** Recorded `args`/`output`/`error` and
+  span names were interpolated straight into rich console markup, so a trace
+  containing `[INST] ... [/INST]` — the standard Mistral/Llama format, and this
+  repo ships Mistral examples — raised `MarkupError` and made that trace
+  unviewable. The quieter case was worse: `See the [install guide](url) and the
+  [bold] section.` rendered as `See the (url) and the  section.`, so a debugger
+  showed text the model never produced. One bracketed function name also aborted
+  the whole table and tree for *every* trace. All DB-derived values are now
+  escaped; the plain-text renderer already printed them verbatim.
+- **`swarmtrace-export` stopped at 500 rows and reported success.**
+  `get_all_traces()` defaults to `limit=500`, so a 600-trace database exported
+  as `Exported 500 trace(s)` with exit 0 and nothing missing-looking about it —
+  under a docstring reading "Write every stored trace". `MAX_ROWS` defaults to
+  10 000, so up to 9 500 rows could vanish. Export now passes `limit=None`, as
+  `sqlite_repository.py` already did.
+- **`SpanRecord.to_ingest_payload()` aliased the caller's `attributes` dict**
+  instead of snapshotting it. `to_storage_dict()` snapshots via `json.dumps`, so
+  a caller mutating its own context dict after the span closed left SQLite and
+  the dashboard holding different attributes for the same span id — and a later
+  `swarmtrace-resync` would overwrite the dashboard with the SQLite copy. That
+  is precisely the divergence this single definition was introduced to prevent.
+  Mutating it mid-send could also raise "dictionary changed size during
+  iteration" inside the worker, failing a whole batch of up to 20 spans.
+- **A failed sender thread start wedged the sender permanently and raised into
+  the traced call** — a regression introduced by the previous release's
+  lifecycle rewrite. `_started` is published before `thread.start()` so the
+  worker's exit cleanup can identify itself, but the failure path was not rolled
+  back: `RuntimeError: can't create new thread at interpreter shutdown` left
+  `_started=True` with a thread that never ran, so `start()` short-circuited
+  forever, every later span was queued and never delivered, and `stop()` raised
+  "cannot join thread before it is started". The exception also escaped through
+  `run.py`'s `Span.__exit__`, which has no guard, replacing whatever exception
+  was in flight in the user's `with` block. Now rolled back and logged.
+
+### Added
+- **A guard against version drift** between `pyproject.toml` and
+  `swarmtrace.__version__`. They are declared separately with nothing keeping
+  them in sync, and they drifted for four consecutive releases: 0.6.6 through
+  0.6.9 all shipped with `swarmtrace.__version__` pinned at `0.6.5`. For a
+  tracing library the version a user quotes in a bug report is how you tell
+  which capture behaviour they were running.
+
+
 ### Security
 - **`npm audit` back to 0 vulnerabilities** (was 4: 2 high, 1 moderate, 1 low).
   Advisories published since the last audit affected `fast-uri` and `qs` (via
