@@ -374,3 +374,25 @@ def test_view_survives_a_bracketed_function_name(cli, storage, capsys):
     out = capsys.readouterr().out
     assert "tool[/INST]" in out
     assert "healthy_tool" in out, "the sibling row was lost with the bad one"
+
+
+def test_alerts_list_survives_markup_in_a_recorded_alert(cli, storage, capsys):
+    """The alerts table was left out of the escaping fix and still crashed.
+
+    Agent names and rule messages carry model-supplied text, so the same
+    "[/INST]" that broke the trace view broke `swarmtrace-alerts list` — and it
+    printed no alerts at all.
+    """
+    from swarmtrace import alerts
+    alerts._save(alerts.Alert(
+        id="al1", rule="budget_breach", severity="warning",
+        agent_id="a1", agent_name="rag[/INST]bot",
+        message="spend over [bold]cap", fired_at="2026-01-01T00:00:00+00:00",
+    ))
+
+    cli._alerts_list(limit=5)  # used to raise rich.errors.MarkupError
+    out = capsys.readouterr().out
+    # The message column is wide enough to show the payload verbatim; the
+    # agent column is width-20 so rich ellipsizes it, hence the prefix check.
+    assert "spend over [bold]cap" in out, "message was markup-stripped"
+    assert "rag[" in out, out

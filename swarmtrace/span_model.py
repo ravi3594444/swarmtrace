@@ -8,6 +8,7 @@ a span *is*, not how it is stored or transported.
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
@@ -115,7 +116,9 @@ class SpanRecord:
         if self.trace_id is not None and self.trace_id != self.span_id:
             payload["trace_id"] = self.trace_id
         if self.attributes:
-            # dict(...) not the live object: run.py stores the CALLER's dict by
+            # deepcopy, not dict(): a shallow copy still shares every nested
+            # dict and list with the caller, so {"outer": {...}} kept diverging
+            # exactly as before. run.py stores the CALLER's dict by
             # reference, and this payload sits on the sender queue for up to
             # batch_flush_timeout before it is serialized. to_storage_dict()
             # snapshots via json.dumps, so aliasing here made SQLite and the
@@ -123,7 +126,7 @@ class SpanRecord:
             # single definition exists to prevent — and a caller mutating the
             # dict mid-send could raise "dictionary changed size during
             # iteration" inside the worker, failing the whole batch.
-            payload["attributes"] = dict(self.attributes)
+            payload["attributes"] = deepcopy(self.attributes)
         return payload
 
     @classmethod

@@ -123,7 +123,7 @@ class Sender:
             self._started = True
             try:
                 thread.start()
-            except BaseException as exc:  # noqa: BLE001 -- rolled back and logged; must not break the traced call
+            except BaseException as exc:  # rolls back, then re-raises anything not an Exception
                 # thread.start() can fail for real: "can't create new thread at
                 # interpreter shutdown", or the process hitting its thread
                 # limit. Publishing the state first is deliberate (the worker's
@@ -136,6 +136,11 @@ class Sender:
                 self._thread = None
                 self._stop_event = None
                 self._started = False
+                if not isinstance(exc, Exception):
+                    # KeyboardInterrupt / SystemExit landing inside start() is
+                    # the operator's intent, not a thread-creation failure:
+                    # roll the lifecycle back, but never swallow it.
+                    raise
                 # Swallow rather than raise: enqueue() is on the traced
                 # application's hot path and reaches user code through
                 # run.py's Span.__exit__, which has no guard — a tracing

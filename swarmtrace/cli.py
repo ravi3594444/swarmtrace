@@ -410,6 +410,7 @@ def _alerts_list(limit: int = 20) -> None:
         return
 
     console = rich["Console"]()
+    escape = rich["escape"]
     if not rows:
         console.print("[yellow]No alerts fired yet.[/yellow]")
         return
@@ -428,9 +429,13 @@ def _alerts_list(limit: int = 20) -> None:
             "CRITICAL": "[red]CRIT[/red]",
         }.get(sev, sev)
         acked = "[green]✓[/green]" if a.get("acked") else "·"
+        # rule/agent_name/message come out of the alerts DB (agent names and
+        # rule messages carry model-supplied text), so they need the same
+        # escaping as the trace view. sev_styled and acked are markup we built
+        # ourselves and must stay unescaped.
         t.add_row(
-            a["fired_at"][:19], sev_styled, a["rule"],
-            a.get("agent_name") or "—", a["message"], acked,
+            escape(a["fired_at"][:19]), sev_styled, escape(a["rule"]),
+            escape(a.get("agent_name") or "—"), escape(a["message"]), acked,
         )
     console.print(t)
 
@@ -455,7 +460,12 @@ def _alerts_test() -> None:
     for a in fired:
         line = f"[{a.severity.upper():8}] {a.rule:22} {a.agent_name or '':20} {a.message}"
         if console:
-            console.print(line)
+            # The line is entirely data — and its own "[WARNING ]" prefix looks
+            # like a style tag, so even without a hostile agent name rich would
+            # try to parse it. This print sits outside the try above, so a
+            # MarkupError here killed the command after the rules had already
+            # been evaluated, with no output at all.
+            console.print(rich["escape"](line))
         else:
             print(line)
     print(f"\n{len(fired)} alert(s) fired.")

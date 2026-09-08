@@ -49,7 +49,17 @@ def _sanitize_csv_cell(value):
 # get_all_traces() defaults to limit=500. Export means EXPORT: passing None
 # was the difference between "Exported 500 trace(s)" on a 600-row database and
 # telling the truth. sqlite_repository.py already passes limit=None for the
-# same reason. MAX_ROWS bounds the table, so this cannot run away.
+# same reason.
+#
+# Known tradeoff: this materializes the whole table in memory, and the table is
+# NOT bounded in the worst case — storage._purge_old_rows never evicts unsynced
+# rows and its docstring says so outright ("the DB can grow beyond MAX_ROWS"
+# during a sustained backend outage). So the command you would reach for to
+# salvage an outage-swollen DB is the one that has to hold it all at once.
+# Accepted deliberately over the alternative: silently dumping 500 of N rows
+# and reporting success is worse than a memory ceiling you can see. Fixing it
+# properly needs a streaming/paged read in storage.py, which is a larger
+# change than this belongs in.
 _ALL_ROWS = None
 
 

@@ -16,7 +16,11 @@ adheres to [Semantic Versioning](https://semver.org/).
   [bold] section.` rendered as `See the (url) and the  section.`, so a debugger
   showed text the model never produced. One bracketed function name also aborted
   the whole table and tree for *every* trace. All DB-derived values are now
-  escaped; the plain-text renderer already printed them verbatim.
+  escaped; the plain-text renderer already printed them verbatim. This covers
+  `swarmtrace-alerts list` and `swarmtrace-alerts test` too — agent names and
+  rule messages carry model-supplied text, and `alerts test`'s own
+  `"[WARNING ]"` severity prefix parsed as a style tag, so it evaluated the
+  rules and then died before printing a single alert.
 - **`swarmtrace-export` stopped at 500 rows and reported success.**
   `get_all_traces()` defaults to `limit=500`, so a 600-trace database exported
   as `Exported 500 trace(s)` with exit 0 and nothing missing-looking about it —
@@ -24,7 +28,8 @@ adheres to [Semantic Versioning](https://semver.org/).
   10 000, so up to 9 500 rows could vanish. Export now passes `limit=None`, as
   `sqlite_repository.py` already did.
 - **`SpanRecord.to_ingest_payload()` aliased the caller's `attributes` dict**
-  instead of snapshotting it. `to_storage_dict()` snapshots via `json.dumps`, so
+  instead of snapshotting it (deeply — a shallow `dict()` left every nested
+  dict and list shared, so `{"outer": {...}}` diverged exactly as before). `to_storage_dict()` snapshots via `json.dumps`, so
   a caller mutating its own context dict after the span closed left SQLite and
   the dashboard holding different attributes for the same span id — and a later
   `swarmtrace-resync` would overwrite the dashboard with the SQLite copy. That
@@ -69,30 +74,6 @@ adheres to [Semantic Versioning](https://semver.org/).
   dependencies. `npm audit` now reports 0 vulnerabilities (was 11: 9 high,
   1 moderate, 1 low). Verified via `tsc --noEmit`, the full frontend test
   suite (267/267), and `next build`.
-
-### Added
-- **A guard against version drift between `pyproject.toml` and
-  `swarmtrace.__version__`.** The version is declared in two places with nothing
-  keeping them in sync, and they have drifted before: across 0.6.6, 0.6.7, 0.6.8
-  and 0.6.9 the packaging metadata advanced while `swarmtrace.__version__` stayed
-  pinned at `0.6.5`, so anyone on 0.6.9 who quoted `__version__` in a bug report
-  gave the wrong number — which matters for a tracing library, where the version
-  tells you which capture behaviour was running. Now asserted by a test, verified
-  against that exact historical drift.
-- **`tests/test_end_to_end.py` — the first test that wires the real stack**
-  **together with no fakes**: `@observe`'d functions → `tracer._flush` →
-  `SpanRecord` → `Runtime.record` → a real SQLite file → the real background
-  `Sender` thread → `HttpTransport` (real gzip + urllib) → a real HTTP server
-  on `127.0.0.1` → `synced=1` write-back → the CLI view and export rendering
-  the same DB. Every other test substitutes at least one of those layers, so
-  the seams between them were untested — which is where this project's
-  shipped bugs have lived. It covers the happy path, wire format
-  (gzip + `X-API-Key` + `{"traces": [...]}`), client-side redaction, a
-  dashboard outage followed by resync recovery, and the CLI/export output.
-  It found the `storage.close()` segfault below on its first run.
-- **`storage.close()`** — the lock-safe way to release the shared SQLite
-  connection. The next storage call transparently reopens it.
-- **`Sender.stop(timeout)`** — shuts the background worker down and joins it.
 
 ### Improved
 - **CI tests both ends of the supported Python range** (3.10 and 3.12) instead

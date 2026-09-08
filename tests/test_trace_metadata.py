@@ -195,3 +195,24 @@ def test_ingest_payload_snapshots_attributes_instead_of_aliasing_them():
     assert payload["attributes"] is not caller_ctx, "payload aliases the caller's dict"
     assert payload["attributes"] == {"stage": "retrieval"}
     assert payload["attributes"] == stored, "wire and SQLite disagree about the same span"
+
+
+def test_ingest_payload_snapshots_nested_attributes_too():
+    """dict() is a shallow copy — nested values kept aliasing the caller's dict.
+
+    The top-level test passed while `{"outer": {...}}` still diverged between
+    SQLite and the wire, which is the same defect one level down.
+    """
+    caller_ctx = {"outer": {"stage": "retrieval"}, "items": [1, 2]}
+    span = SpanRecord(
+        span_id="attr-2", name="retrieve", kind="tool",
+        start_time=datetime(2026, 1, 1, tzinfo=timezone.utc),
+        attributes=caller_ctx,
+    )
+    payload = span.to_ingest_payload()
+
+    caller_ctx["outer"]["stage"] = "done"
+    caller_ctx["items"].append(3)
+
+    assert payload["attributes"]["outer"] == {"stage": "retrieval"}
+    assert payload["attributes"]["items"] == [1, 2]
