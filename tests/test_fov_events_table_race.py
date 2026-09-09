@@ -26,18 +26,19 @@ acquiring the lock, and set it while still holding that lock.
 
 from __future__ import annotations
 
+import sqlite3
 import threading
 import time
 
 import pytest
 
-from swarmtrace import fov
+from swarmtrace import fov, storage
 
 
 @pytest.fixture(autouse=True)
 def reset_events_table_state(monkeypatch):
     # None = "not created in any database yet", the cache's cold state.
-    monkeypatch.setattr(fov, "_events_table_ready_for", None)
+    monkeypatch.setattr(fov, "_events_table_ready_conn", None)
     yield
 
 
@@ -97,30 +98,39 @@ def test_concurrent_first_calls_create_the_table_exactly_once(monkeypatch):
         f"expected exactly 1 commit, got {len(commit_calls)} — the table "
         f"setup should only run once even under concurrent first calls"
     )
-    assert fov._events_table_ready_for == fov._storage.DB_PATH
+    assert fov._events_table_ready_conn is not None
 
 
-def test_already_ready_short_circuits_without_touching_storage(monkeypatch):
-    """Once the current DB is marked ready, repeated calls must not touch
-    storage at all — pure fast-path check."""
-    monkeypatch.setattr(fov, "_events_table_ready_for", fov._storage.DB_PATH)
+def test_already_ready_short_circuits_without_re_running_the_ddl(monkeypatch):
+    """Once the live connection is marked ready, the DDL must not run again."""
+    conn = storage._get_conn()
+    monkeypatch.setattr(fov, "_events_table_ready_conn", conn)
 
-    def _boom():
-        raise AssertionError("_get_conn() should not be called on the fast path")
+    executed = []
+    conn.set_trace_callback(executed.append)
+    try:
+        fov._ensure_events_table()
+    finally:
+        conn.set_trace_callback(None)
 
-    monkeypatch.setattr(fov, "_get_conn", _boom)
-    fov._ensure_events_table()  # must not raise
-    assert fov._events_table_ready_for == fov._storage.DB_PATH
+    assert not [q for q in executed if "CREATE" in q.upper()], executed
+    assert fov._events_table_ready_conn is conn
 
 
 def test_rotating_the_database_recreates_the_table(tmp_path, monkeypatch):
-    """The cache must not survive a DB_PATH rotation.
+    """A rotated database must get its own agent_events table.
 
-    storage.close() documents rotating the database as supported. While this
-    cache was a plain boolean it latched True forever, so agent_events was
-    never created in the second database and every insert failed with
-    "no such table: agent_events" — swallowed as a warning, events silently
-    lost.
+    Three cache designs failed here in turn. A plain boolean latched True
+    forever. Keying on ``storage.DB_PATH`` looked right but was not sound:
+    ``_get_conn()`` only reopens when the connection is gone or unhealthy, so
+    it can hand back a connection still attached to the OLD file while this
+    cache records the NEW path as ready — the DDL lands in the wrong database
+    and every later event is lost to a swallowed "no such table" warning. The
+    key has to be the connection itself.
+
+    This covers the interleaving FOV actually produces: a background tick
+    (screen streamer, watchdog, patched HTTP call) landing between the path
+    swap and the close.
     """
     def _event(event_id: str) -> dict:
         return {
@@ -129,18 +139,27 @@ def test_rotating_the_database_recreates_the_table(tmp_path, monkeypatch):
             "timestamp": "2026-01-01T00:00:00+00:00",
         }
 
-    monkeypatch.setattr(fov._storage, "DB_PATH", str(tmp_path / "first.db"))
-    fov._storage.close()
+    monkeypatch.setattr(storage, "DB_PATH", str(tmp_path / "first.db"))
+    storage.close()
     fov._save_event_local(_event("e1"))
     assert len(fov.get_events("a1")) == 1
 
-    # Exactly what storage.close()'s docstring says is supported.
-    fov._storage.close()
-    monkeypatch.setattr(fov._storage, "DB_PATH", str(tmp_path / "second.db"))
-
+    # Rotate WITHOUT closing first, then let a tick land before the close.
+    # This is the ordering the path-keyed cache got wrong.
+    monkeypatch.setattr(storage, "DB_PATH", str(tmp_path / "second.db"))
     fov._save_event_local(_event("e2"))
-    assert len(fov.get_events("a1")) == 1, (
-        "event lost after rotating the database — agent_events was never "
+    storage.close()
+    fov._save_event_local(_event("e3"))
+
+    assert len(fov.get_events("a1")) >= 1, (
+        "events lost after rotating the database — agent_events was never "
         "created in the new file"
     )
-    fov._storage.close()
+    rotated = sqlite3.connect(str(tmp_path / "second.db"))
+    try:
+        tables = {r[0] for r in rotated.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'")}
+    finally:
+        rotated.close()
+    assert "agent_events" in tables, f"second.db never got the table: {tables}"
+    storage.close()

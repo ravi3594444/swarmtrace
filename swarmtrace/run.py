@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import hashlib
+import logging
 import time
 import uuid
 from contextlib import contextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
@@ -25,6 +27,16 @@ from swarmtrace.trace_context import (
     current_trace,
     using,
 )
+
+# The innermost active _SpanContext, so current_span_attributes() can find the
+# span it is meant to annotate. A ContextVar (not a module global) so threads
+# and asyncio tasks each see their own stack.
+_active_span: ContextVar[_SpanContext | None] = ContextVar(
+    "swarmtrace_active_span", default=None
+)
+
+
+_log = logging.getLogger("swarmtrace")
 
 
 def _stable_agent_id(name: str) -> str:
@@ -57,6 +69,7 @@ class _SpanContext:
         self._start_time: datetime | None = None
         self._error: str | None = None
         self._ctx_manager: object | None = None
+        self._active_token: object | None = None
         self.parent_id: str | None = None
         self.trace_id: str | None = None
         self.agent_id: str | None = None
@@ -110,10 +123,16 @@ class _SpanContext:
         self._start, self._start_time = _now()
         self._ctx_manager = using(self._build_trace_context())
         self._ctx_manager.__enter__()
+        self._active_token = _active_span.set(self)
         return self
 
     def __exit__(self, exc_type, exc, tb) -> None:
         try:
+            # Reset BEFORE recording so an annotation racing the close cannot
+            # mutate self.attributes while _record is snapshotting it.
+            if self._active_token is not None:
+                _active_span.reset(self._active_token)
+                self._active_token = None
             self._record(exc)
         finally:
             if self._ctx_manager is not None:
@@ -147,13 +166,39 @@ def span(
 
 @contextmanager
 def current_span_attributes(**attrs: Any):
-    """Emit a span annotation event with the caller-supplied attributes.
+    """Attach ``attrs`` to the innermost enclosing ``run()`` / ``span()``.
 
-    Subscribers can record these attributes against the current span. The
-    context manager itself does not mutate the span directly; it only emits
-    the event so that enrichment can be handled consistently by listeners.
+    The attributes land on that span's ``attributes``, so they reach local
+    SQLite and the dashboard exactly as ``span(name, attributes={...})`` does::
+
+        with swarmtrace.span("retrieve", kind="tool"):
+            with swarmtrace.current_span_attributes(stage="retrieval", k=1):
+                ...
+
+    This used to only ``emit("span.annotate", ...)`` and mutate nothing, on the
+    theory that listeners would handle enrichment — but nothing in the package
+    ever subscribed to that event, so a documented, exported API silently
+    discarded everything passed to it: the attributes never reached the span,
+    SQLite, or the wire. The event is still emitted, so any existing subscriber
+    keeps working.
+
+    Known limitation: only ``run()`` / ``span()`` spans are annotatable.
+    ``@observe`` builds its span record from locals with no mutable span object
+    to attach to, so an annotation inside a bare ``@observe`` function has
+    nowhere to go; it is logged at debug rather than silently dropped.
     """
     from swarmtrace.events import emit
+
+    span_ctx = _active_span.get()
+    if span_ctx is None:
+        _log.debug(
+            "current_span_attributes(%s) called with no active run()/span() — "
+            "attributes not attached to any span",
+            ", ".join(attrs),
+        )
+    else:
+        span_ctx.attributes.update(attrs)
+
     emit("span.annotate", **attrs)
     try:
         yield

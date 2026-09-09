@@ -6,6 +6,7 @@ import hashlib
 import pytest
 
 import swarmtrace
+from swarmtrace.run import current_span_attributes, run, span
 
 _SAVE_TRACE_FIELD_ORDER = (
     "id_", "parent_id", "function", "args", "output", "latency_sec",
@@ -238,3 +239,67 @@ def test_current_span_attributes_emits_event():
         events.off("span.annotate", _handler)
 
     assert captured == {"retriever": "tavily", "query": "test"}
+
+
+# ---------------------------------------------------------------------------
+# current_span_attributes()
+#
+# This is exported from the top-level package, but it used to only
+# emit("span.annotate", ...) and mutate nothing — and nothing in the package
+# ever subscribed to that event. So a documented API silently discarded
+# everything passed to it: attributes never reached the span, SQLite or the
+# wire, while span(name, attributes={...}) worked fine.
+# ---------------------------------------------------------------------------
+
+def test_current_span_attributes_attaches_to_the_enclosing_span(fake_runtime):
+    with run("agent", kind="agent"), span("retrieve", kind="tool"), \
+            current_span_attributes(stage="retrieval", k=1):
+        pass
+
+    by_name = {s.name: s for s in fake_runtime.repository.spans}
+    assert by_name["retrieve"].attributes == {"stage": "retrieval", "k": 1}
+
+
+def test_current_span_attributes_targets_the_innermost_span(fake_runtime):
+    """An annotation must land on the span it is written inside, not the root."""
+    with run("agent", kind="agent"):
+        with span("retrieve", kind="tool"), current_span_attributes(inner=True):
+            pass
+        with current_span_attributes(outer=True):
+            pass
+
+    by_name = {s.name: s for s in fake_runtime.repository.spans}
+    assert by_name["retrieve"].attributes == {"inner": True}
+    assert by_name["agent"].attributes == {"outer": True}
+
+
+def test_current_span_attributes_merges_with_the_span_own_attributes(fake_runtime):
+    with run("agent", kind="agent"), \
+            span("retrieve", kind="tool", attributes={"declared": 1}), \
+            current_span_attributes(annotated=2):
+        pass
+
+    by_name = {s.name: s for s in fake_runtime.repository.spans}
+    assert by_name["retrieve"].attributes == {"declared": 1, "annotated": 2}
+
+
+def test_current_span_attributes_outside_any_span_is_harmless(fake_runtime):
+    """No enclosing run()/span() must not raise — it is logged at debug."""
+    with current_span_attributes(orphan=True):
+        pass
+    assert fake_runtime.repository.spans == []
+
+
+def test_current_span_attributes_still_emits_the_annotate_event(fake_runtime):
+    """Existing subscribers of span.annotate must keep working."""
+    from swarmtrace import events
+
+    seen = []
+    events.on("span.annotate", lambda **kw: seen.append(kw))
+    try:
+        with run("agent", kind="agent"), current_span_attributes(stage="x"):
+            pass
+    finally:
+        events._listeners.get("span.annotate", []).clear()
+
+    assert seen == [{"stage": "x"}]

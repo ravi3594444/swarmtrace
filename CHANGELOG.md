@@ -7,6 +7,26 @@ adheres to [Semantic Versioning](https://semver.org/).
 ## [Unreleased]
 
 ### Fixed
+- **`swarmtrace.current_span_attributes()` silently discarded everything passed
+  to it.** The exported API only did `emit("span.annotate", ...)` on the theory
+  that listeners would handle enrichment — but nothing in the package ever
+  subscribed to that event, so the attributes never reached the span, SQLite or
+  the dashboard, while the sibling `span(name, attributes={...})` worked fine.
+  It now attaches to the innermost enclosing `run()`/`span()` and merges with
+  that span's own attributes; the event is still emitted so any existing
+  subscriber keeps working. Calling it with no active span is logged at debug
+  instead of vanishing. Known limitation, now documented: `@observe` builds its
+  record from locals with no mutable span to attach to, so annotations inside a
+  bare `@observe` function still have nowhere to go.
+- **FOV events were still lost after a database rotation** — the previous fix
+  was incomplete. Keying the `agent_events` cache on `storage.DB_PATH` looked
+  right, but `_get_conn()` only reopens when the connection is gone or
+  unhealthy and never compares the live connection against `DB_PATH`. So a
+  rotation could run the DDL through a connection still attached to the OLD
+  file while recording the NEW path as ready, and every later event was lost to
+  a swallowed "no such table: agent_events" — the same failure, one layer down.
+  The cache is now keyed on the connection itself, which is what the flag
+  always meant.
 - **`swarmtrace-replay` crashed on Mistral/Llama prompt delimiters, and silently
   deleted bracketed text everywhere else.** Recorded `args`/`output`/`error` and
   span names were interpolated straight into rich console markup, so a trace

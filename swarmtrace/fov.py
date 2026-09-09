@@ -45,8 +45,6 @@ import uuid
 import weakref
 from datetime import datetime, timezone
 
-from swarmtrace import storage as _storage
-
 # ── shared config + context ─────────────────────────────────────────────────
 from swarmtrace.config import (
     normalize_base_url as _normalize_base_url,
@@ -76,14 +74,23 @@ _log = logging.getLogger("swarmtrace.fov")
 # Local SQLite event table — with bounded size (no disk-fill risk)
 # ---------------------------------------------------------------------------
 
-# Which DB file we have already created agent_events in — NOT a bool.
-# A boolean latched True forever, so after storage.close() and a DB_PATH
-# rotation (which storage.close() documents as supported) the table was
-# never created in the new file and every event insert failed with
-# "no such table: agent_events", swallowed as a warning. Keying on the path
-# makes the cache self-heal on any rotation while still doing the DDL once
-# per database.
-_events_table_ready_for: str | None = None
+# The CONNECTION we have already created agent_events on — not a bool, and not
+# a path string.
+#
+# A boolean latched True forever, so after a DB_PATH rotation the table was
+# never created in the new file and every event insert failed with "no such
+# table: agent_events", swallowed as a warning. Keying on storage.DB_PATH
+# looked like the fix but was still wrong: storage._get_conn() only reopens
+# when the connection is gone or unhealthy — it never compares the live
+# connection against DB_PATH. So a rotation could run this DDL through a
+# connection still attached to the OLD file while recording the NEW path as
+# ready, and every later event was lost exactly as before.
+#
+# The table's existence is a fact about the database a connection is attached
+# to, so the connection object is the only honest key. Any new connection —
+# from close(), a failed health check, or a rotation — is a cache miss, and the
+# DDL is CREATE TABLE IF NOT EXISTS, so re-running it costs nothing.
+_events_table_ready_conn: object | None = None
 _events_table_lock = threading.Lock()
 
 # FIX #1: cap agent_events table size — was unbounded (would fill disk
@@ -125,21 +132,17 @@ def _ensure_events_table() -> None:
     regardless of what this in-memory flag says. No register_at_fork
     hook needed here.)
 
-    The cache records WHICH database the table was created in rather than a
-    plain "done" bit, because the table's existence is a fact about a
-    particular file: swapping ``storage.DB_PATH`` makes the previous answer
-    wrong, not stale.
+    The cache records WHICH CONNECTION the table was created on rather than a
+    plain "done" bit or a path string, because the table's existence is a fact
+    about the database a connection is attached to. See the comment on
+    ``_events_table_ready_conn`` for why the path is not a sound key.
     """
-    global _events_table_ready_for
-    db_path = _storage.DB_PATH
-    if _events_table_ready_for == db_path:
-        return
-    with _events_table_lock:
-        if _events_table_ready_for == db_path:
+    global _events_table_ready_conn
+    with _events_table_lock, _storage_lock:
+        conn = _get_conn()
+        if conn is _events_table_ready_conn:
             return
-        with _storage_lock:
-            conn = _get_conn()
-            conn.execute("""
+        conn.execute("""
                 CREATE TABLE IF NOT EXISTS agent_events (
                     id           TEXT PRIMARY KEY,
                     agent_id     TEXT NOT NULL,
@@ -150,12 +153,12 @@ def _ensure_events_table() -> None:
                     timestamp    TEXT NOT NULL
                 )
             """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_evts_agent "
-                "ON agent_events(agent_id, timestamp DESC)"
-            )
-            conn.commit()
-        _events_table_ready_for = db_path
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_evts_agent "
+            "ON agent_events(agent_id, timestamp DESC)"
+        )
+        conn.commit()
+        _events_table_ready_conn = conn
 
 
 def _purge_old_events(conn) -> None:
