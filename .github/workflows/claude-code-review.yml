@@ -1,0 +1,256 @@
+name: Claude code review
+
+# Every pull request gets reviewed, but not every pull request gets the same
+# review. A two-line README fix and a migration that rewrites RLS policies are
+# not the same object, and spending the same attention on both means either
+# overpaying on one or underpaying on the other — and underpaying is the
+# expensive direction, because a review that looked at nothing reports exactly
+# what a review that looked hard reports.
+#
+# So the first job decides how hard to look, from what the pull request actually
+# touches, and the second job does that. The tier controls whether the review
+# runs at all, which models the agents that actually review run on, and how long
+# it may take; the reasoning, including which levers were tried and rejected, is
+# in .github/scripts/pr_review_intensity.py.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+# Pushing again while a review is running supersedes it. Without this a branch
+# pushed to four times in ten minutes runs four reviews, three of them against
+# code that no longer exists — and at the deep tier that is four times the most
+# expensive tier's bill for one useful answer. Cancelling is safe: a review
+# writes nothing but comments, and a superseded run's comments would have been
+# about the superseded diff. The `|| github.ref` fallback costs nothing today
+# and keeps the key defined if this file ever grows a second trigger.
+concurrency:
+  group: claude-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Declared empty here and granted per job below. Naming any permission in a job
+# sets every unnamed one to `none`, so each block is complete in itself and no
+# job inherits a scope nobody chose for it.
+permissions: {}
+
+jobs:
+  intensity:
+    name: How hard to look
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      # The `secrets` context is allowed in a job-level `env:` — but NOT in a
+      # job-level `if:`, which is why the gate below has to travel to the next
+      # job as an output rather than as a condition. Only the comparison's
+      # result crosses; the key itself never leaves this job, and a secret put
+      # into a job output would be redacted to an empty string anyway.
+      HAS_KEY: ${{ secrets.ANTHROPIC_API_KEY != '' }}
+      # An author who can push a branch to this repository. The reviewing action
+      # refuses to run for anyone else — it throws "Actor does not have write
+      # permissions" — so this is not caution, it is the difference between a
+      # clean grey skip and a red X on an outside contribution that its author
+      # cannot do anything about.
+      #
+      # An allowlist, not a denylist, because `CONTRIBUTOR` reads as trusted and
+      # is not: it means "has had a pull request merged here", not "can push
+      # here".
+      IS_TRUSTED: ${{ contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.pull_request.author_association) }}
+      # `head.repo.fork` is the wrong question — it is true for a pull request
+      # opened inside a fork against that same fork — and `head.repo` is null
+      # once the fork is deleted, where a null reads as "not a fork". Comparing
+      # names answers the question actually being asked, and the null case
+      # compares unequal, which skips rather than failing.
+      IS_FORK: ${{ github.event.pull_request.head.repo.full_name != github.repository }}
+      # The off switch. Reviews are on unless a repository variable named
+      # CLAUDE_REVIEW_ENABLED is set to the string "false", which is a settings
+      # change rather than a commit — so stopping the spend in a hurry does not
+      # mean opening a pull request against the file that reviews pull requests.
+      ENABLED: ${{ vars.CLAUDE_REVIEW_ENABLED != 'false' }}
+    outputs:
+      tier: ${{ steps.pick.outputs.tier }}
+      model: ${{ steps.pick.outputs.model }}
+      timeout_minutes: ${{ steps.pick.outputs.timeout_minutes }}
+      comment: ${{ steps.pick.outputs.comment }}
+      directive: ${{ steps.pick.outputs.directive }}
+      can_review: ${{ steps.gate.outputs.can_review }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # THE BASE BRANCH, NOT THE PULL REQUEST. On a `pull_request` event
+          # checkout defaults to the merge ref, which carries the contributor's
+          # code — so the default would have this job run a classifier that the
+          # pull request itself is free to rewrite. The rule deciding how hard to
+          # look at a change cannot be a rule the change supplies.
+          #
+          # The cost is that a pull request editing the classifier is graded by
+          # the version on main rather than its own. That is the right way round,
+          # and .github/ is a critical path, so such a pull request is reviewed
+          # at the deep tier anyway.
+          ref: ${{ github.event.pull_request.base.sha }}
+          fetch-depth: 1
+
+      - name: The classifier's own tests
+        # ci.yml lints `swarmtrace tests` and pytest's testpaths is ["tests"], so
+        # nothing under .github/ is reached by either. These assertions are the
+        # substitute, and running them here catches a classifier that has stopped
+        # working before it decides anything — rather than after it has quietly
+        # sent a migration to the cheapest tier.
+        run: python3 .github/scripts/pr_review_intensity.py --selftest
+
+      - name: What the pull request changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          # Through the environment rather than interpolated into the script.
+          # These are integers from GitHub today, but a `run:` block that
+          # concatenates ${{ }} into shell is the shape of the accident, and not
+          # writing it costs nothing.
+          PR: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        # The files endpoint rather than `gh pr diff --name-only`, because the
+        # classifier needs per-file line counts to keep a lockfile refresh from
+        # counting as five thousand lines of change. `per_page=100` because the
+        # default is 30 and this repo's pull requests routinely exceed it.
+        #
+        # GitHub caps this endpoint at 3000 files. A pull request that large is
+        # past every size threshold anyway, so truncation cannot change the tier.
+        run: |
+          gh api --paginate "repos/$REPO/pulls/$PR/files?per_page=100" \
+            --jq '.[] | [.filename, .additions, .deletions] | @tsv' > changed-files.tsv
+          echo "$(wc -l < changed-files.tsv) changed file(s)"
+
+      - name: Pick the tier
+        id: pick
+        run: |
+          python3 .github/scripts/pr_review_intensity.py \
+            --event "$GITHUB_EVENT_PATH" \
+            --files changed-files.tsv
+
+      - name: Can this run at all
+        id: gate
+        run: |
+          if [ "$ENABLED" != "true" ]; then
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            echo "why=the CLAUDE_REVIEW_ENABLED repository variable is set to false" >> "$GITHUB_OUTPUT"
+          elif [ "$IS_FORK" = "true" ]; then
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            echo "why=a pull request from a fork receives no repository secrets" >> "$GITHUB_OUTPUT"
+          elif [ "$IS_TRUSTED" != "true" ]; then
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            echo "why=the author has no write access, which the reviewing action requires" >> "$GITHUB_OUTPUT"
+          elif [ "$HAS_KEY" != "true" ]; then
+            echo "can_review=false" >> "$GITHUB_OUTPUT"
+            echo "why=no ANTHROPIC_API_KEY secret is set on this repository" >> "$GITHUB_OUTPUT"
+          else
+            echo "can_review=true" >> "$GITHUB_OUTPUT"
+            echo "why=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Say why
+        env:
+          TIER: ${{ steps.pick.outputs.tier }}
+          MODEL: ${{ steps.pick.outputs.model }}
+          REASON: ${{ steps.pick.outputs.reason }}
+          CAN_REVIEW: ${{ steps.gate.outputs.can_review }}
+          BLOCKED_BY: ${{ steps.gate.outputs.why }}
+        # The reason names files, and on a fork pull request those names are
+        # written by whoever opened it. It goes here, to a person reading the
+        # run, and never into the prompt — the prompt is assembled from
+        # constants, the repository name and the pull request number, full stop.
+        run: |
+          {
+            echo "### Review intensity: \`$TIER\`"
+            echo
+            echo "$REASON"
+            echo
+            if [ "$CAN_REVIEW" != "true" ]; then
+              echo "Not reviewed: $BLOCKED_BY."
+            elif [ "$TIER" = "skip" ]; then
+              echo "No model review for this one."
+            else
+              echo "Reviewing with \`$MODEL\`. Override with a \`review:skip\`,"
+              echo "\`review:light\`, \`review:standard\` or \`review:deep\` label."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  review:
+    name: Review (${{ needs.intensity.outputs.tier }})
+    needs: intensity
+    # Positive comparisons, not `!= 'skip'`. If the classifier step ever fails
+    # to write its output the value is the empty string, and `'' != 'skip'` is
+    # true — so the negative form would run the review with no model and no
+    # timeout. Naming the tiers that should run fails closed instead.
+    if: >-
+      needs.intensity.outputs.can_review == 'true' &&
+      contains(fromJSON('["light","standard","deep"]'), needs.intensity.outputs.tier)
+    runs-on: ubuntu-latest
+    # fromJSON turns the classifier's string into the number this key wants. Job
+    # outputs are always strings, and an unconverted one is the kind of thing
+    # that works on the tier you tested and on none of the others.
+    timeout-minutes: ${{ fromJSON(needs.intensity.outputs.timeout_minutes) }}
+    permissions:
+      contents: read
+      # Write, not the upstream template's read: at the standard and deep tiers
+      # the review posts inline comments, and creating one is a write.
+      pull-requests: write
+      # A top-level pull request comment is an issue comment, and that is how the
+      # review reports "nothing found".
+      issues: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Run Claude Code Review
+        id: claude-review
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          # PASSED EXPLICITLY, AND THIS IS NOT OPTIONAL. Left unset, the action
+          # asks for an OIDC token and exchanges it for a GitHub App token, and
+          # that exchange verifies the workflow exists on the default branch —
+          # so the pull request that introduces this file fails with
+          # `workflow_not_found_on_default_branch`, which reads like a bug in
+          # the workflow rather than a bootstrap order. Providing the token
+          # returns before any of that, and drops the need for `id-token: write`.
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          plugin_marketplaces: 'https://github.com/anthropics/claude-code.git'
+          plugins: 'code-review@claude-code-plugins'
+          # `--comment` is what makes the command post rather than only print;
+          # it branches on the literal argument, so the tier decides by supplying
+          # or withholding it. At the light tier the findings live in the job log
+          # and nowhere else, on purpose: a cheap review that also comments
+          # trains everyone to scroll past Claude's comments, and then the
+          # expensive tiers stop being read either.
+          #
+          # After the blank line comes a constant chosen by tier (DIRECTIVES in
+          # the classifier). It moves the confidence bar and the scope. It does
+          # not try to redefine the command's own procedure — telling it to run
+          # more agents than it says it runs buys nothing reliable.
+          #
+          # The `synchronize` line exists because without it this workflow
+          # reviews the first push and nothing else, ever. Step 1 of the command
+          # stops when Claude has already commented on the pull request — right
+          # for a re-run against the same diff, wrong for the fourth push, where
+          # the migration that was not there on push one now is. This says so
+          # explicitly, and only on the event that means "there are new commits".
+          prompt: |
+            /code-review:code-review ${{ github.repository }}/pull/${{ github.event.pull_request.number }}${{ needs.intensity.outputs.comment == 'true' && ' --comment' || '' }}
+
+            ${{ github.event.action == 'synchronize' && 'There are new commits on this pull request since you last looked at it. Review the current head even though you have commented here before, and do not repeat a finding you have already posted.' || '' }}
+
+            ${{ needs.intensity.outputs.directive }}
+          # The ORCHESTRATOR's model, and only that. The command names a model
+          # per subagent in its own text, so this flag never reaches the agents
+          # that do the reviewing — moving those is what the light tier's
+          # directive does. It is set anyway because the orchestrator still runs
+          # the procedure, filters the findings and writes the comments.
+          #
+          # No --max-turns. Cutting the turn budget does not buy a cheaper
+          # review, it buys one that stops halfway and reports the part it
+          # reached, which is indistinguishable from a clean result. The ceiling
+          # is this job's timeout, which fails loudly.
+          claude_args: '--model ${{ needs.intensity.outputs.model }}'
