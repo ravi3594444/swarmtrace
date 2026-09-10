@@ -24,8 +24,25 @@ import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { TOUR_STEPS, type TourStep } from './tour-steps'
 
 const STORAGE_PREFIX = 'swarmtrace-onboarding-completed:'
-// Per-tab keys so an in-progress tour survives the remounts that happen when a
-// dashboard route changes (each page mounts its own DashboardLayout).
+/**
+ * The tour is mounted app-wide (in the root layout) so it survives the
+ * per-page DashboardLayout remounts, which means it also renders on the
+ * marketing and auth pages. It must only ever run inside the dashboard, so
+ * both auto-start and the overlay itself are gated on these routes.
+ */
+const DASHBOARD_ROUTES = new Set([
+  '/overview', '/agents', '/traces', '/threads', '/metrics',
+  '/compare', '/failures', '/settings', '/home', '/network', '/regression',
+])
+
+function isDashboardRoute(pathname: string | null | undefined): boolean {
+  if (!pathname) return false
+  return DASHBOARD_ROUTES.has(`/${pathname.split('/')[1] ?? ''}`)
+}
+
+// Per-tab keys so an in-progress tour survives a page reload. The provider
+// itself no longer remounts on navigation (it lives in the root layout), so
+// these are only a reload safety net, not the mechanism the tour runs on.
 const RUNNING_KEY = 'swarmtrace-onboarding-running'
 const STEP_KEY = 'swarmtrace-onboarding-step'
 const SPOTLIGHT_PADDING = 8
@@ -273,10 +290,20 @@ function TourOverlay({
     const attempt = (tries: number) => {
       if (cancelled) return
       const next = measure(step.target)
-      setRect(next)
-      if (!next && step.target && tries > 0) {
-        raf = window.setTimeout(() => attempt(tries - 1), 80)
+      if (next) {
+        setRect(next)
+        return
       }
+      if (step.target && tries > 0) {
+        // Hold the previous rect while we retry. Clearing it here would drop
+        // the spotlight and snap the card to the centre of the screen for the
+        // frames a page swap takes — the flicker the tour used to show on
+        // every step. The rect only really goes away once the retries are
+        // exhausted, or when the step has no target at all.
+        raf = window.setTimeout(() => attempt(tries - 1), 80)
+        return
+      }
+      setRect(null)
     }
     attempt(25)
     return () => {
@@ -351,10 +378,12 @@ function TourOverlay({
         <div style={spotlight} aria-hidden />
       ) : (
         // No target: plain dim backdrop for the centred welcome/finish cards.
+        // Only those click to dismiss — a targeted step whose element is
+        // briefly missing must not close the tour under a stray click.
         <div
           className="fixed inset-0 z-[1000] bg-[rgba(10,10,10,0.55)]"
           aria-hidden
-          onClick={onFinish}
+          onClick={step.target ? undefined : onFinish}
         />
       )}
       <TourCard
@@ -372,6 +401,8 @@ function TourOverlay({
 
 export function OnboardingTourProvider({ children }: { children: React.ReactNode }) {
   const { isLoaded, isSignedIn, user } = useUser()
+  const pathname = usePathname()
+  const onDashboard = isDashboardRoute(pathname)
   const [active, setActive] = useState(false)
   // Pulled out to a primitive on its own line: closing over `user?.id`
   // directly inside the callback made the React Compiler infer a dependency
@@ -410,7 +441,7 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
     setActive(true)
   }, [])
 
-  // Resume an in-progress tour after a remount, or auto-start once for users
+  // Resume an in-progress tour after a reload, or auto-start once for users
   // who haven't seen it yet. This has to live in an effect (not derived
   // during render) because sessionStorage/localStorage don't exist during
   // SSR/hydration — reading them earlier would desync server and client
@@ -426,6 +457,9 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
   // because they have traces (has_traces === '1') and seen === false.
   useEffect(() => {
     if (typeof window === 'undefined') return
+    // The provider is app-wide now, so never start (or resume) the tour on the
+    // landing, auth or legal pages — none of its targets exist there.
+    if (!onDashboard) return
     let running = false
     try {
       running = window.sessionStorage.getItem(RUNNING_KEY) === '1'
@@ -433,7 +467,7 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
       running = false
     }
     if (running) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- resuming an in-progress tour after remount; see comment above
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- resuming an in-progress tour after a reload; see comment above
       setActive(true)
       return
     }
@@ -462,12 +496,13 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
       // sessionStorage may be unavailable; auto-start still works this load.
     }
     setActive(true)
-  }, [isLoaded, isSignedIn, userId])
+  }, [isLoaded, isSignedIn, userId, onDashboard])
 
   return (
     <TourContext.Provider value={{ startTour }}>
       {children}
-      {active && createPortal(<TourOverlay onFinish={finish} />, document.body)}
+      {active && onDashboard &&
+        createPortal(<TourOverlay onFinish={finish} />, document.body)}
     </TourContext.Provider>
   )
 }

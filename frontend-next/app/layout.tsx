@@ -7,6 +7,7 @@ import { ClerkProvider } from "@clerk/nextjs"
 import { ThemeProvider } from "@/components/theme-provider"
 import { Toaster } from "@/components/ui/toaster"
 import { IntegrationsProvider } from "@/contexts/IntegrationsContext"
+import { OnboardingTourProvider } from "@/components/onboarding/OnboardingTour"
 import "@/lib/health-check"  // startup env-var validation (logs warnings, never throws)
 import "./globals.css"
 
@@ -131,7 +132,18 @@ export default function RootLayout({
             storageKey="swarmtrace-theme"
           >
             <IntegrationsProvider>
-              {children}
+              {/*
+                The onboarding tour provider lives here, at the root, on
+                purpose. Every dashboard page mounts its own DashboardLayout
+                (and swaps it for DashboardSkeleton while loading), so hosting
+                the tour inside DashboardLayout tore the overlay down and
+                rebuilt it two or more times per navigation — which is what
+                made the tour flicker and re-run its step as you moved
+                through it. Mounted here it survives every route change.
+              */}
+              <OnboardingTourProvider>
+                {children}
+              </OnboardingTourProvider>
               <Analytics />
               <Toaster />
             </IntegrationsProvider>

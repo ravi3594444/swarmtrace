@@ -12,6 +12,20 @@ import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 import { useOnboardingTour } from './onboarding/OnboardingTour'
 import { useFocusTrap } from '@/lib/use-focus-trap'
 
+/**
+ * Row geometry shared by every sidebar entry — the nav links and the "Take a
+ * tour" button alike. It used to be copy-pasted into both, and had drifted
+ * (a 17px compass against 18px nav icons), which left the tour icon sitting
+ * a hair out of the icon column. One recipe, one column.
+ */
+function rowClasses(collapsed: boolean): string {
+  return `group relative flex items-center gap-3 rounded-xl text-sm font-medium ${
+    collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'
+  }`
+}
+
+const ROW_ICON = 'shrink-0 w-[18px] h-[18px]'
+
 /** "Take a tour" trigger — replays the new-user onboarding tour on demand. */
 function TakeTourButton({
   collapsed,
@@ -34,17 +48,50 @@ function TakeTourButton({
       title="Take a tour"
       aria-label="Take a tour"
       aria-haspopup="dialog"
-      className={`group flex items-center gap-3 rounded-xl text-sm font-medium text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground active:bg-sidebar-accent ${
-        collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'
-      }`}
+      className={`${rowClasses(collapsed)} text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground active:bg-sidebar-accent`}
     >
       <Compass
-        className={`shrink-0 text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground ${collapsed ? 'w-[18px] h-[18px]' : 'w-[17px] h-[17px]'}`}
+        className={`${ROW_ICON} transition-colors text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground`}
         strokeWidth={1.7}
       />
       {!collapsed && <span className="truncate">Take a tour</span>}
     </button>
   )
+}
+
+/**
+ * Collapse state for the desktop rail.
+ *
+ * Every dashboard page mounts its own DashboardLayout (and swaps it for
+ * DashboardSkeleton while loading), so <Sidebar> is torn down and rebuilt on
+ * every navigation. With the state living only in component state, a
+ * collapsed rail sprang back open the moment you tapped a nav item. The
+ * module-level cache below survives those remounts, and localStorage carries
+ * the choice across reloads.
+ */
+const SIDEBAR_OPEN_KEY = 'swarmtrace-sidebar-open'
+let cachedSidebarOpen: boolean | null = null
+
+function readStoredSidebarOpen(): boolean {
+  if (cachedSidebarOpen !== null) return cachedSidebarOpen
+  if (typeof window === 'undefined') return true
+  try {
+    cachedSidebarOpen = window.localStorage.getItem(SIDEBAR_OPEN_KEY) !== '0'
+  } catch {
+    cachedSidebarOpen = true
+  }
+  return cachedSidebarOpen
+}
+
+function persistSidebarOpen(next: boolean): void {
+  cachedSidebarOpen = next
+  if (typeof window === 'undefined') return
+  try {
+    window.localStorage.setItem(SIDEBAR_OPEN_KEY, next ? '1' : '0')
+  } catch {
+    // localStorage may be unavailable (private mode); the module cache still
+    // keeps the rail steady for the rest of this session.
+  }
 }
 
 const navGroups = [
@@ -104,17 +151,14 @@ function NavItem({
       <div
         data-tour={`nav-${label.toLowerCase()}`}
         title={collapsed ? label : undefined}
-        className={`
-          group relative flex items-center gap-3 rounded-xl text-sm font-medium
-          transition-all duration-150 cursor-pointer
-          ${collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'}
-          ${isActive
+        className={`${rowClasses(collapsed)} transition-colors duration-150 cursor-pointer ${
+          isActive
             ? 'bg-sidebar-accent text-sidebar-accent-foreground'
-            : 'text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'}
-        `}
+            : 'text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground'
+        }`}
       >
         <Icon
-          className={`shrink-0 transition-colors w-[18px] h-[18px] ${isActive ? 'text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground'}`}
+          className={`${ROW_ICON} transition-colors ${isActive ? 'text-sidebar-accent-foreground' : 'text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground'}`}
           strokeWidth={isActive ? 2.2 : 1.7}
         />
         {!collapsed && <span className="truncate">{label}</span>}
@@ -230,11 +274,37 @@ function LogoutButton() {
 }
 
 export function Sidebar() {
-  const [open, setOpen] = useState(true)            // desktop collapse state
+  // `true` on the very first render so server and client markup agree; the
+  // stored value is applied right after hydration by the effect below. On
+  // every later mount the module cache is already warm, so the rail renders
+  // at its remembered width with no flash.
+  const [open, setOpen] = useState(() => cachedSidebarOpen ?? true)
   const [mobileOpen, setMobileOpen] = useState(false) // mobile drawer state
+  // Width animation stays off until the stored state has been applied, so a
+  // collapsed rail never visibly animates open -> closed on a fresh load.
+  const [animateWidth, setAnimateWidth] = useState(cachedSidebarOpen !== null)
+  const drawerRef = useRef<HTMLElement>(null)
+  // Keep Tab inside the drawer while it covers the page on mobile, and give
+  // focus back to the hamburger when it closes.
+  useFocusTrap(drawerRef, mobileOpen)
   const { user } = useUser()
   const email = user?.primaryEmailAddress?.emailAddress ?? user?.fullName ?? 'Account'
   const initials = (user?.fullName ?? email).slice(0, 2).toUpperCase()
+
+  useEffect(() => {
+    if (cachedSidebarOpen === null) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- post-hydration localStorage read; runs once.
+      setOpen(readStoredSidebarOpen())
+    }
+    const id = window.requestAnimationFrame(() => setAnimateWidth(true))
+    return () => window.cancelAnimationFrame(id)
+  }, [])
+
+  const toggleOpen = () => {
+    const next = !open
+    persistSidebarOpen(next)
+    setOpen(next)
+  }
 
   // Close the mobile drawer on Escape (matches the logout modal pattern).
   useEffect(() => {
@@ -244,6 +314,25 @@ export function Sidebar() {
     }
     document.addEventListener('keydown', onKey)
     return () => document.removeEventListener('keydown', onKey)
+  }, [mobileOpen])
+
+  // Lock body scroll while the drawer is open, and close it if the viewport
+  // grows to desktop — otherwise the backdrop could be left stranded over a
+  // sidebar that is already permanently visible.
+  useEffect(() => {
+    if (!mobileOpen) return
+    const previousOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    const mq = window.matchMedia('(min-width: 1024px)')
+    const onChange = () => {
+      if (mq.matches) setMobileOpen(false)
+    }
+    onChange()
+    mq.addEventListener('change', onChange)
+    return () => {
+      document.body.style.overflow = previousOverflow
+      mq.removeEventListener('change', onChange)
+    }
   }, [mobileOpen])
 
   // The sidebar <aside> is shared between desktop (persistent) and mobile
@@ -288,9 +377,13 @@ export function Sidebar() {
           On mobile: fixed, translated -100% when closed, 0 when open.
           On desktop: sticky, width controlled by `open` state. */}
       <aside
+        ref={drawerRef}
         className={`
           shrink-0 flex flex-col h-screen lg:h-[calc(100vh-1.5rem)] bg-sidebar border-r border-sidebar-border lg:border lg:rounded-2xl
-          transition-[width,background-color,border-color,color,transform] duration-200 ease-in-out overflow-hidden
+          ${animateWidth
+            ? 'transition-[width,background-color,border-color,color,transform]'
+            : 'transition-[background-color,border-color,color,transform]'}
+          duration-200 ease-in-out overflow-hidden
           /* Mobile: fixed drawer, slides in from the left, flush to the edge.
              Desktop: sticky, inset from the top by the shell's lg:p-3 gutter
              so it reads as a floating rounded card next to the content. */
@@ -315,10 +408,11 @@ export function Sidebar() {
         )}
         {/* Desktop collapse toggle (hidden on mobile — the drawer has its own close button) */}
         <button
-          onClick={() => setOpen((v) => !v)}
+          onClick={toggleOpen}
           className={`hidden lg:flex w-7 h-7 rounded-lg items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors shrink-0 ${!open ? 'mx-auto' : ''}`}
           title={open ? 'Collapse sidebar' : 'Expand sidebar'}
           aria-label={open ? 'Collapse sidebar' : 'Expand sidebar'}
+          aria-expanded={open}
         >
           {open ? <X className="w-3.5 h-3.5" /> : <Menu className="w-4 h-4" />}
         </button>
@@ -366,7 +460,7 @@ export function Sidebar() {
       {/* Keep the tour trigger outside the scrollable navigation. In the
           collapsed rail the native scrollbar previously sat over the right
           side of this button, which made clicks feel delayed or ignored. */}
-      <div className={`shrink-0 border-t border-sidebar-border ${open ? 'px-3 py-2' : 'px-0 py-2'}`}>
+      <div className={`shrink-0 border-t border-sidebar-border py-2 ${open ? 'px-3' : 'px-0'}`}>
         <TakeTourButton collapsed={!open} onStart={() => setMobileOpen(false)} />
       </div>
 
