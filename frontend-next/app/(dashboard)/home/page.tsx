@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useMemo } from 'react'
 import Link from 'next/link'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { FirstRunEmptyState, isFirstRun, markHasTraces } from '@/components/first-run-empty-state'
@@ -53,17 +52,17 @@ export default function HomePage() {
 
   if (showFirstRun) {
     return (
-      <DashboardLayout>
+      <>
         <PageHeader title="Home" description="How your AI is doing today" />
         <FirstRunEmptyState />
-      </DashboardLayout>
+      </>
     )
   }
 
   const issueCount = todayTraces.filter((t) => t.error).length
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Home"
         description="How your AI is doing today"
@@ -101,6 +100,6 @@ export default function HomePage() {
           <Link href="/metrics" className="font-medium text-primary hover:underline underline-offset-2">Metrics</Link>
         </p>
       </div>
-    </DashboardLayout>
+    </>
   )
 }

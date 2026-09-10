@@ -1,6 +1,5 @@
 'use client'
 
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
 import { NodeNetworkMap } from '@/components/swarm/NodeNetworkMap'
@@ -34,7 +33,7 @@ export default function NetworkPage() {
   }
 
   return (
-    <DashboardLayout>
+    <>
       <div className="min-h-full bg-background text-foreground">
         <div className="border-b border-border bg-surface/95 px-6 py-5 shadow-[0_18px_70px_rgba(0,0,0,0.35)] backdrop-blur-xl">
           <div className="flex flex-col gap-5 xl:flex-row xl:items-center xl:justify-between">
@@ -106,6 +105,6 @@ export default function NetworkPage() {
           />
         </div>
       </div>
-    </DashboardLayout>
+    </>
   )
 }

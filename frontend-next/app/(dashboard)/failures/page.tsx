@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
@@ -28,8 +27,6 @@ export default function FailuresPage() {
     [traces, range],
   )
 
-  // DashboardSkeleton already renders DashboardLayout itself — don't wrap
-  // it again or the sidebar renders twice while loading.
   if (loading) return (
     <DashboardSkeleton title="Failures" description="Clustered errors from your agents" />
   )
@@ -40,7 +37,7 @@ export default function FailuresPage() {
   const maxCount = clusters[0]?.count ?? 1
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Failures"
         description="Errors auto-grouped by root cause"
@@ -130,6 +127,6 @@ export default function FailuresPage() {
       </div>
 
       <DetailDrawer trace={selected} allTraces={filteredTraces} onClose={() => setSelected(null)} onJump={setSelected} />
-    </DashboardLayout>
+    </>
   )
 }
