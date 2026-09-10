@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { groupThreads, type Thread } from '@/lib/thread-grouping'
@@ -137,8 +136,6 @@ export default function ThreadsPage() {
   const totalTurns = useMemo(() => threads.reduce((sum, thread) => sum + thread.turnCount, 0), [threads])
   const totalErrors = useMemo(() => threads.filter((thread) => thread.hasError).length, [threads])
 
-  // DashboardSkeleton already renders DashboardLayout itself — don't wrap
-  // it again or the sidebar renders twice while loading.
   if (loading) {
     return (
       <DashboardSkeleton title="Threads" description="Multi-turn agent conversations" />
@@ -146,7 +143,7 @@ export default function ThreadsPage() {
   }
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Threads"
         description="Conversation sessions grouped by session id"
@@ -209,6 +206,6 @@ export default function ThreadsPage() {
       </div>
 
       <DetailDrawer trace={selected} allTraces={filteredTraces} onClose={() => setSelected(null)} onJump={setSelected} />
-    </DashboardLayout>
+    </>
   )
 }

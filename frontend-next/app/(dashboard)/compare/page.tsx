@@ -1,7 +1,6 @@
 'use client'
 
 import { useMemo, useState } from 'react'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
@@ -94,8 +93,6 @@ export default function ComparePage() {
     [traceA, traceB]
   )
 
-  // DashboardSkeleton already renders DashboardLayout itself — don't wrap
-  // it again or the sidebar renders twice while loading.
   if (loading) return (
     <DashboardSkeleton title="Compare" description="Side-by-side trace comparison" />
   )
@@ -104,7 +101,7 @@ export default function ComparePage() {
   const pct = score !== null ? Math.round(score * 100) : 0
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Compare"
         description="Diff two runs and score output similarity"
@@ -184,6 +181,6 @@ export default function ComparePage() {
           </>
         )}
       </div>
-    </DashboardLayout>
+    </>
   )
 }

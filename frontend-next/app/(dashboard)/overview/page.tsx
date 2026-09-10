@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect, useMemo, useRef } from 'react'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { StatBar } from '@/components/swarm/StatBar'
@@ -9,7 +8,7 @@ import { CallTree } from '@/components/swarm/CallTree'
 import { TokenChart } from '@/components/swarm/TokenChart'
 import { DetailDrawer } from '@/components/swarm/DetailDrawer'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
-import { FirstRunEmptyState, isFirstRun, markHasTraces } from '@/components/first-run-empty-state'
+import { FirstRunEmptyState, isFirstRun, markHasTraces, useSetupGuideRequest } from '@/components/first-run-empty-state'
 import LiveActivity from '@/components/LiveActivity'
 import type { Trace } from '@/lib/trace-types'
 import { filterTracesByRange, rangeStartMs } from '@/lib/trace-utils'
@@ -576,29 +575,37 @@ export default function OverviewPage() {
     if (traces.length > 0) markHasTraces()
   }, [traces.length])
   const showFirstRun = firstRunChecked && !loading && traces.length === 0 && isFirstRun()
+  // Reopened on demand from the sidebar's "Setup guide" button, for a user
+  // who is past first run and wants the install steps again.
+  const [setupRequested, closeSetup] = useSetupGuideRequest()
 
   if (loading) return (
     <DashboardSkeleton title="Overview" description="Live swarm health and execution summary" />
   )
 
-  // First-run: show onboarding empty state with the 3-step setup guide.
-  // Still wrapped in DashboardLayout so the sidebar + command palette work.
-  if (showFirstRun) {
+  // First-run (or the guide reopened from the sidebar): show the setup guide.
+  if (showFirstRun || setupRequested) {
     return (
-      <DashboardLayout>
+      <>
         <PageHeader
-          title="Overview"
-          description="Live swarm health and execution summary"
+          title={setupRequested && !showFirstRun ? 'Setup guide' : 'Overview'}
+          description={
+            setupRequested && !showFirstRun
+              ? 'Get traces flowing from your agent'
+              : 'Live swarm health and execution summary'
+          }
         />
-        <FirstRunEmptyState />
-      </DashboardLayout>
+        <FirstRunEmptyState
+          onDismiss={setupRequested && !showFirstRun ? closeSetup : undefined}
+        />
+      </>
     )
   }
 
   const errorCount = filteredTraces.filter((t) => t.error).length
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Overview"
         description="Live swarm health and execution summary"
@@ -726,6 +733,6 @@ export default function OverviewPage() {
       </div>
 
       <DetailDrawer trace={selected} allTraces={filteredTraces} onClose={() => setSelected(null)} onJump={setSelected} />
-    </DashboardLayout>
+    </>
   )
 }
