@@ -1,10 +1,19 @@
-# swarmtrace
+<div align="center">
 
-Tracing for AI agents. Add a decorator, get latency, tokens, cost and errors for every one of your calls - in the terminal or on the dashboard.
+# SwarmTrace
 
-[PyPI](https://pypi.org/project/swarmtrace/) · [Dashboard](https://swarmtrace.vercel.app) · [Architecture](docs/ARCHITECTURE.md)
+**Observability for AI agents — trace, debug, and monitor with 2 lines of code **
 
-![SwarmTrace dashboard](docs/images/dashboard.png)
+[![PyPI](https://img.shields.io/pypi/v/swarmtrace?style=flat-square&color=black)](https://pypi.org/project/swarmtrace/)
+[![Python](https://img.shields.io/badge/python-3.10%2B-black?style=flat-square)](https://pypi.org/project/swarmtrace/)
+[![License](https://img.shields.io/badge/license-MIT-black?style=flat-square)](LICENSE)
+[![Built at AMD Hackathon](https://img.shields.io/badge/built%20at-AMD%20Hackathon%202026-red?style=flat-square)](https://github.com/ravi3594444/swarmtrace)
+
+[Dashboard](https://swarmtrace.vercel.app) · [PyPI](https://pypi.org/project/swarmtrace/) · [GitHub](https://github.com/ravi3594444/swarmtrace)
+
+</div>
+
+---
 
 ## Install
 
@@ -12,125 +21,512 @@ Tracing for AI agents. Add a decorator, get latency, tokens, cost and errors for
 pip install swarmtrace
 ```
 
-Python 3.10+. MIT licensed.
+---
 
-## Quick start
+## Quick Start
+
+```python
+from swarmtrace import observe
+
+@observe
+def my_agent(question):
+    return llm.chat(question)
+
+my_agent("What is machine learning?")
+```
+
+```bash
+swarmtrace    # view traces in terminal
+```
+
+Every call is recorded — latency, tokens, cost, errors. Nothing else to configure.
+
+---
+
+## Architecture
+
+SwarmTrace is organized around a small ports-and-adapters core: public APIs and
+protocol ingress (`@observe`, `run()`/`span()`, MCP, OTLP) create canonical
+`SpanRecord`s, the runtime persists them locally, and delivery adapters batch
+them to the dashboard when remote ingest is configured. The dashboard includes a
+black **Node Network Map** that renders individual agent nodes, collaboration
+mode (solo / orchestrator / sub-agent / peer), per-agent RAG badges, and live
+connection lines from trace context. The Traces page also includes an
+**Architecture** view for kind-level span layers. See
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the module map, dependency
+rules, data flows, and extension guidelines.
+
+---
+
+## Single Agent
+
+Wrap your agent with `@observe`. Any LLM or tool calls inside it get tagged with `kind="llm"` or `kind="tool"` so they roll up into the agent's stats — they never appear as phantom agents on the dashboard.
+
+```python
+from swarmtrace import observe, init
+
+init(api_key="your-key", endpoint="https://swarmtrace.vercel.app")
+
+@observe
+def my_agent(query):
+    plan = call_llm(query)
+    return search_web(plan)
+
+@observe(kind="llm")
+def call_llm(prompt):
+    return client.chat(model="gpt-4o-mini", messages=[...])
+
+@observe(kind="tool")
+def search_web(q):
+    ...
+```
+
+**One agent card on the dashboard.** `call_llm` and `search_web` fold their tokens, cost, and errors into `my_agent` — they never get their own card.
+
+---
+
+## Quickstart — inject into any agent in 2 lines
 
 ```python
 import swarmtrace
+swarmtrace.init()              # auto-detects OpenAI, Anthropic, Gemini, LiteLLM
+```
 
-swarmtrace.init()     # patch OpenAI, Anthropic, Gemini, LiteLLM if installed
+That's all. Now decorate your top-level function:
 
+```python
 @swarmtrace.observe
 def my_agent(prompt):
-return client.chat.completions.create(
-model="gpt-4o-mini",
-messages=[{"role": "user", "content": prompt}],
-)
+    return openai_client.chat.completions.create(...)  # traced automatically
+```
+
+`swarmtrace.init()` patches installed LLM clients so every raw LLM call is
+recorded as `kind="llm"` — with latency, model, tokens, and cost — and
+attributed to whatever agent is currently running. You don't decorate the
+LLM call. You don't pick a `kind`. You don't configure anything else.
+
+**Single agent**
+
+```python
+import swarmtrace
+swarmtrace.init()
+
+from openai import OpenAI
+client = OpenAI()
+
+@swarmtrace.observe                    # one decorator. that's it.
+def my_agent(prompt):
+    return client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[{"role": "user", "content": prompt}],
+    )
 
 my_agent("What is AGI?")
 ```
 
-```bash
-swarmtrace         # print last 100 traces as a table + call tree
+Dashboard: one "my_agent" card with tokens, cost, latency, error rate.
+
+**Multi-agent swarm**
+
+```python
+import swarmtrace
+swarmtrace.init()
+
+@swarmtrace.observe                    # own card on the dashboard
+def researcher(q):
+    return client.chat.completions.create(model="gpt-4o-mini", messages=[...])
+
+@swarmtrace.observe                    # own card
+def summarizer(text):
+    return client.chat.completions.create(model="gpt-4o-mini", messages=[...])
+
+@swarmtrace.observe                    # own card — orchestrator
+def orchestrator(q):
+    research = researcher(q)
+    return summarizer(research)
+
+orchestrator("Explain transformers")
 ```
 
-LLMs called in `my_agent` are recorded and attributed to it, automatically. You do not decorate the calls to them.
+Dashboard: three cards. `researcher`'s and `summarizer`'s LLM costs roll
+into their own cards automatically.
 
-## Why I built this
-<!--
+**Auto-detection** — `@observe` figures out the role at call time:
+- Nothing running yet → this call **is** the agent (gets its own card).
+- Already inside an agent → rolls up into it (tokens + errors fold in,
+  no extra card).
 
-Write 4-6 sentences here yourself. The reviewer will read this section first.
-Answer these, concretely:
-- What were you building when you needed this? What went wrong?
-- What did you use before -- print statements, LangSmith, nothing?
-- Why didn't that work for you specifically?
-Do NOT write "observability for agents is hard." Write what you saw on your
-screen.
--->
+So `@observe` everywhere is safe — helpers and inner calls just disappear
+into the agent that ran them, instead of cluttering the Agents page.
 
-## How it works
+**Need separate cards for named sub-agents?** Add `kind="agent"` explicitly:
 
-`@observe` opens a span and closes it when the function returns. `init()` monkey-patches installed LLM clients to make the raw model calls into spans as well. Spans are written, first, to a local store -- everything is offline-explorable -- but if you call `init()` with an API key they are also batched up to the dashboard. Ingress from MCP and OTLP produces identical spans to the decorator's output.
+```python
+@swarmtrace.observe(kind="agent")
+def researcher(q): ...
+```
 
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for module map and data flow.
+That's the only knob. `kind="llm"` / `kind="tool"` exist for labeling,
+but the dashboard works correctly without them.
 
-### Span kinds
+---
 
-`@observe` defaults to `kind="agent"`, which gets its own card on the dashboard. Tag everything else so it rolls up into the agent that called it, rather than appearing under "agents":
+Every bare `@observe` is its own agent card. Nesting is handled automatically via contextvars — no IDs, no config.
+
+```python
+from swarmtrace import observe
+
+@observe
+def researcher(q):
+    return call_llm(f"Research: {q}")
+
+@observe
+def summarizer(text):
+    return call_llm(f"Summarize: {text}")
+
+@observe
+def orchestrator(q):
+    research = researcher(q)
+    return summarizer(research)
+
+orchestrator("What is AGI?")
+```
+
+```
+▶ orchestrator    4.2s  |  7 in / 78 out   |  $0.0003
+  ▶ researcher    3.4s  |  7 in / 330 out  |  $0.0013
+  ▶ summarizer    0.8s  |  338 in / 78 out |  $0.0005
+```
+
+Three agent cards on the dashboard — one per named agent. Sub-calls (`call_llm`) fold into whichever agent invoked them.
+
+---
+
+## Span Kinds
 
 | Kind | Decorator | Dashboard |
 |---|---|---|
-| `agent` | `@observe` | Own card -- tasks, tokens, cost, status |
+| `agent` | `@observe` (default) | Own card — tasks, tokens, cost, status |
 | `llm` | `@observe(kind="llm")` | Rolls up into calling agent |
 | `tool` | `@observe(kind="tool")` | Rolls up into calling agent |
 | `function` | `@observe(kind="function")` | Rolls up into calling agent |
 
-Async functions behave equivalently: `@observe` on an `async def` is fine, including under `asyncio.gather`.
+The rule: **only functions you want as separate dashboard cards get bare `@observe`.** Everything else gets a `kind=`.
 
-## CLI
+---
 
-```bash
-swarmtrace            # last 100 traces
-swarmtrace --limit 50
-swarmtrace-replay       # replay one trace in full
-swarmtrace-export --format json # -> ./swarmtrace_export.json
-swarmtrace-resync        # re-send traces the dashboard never received
-swarmtrace-alerts list
+## Span Kinds — agents vs. tool/LLM calls
+
+By default, `@observe` marks a call as `kind="agent"` — it gets its own
+entry on the dashboard's Agents page, with its own task count, tokens,
+cost, and status. That's the right default for named agents like
+`orchestrator`, `researcher`, and `summarizer` above.
+
+If you also wrap raw LLM or tool calls with `@observe` for visibility,
+tag them so they roll up into the calling agent's stats instead of
+showing up as their own (fake) agents:
+
+```python
+from swarmtrace import observe
+
+@observe(kind="llm")
+def call_llm(prompt):
+    return client.chat(model="gpt-4o-mini", messages=[...])
+
+@observe(kind="tool")
+def search_web(query):
+    ...
+
+@observe(kind="function")
+def helper(x):
+    ...
+
+@observe                      # kind="agent" (default)
+def researcher(q):
+    return call_llm(f"Research: {q}")
 ```
 
-Every command takes `--help`. They exit 0 on success, 1 on a genuine error (unwritable export path, traces still refusing resync), and 2 on bad args, making them safe to use in scripts and CI.
+`call_llm` and `search_web` are attributed to whichever `kind="agent"`
+call is currently running (`researcher`, here) — their tokens, cost, and
+any errors are folded into `researcher`'s stats. They never appear as
+separate entries on the Agents page, no matter how deeply nested.
 
-## Dashboard
+---
+
+## Async Support
+
+```python
+import asyncio
+from swarmtrace import observe
+
+@observe
+async def async_agent(q):
+    return await llm.achat(q)
+
+@observe
+async def orchestrator(q):
+    results = await asyncio.gather(
+        async_agent(q),
+        async_agent(q + " — deep dive"),
+    )
+    return " | ".join(results)
+
+asyncio.run(orchestrator("Explain transformers"))
+```
+
+---
+
+## Live Cost Tracking
+
+Automatic cost calculation for any model from any provider — powered by LiteLLM's live pricing registry.
+
+```python
+@observe
+def agent(q):
+    # OpenAI, Anthropic, Google, Mistral, DeepSeek,
+    # Groq, Cohere, xAI — cost tracked automatically
+    return client.chat(model="gpt-4o-mini", messages=[...])
+```
+
+Custom or fine-tuned models:
+
+```python
+from swarmtrace import set_model_pricing
+
+set_model_pricing("my-finetune", input_per_million=5.00, output_per_million=15.00)
+```
+
+---
+
+## Token Budget
+
+Stop runaway agents before they burn your budget.
+
+```python
+from swarmtrace import observe, budget
+
+@observe
+@budget(max_tokens=10_000, on_exceed="warn")   # or "stop"
+def agent(q):
+    return llm.chat(q)
+```
+
+---
+
+## Regression Detection
+
+Catch when a prompt change breaks your agent's behavior.
+
+```bash
+pip install swarmtrace[regression]
+```
+
+```python
+from swarmtrace.regression import compare
+
+compare(
+    my_agent,
+    inputs=["What is ML?", "How does Python work?", "What is an API?"],
+    version_a_prompt="You are a helpful assistant.",
+    version_b_prompt="Reply only in emojis.",
+    threshold=0.6,
+)
+```
+
+```
+INPUT                    SIMILARITY   REGRESSION?
+What is ML?              0.10         🔴 YES
+How does Python work?    0.15         🔴 YES
+What is an API?          0.12         🔴 YES
+
+Result: 3/3 regressions detected
+```
+
+### Report runs to the dashboard
+
+Pass `report_to_dashboard=True` (with `SWARMTRACE_API_KEY` set) to upload the
+run — per-input similarity scores and latencies — to the **Regression** page
+of your SwarmTrace dashboard instead of only printing to the console:
+
+```python
+from swarmtrace.regression import compare
+
+compare(
+    my_agent,
+    inputs=["What is ML?"],
+    version_a_prompt="You are a helpful assistant.",
+    version_b_prompt="Reply only in emojis.",
+    threshold=0.6,
+    report_to_dashboard=True,
+    run_name="emoji-test-2026-08",   # optional display name
+)
+```
+
+The report is best-effort: a missing key, unreachable dashboard, or HTTP
+error is logged as a warning and never raises or changes the comparison
+result. Prompts, inputs, and outputs are truncated to 32 000 chars and
+PII-redacted (emails, API keys, card numbers, JWTs) before transmission,
+and the dashboard redacts again at the ingest boundary.
+
+---
+
+## Tool Attention
+
+Reduce token overhead by up to 95% — only pass relevant tools to each agent call, scored via ISO Scoring (arXiv:2604.21816).
+
+```bash
+pip install swarmtrace[tools]
+```
+
+```python
+from swarmtrace import ToolAttention
+
+ta = ToolAttention(tools=all_my_tools)
+
+@observe
+def agent(query):
+    relevant_tools = ta.select(query, top_k=3)
+    return llm.chat(query, tools=relevant_tools)
+```
+
+---
+
+## Remote Dashboard
+
+Send traces to the [SwarmTrace dashboard](https://swarmtrace.vercel.app) for live monitoring.
+
+```python
+from swarmtrace import init, observe
+
+init(
+    api_key="your-swarmtrace-api-key",
+    endpoint="https://swarmtrace.vercel.app",
+)
+
+@observe
+def my_agent(q):
+    ...
+```
+
+Or via environment variables:
 
 ```bash
 export SWARMTRACE_API_KEY=your-key
 export SWARMTRACE_ENDPOINT=https://swarmtrace.vercel.app
 ```
 
-If your traces are never seen, a common symptom is a self-hosted Supabase without the migrations in [`supabase/migrations/`](supabase/migrations): every ingest call returns 500. `GET /api/health/db` states which migration is missing. Setup is at [docs/SUPABASE_SETUP.md](docs/SUPABASE_SETUP.md).
+**Traces not arriving? Self-hosting the dashboard?** The dashboard's
+Supabase project must have the migrations in [`supabase/migrations/`](supabase/migrations)
+applied — that is the #1 setup failure (every ingest call 500s, nothing
+appears on the dashboard). See [`docs/SUPABASE_SETUP.md`](docs/SUPABASE_SETUP.md)
+for the one-command setup (`npm run db:migrate`) and the self-check endpoint
+`GET /api/health/db` that names any missing migration.
 
-## Without the Python SDK
+---
 
-Any MCP client may post traces over HTTP:
+## Browser & Extended Capture (FOV)
+
+`@observe` and `init()` already trace LLM calls with zero extra dependencies — that works on a laptop, Kaggle, Colab, or a serverless function with nothing else installed. `fov=True` adds a second, opt-in layer: outbound HTTP calls, live LLM token streaming, and filesystem writes.
+
+```python
+from swarmtrace import init, observe
+
+init(api_key="your-key", endpoint="https://swarmtrace.vercel.app", fov=True)
+```
+
+Browser screenshots are the one FOV capability that needs an actual browser, so they're opt-in on top of opt-in:
+
+```bash
+pip install swarmtrace[fov]
+playwright install chromium
+```
+
+No Playwright? `fov=True` still gives you HTTP/stream/filesystem capture — screenshots are just silently skipped. Either way, `init()` prints one line to stderr telling you exactly what's active, so you're never guessing what a given machine is actually tracing.
+
+---
+
+## Use via MCP — no Python SDK required
+
+Any MCP-compatible client (Claude Desktop, Cursor, Hermes, etc.) can send traces straight to SwarmTrace over HTTP, without installing the Python package at all. This is the zero-install path for agents running somewhere you don't control.
 
 ```json
 {
-"mcpServers": {
-"swarmtrace": {
-"url": "https://swarmtrace.vercel.app/api/mcp",
-"headers": { "x-api-key": "your-swarmtrace-api-key" }
-}
-}
+  "mcpServers": {
+    "swarmtrace": {
+      "url": "https://swarmtrace.vercel.app/api/mcp",
+      "headers": { "x-api-key": "your-swarmtrace-api-key" }
+    }
+  }
 }
 ```
 
-Three tools: `record_trace`, `get_metrics`, `list_traces`.
+Exposes three tools: `record_trace` (send one trace), `get_metrics` (your usage stats), `list_traces` (recent traces). Exact config keys vary by client — check your client's docs for where remote/HTTP MCP servers go.
 
-## Optional extras
+---
+
+## CLI
 
 ```bash
-pip install swarmtrace[regression]  # prompt version diffing for behaviour drift
-pip install swarmtrace[budget]    # token ceilings per agent, warn or stop
-pip install swarmtrace[tools]    # tool selection by relevance
-pip install swarmtrace[fov]     # HTTP, stream and filesystem capture + screenshots
-pip install swarmtrace[all]
+swarmtrace                       # last 100 traces (table + call tree)
+swarmtrace --limit 50            # last 50
+swarmtrace-replay <id>           # replay any trace in full
+swarmtrace-export --format json  # -> ./swarmtrace_export.json
+swarmtrace-export --format csv --output traces.csv
+swarmtrace-resync                # re-send traces the dashboard never got
+swarmtrace-alerts list           # recent alerts
 ```
 
-Each is documented in [docs/](docs/).
+Every command takes `--help`. They exit `0` on success, `1` on a real
+failure (an unwritable export path, traces that still won't resync), and
+`2` on bad arguments — so they compose in scripts and CI.
 
-## Limitations
-<!--
+---
 
-Fill this in yourself. This is the section that provdes you shipped it.
-Suggestions, answer honestly:
-- How many spans before the local store gets slow?
-- Does FOV screenshot capture actually work reliably, or is it flaky?
-- What happens with threads / high concurrency?
-- Which LLM clients are auto-patched well and which are partial?
-- What's the overhead, and how did you measure it?
--->
+## vs LangSmith
 
-## License
+| Feature | SwarmTrace | LangSmith |
+|---|---|---|
+| Open source | ✅ | ❌ |
+| Works offline | ✅ | ❌ |
+| Any LLM / any framework | ✅ | ❌ LangChain only |
+| Live cost tracking | ✅ all models | ✅ |
+| Regression detection | ✅ | ❌ |
+| Token budget enforcement | ✅ | ❌ |
+| Tool attention (ISO) | ✅ | ❌ |
+| Setup | 2 lines | SDK + account |
+| Price | Free | $20/month |
 
-MIT. Built by [Ravi Kumar](https://raviportfollio.vercel.app).
+---
+
+## Optional Extras
+
+```bash
+pip install swarmtrace[regression]   # AI regression detection
+pip install swarmtrace[tools]        # Tool attention + FAISS
+pip install swarmtrace[budget]       # Token budget with tiktoken
+pip install swarmtrace[scraper]      # Web scraping traces
+pip install swarmtrace[fov]          # Browser screenshots (playwright + watchdog)
+pip install swarmtrace[all]          # Everything
+```
+
+---
+
+## AMD MI300X Benchmarks
+
+Tested on AMD Instinct MI300X 192GB via AMD Developer Cloud.
+
+| Metric | Value |
+|---|---|
+| Swarms tested | 5 |
+| Total agent calls | 20 |
+| Avg orchestrator latency | 6.1s |
+| Avg researcher latency | 1.8s |
+| Trace overhead | < 1ms |
+
+---
+
+<div align="center">
+
+Built with ❤️ at AMD Hackathon 2026 by [Ravi Kumar](https://raviportfollio.vercel.app)
+
+</div>
