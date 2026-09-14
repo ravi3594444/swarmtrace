@@ -1,6 +1,5 @@
 'use client'
 
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 
 /**
@@ -8,8 +7,9 @@ import { PageHeader } from '@/components/page-header'
  *
  * Standardized loading pattern: every dashboard page (Overview, Agents,
  * Network, Traces, Threads, Metrics, Compare, Failures) uses this
- * skeleton instead of the full-page Lottie spinner. The skeleton shows
- * the sidebar + header instantly, with only the content area showing
+ * skeleton instead of the full-page Lottie spinner. It renders inside the
+ * dashboard route group's layout, so the sidebar and header are already on
+ * screen and stay mounted, with only the content area showing
  * animated placeholders — the user sees the page "taking shape" rather
  * than a blank screen with a spinner. This is faster perceived perf and
  * avoids the layout shift that happens when the Lottie is replaced by
@@ -26,7 +26,7 @@ import { PageHeader } from '@/components/page-header'
  */
 export function DashboardSkeleton({ title = 'Loading…', description = 'Loading…' }: { title?: string; description?: string }) {
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title={title}
         description={description ?? 'Loading…'}
@@ -83,6 +83,6 @@ export function DashboardSkeleton({ title = 'Loading…', description = 'Loading
           ))}
         </div>
       </div>
-    </DashboardLayout>
+    </>
   )
 }

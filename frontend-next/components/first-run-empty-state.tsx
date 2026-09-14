@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useEffect } from 'react'
-import { CheckCircle, Copy, Terminal, KeyRound, Code2, ArrowRight, Compass } from 'lucide-react'
+import { useCallback, useState, useEffect } from 'react'
+import { CheckCircle, Copy, Terminal, KeyRound, Code2, ArrowRight, Compass, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { useOnboardingTour } from '@/components/onboarding/OnboardingTour'
 
@@ -39,6 +39,66 @@ export function markHasTraces() {
   } catch {
     // localStorage may be unavailable (private mode) — non-fatal.
   }
+}
+
+/**
+ * Opening the guide on demand.
+ *
+ * The guide auto-shows only for an account that has never had a trace, so
+ * once traces arrive there was no way back to the install steps. The sidebar's
+ * "Setup guide" button sets this flag and navigates to Overview; the event
+ * covers the case where the user is already there and no navigation happens.
+ *
+ * sessionStorage rather than a query param: Overview is statically rendered,
+ * and reading search params there would force a Suspense boundary for no gain.
+ */
+const SHOW_SETUP_KEY = 'swarmtrace:show-setup'
+const SHOW_SETUP_EVENT = 'swarmtrace:show-setup'
+
+/** Ask Overview to show the setup guide. Call this, then route to /overview. */
+export function requestSetupGuide() {
+  if (typeof window === 'undefined') return
+  try {
+    window.sessionStorage.setItem(SHOW_SETUP_KEY, '1')
+  } catch {
+    // sessionStorage may be unavailable; the event below still works for a
+    // user who is already on Overview.
+  }
+  window.dispatchEvent(new Event(SHOW_SETUP_EVENT))
+}
+
+/**
+ * Whether the setup guide was explicitly requested, plus a closer.
+ * Resolved after mount so server and client markup agree.
+ */
+export function useSetupGuideRequest(): [boolean, () => void] {
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    const sync = () => {
+      let requested = false
+      try {
+        requested = window.sessionStorage.getItem(SHOW_SETUP_KEY) === '1'
+      } catch {
+        requested = false
+      }
+      setOpen(requested)
+    }
+    sync()
+    window.addEventListener(SHOW_SETUP_EVENT, sync)
+    return () => window.removeEventListener(SHOW_SETUP_EVENT, sync)
+  }, [])
+
+  const close = useCallback(() => {
+    try {
+      window.sessionStorage.removeItem(SHOW_SETUP_KEY)
+    } catch {
+      // nothing to clean up
+    }
+    setOpen(false)
+  }, [])
+
+  return [open, close]
 }
 
 const INSTALL_CMD = 'pip install swarmtrace'
@@ -118,7 +178,7 @@ function Step({
   )
 }
 
-export function FirstRunEmptyState() {
+export function FirstRunEmptyState({ onDismiss }: { onDismiss?: () => void } = {}) {
   const [apiKey, setApiKey] = useState<string | null>(null)
   const { startTour } = useOnboardingTour()
 
@@ -136,6 +196,19 @@ export function FirstRunEmptyState() {
 
   return (
     <div className="flex flex-col items-center justify-center min-h-[60vh] px-6 py-12 text-center">
+      {/* Reopened from the sidebar rather than shown to a brand-new account:
+          give the user a way back to the page they were on. */}
+      {onDismiss && (
+        <button
+          type="button"
+          onClick={onDismiss}
+          className="self-end -mt-4 mb-2 flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 h-8 text-xs font-medium text-muted-foreground hover:text-foreground hover:bg-muted transition-colors"
+        >
+          <X className="w-3.5 h-3.5" />
+          Close guide
+        </button>
+      )}
+
       {/* Icon */}
       <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center mb-6">
         <Terminal className="w-8 h-8 text-primary" strokeWidth={1.8} />
@@ -143,11 +216,12 @@ export function FirstRunEmptyState() {
 
       {/* Headline */}
       <h2 className="text-2xl font-bold text-foreground mb-2">
-        Welcome to SwarmTrace
+        {onDismiss ? 'Send a trace' : 'Welcome to SwarmTrace'}
       </h2>
       <p className="text-sm text-muted-foreground max-w-md mb-10">
-        Nothing has been traced yet. Here is how to send your first trace — three
-        steps, about a minute, no credit card.
+        {onDismiss
+          ? 'How to send a trace — three steps, about a minute.'
+          : 'Nothing has been traced yet. Here is how to send your first trace — three steps, about a minute, no credit card.'}
       </p>
 
       {/* 3-step guide */}

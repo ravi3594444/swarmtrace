@@ -133,13 +133,10 @@ export default function RootLayout({
           >
             <IntegrationsProvider>
               {/*
-                The onboarding tour provider lives here, at the root, on
-                purpose. Every dashboard page mounts its own DashboardLayout
-                (and swaps it for DashboardSkeleton while loading), so hosting
-                the tour inside DashboardLayout tore the overlay down and
-                rebuilt it two or more times per navigation — which is what
-                made the tour flicker and re-run its step as you moved
-                through it. Mounted here it survives every route change.
+                The onboarding tour provider lives here, at the root, so a
+                single instance spans the whole app and the overlay survives
+                every route change. It is gated on dashboard routes inside,
+                so it never starts on the marketing or auth pages.
               */}
               <OnboardingTourProvider>
                 {children}

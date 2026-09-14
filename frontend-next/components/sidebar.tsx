@@ -1,16 +1,18 @@
 'use client'
 
 import Link from 'next/link'
-import { usePathname } from 'next/navigation'
+import { usePathname, useRouter } from 'next/navigation'
 import { useState, useEffect, useRef } from 'react'
 import {
   LayoutGrid, Users, ActivitySquare, BarChart3, Settings,
   Zap, AlertTriangle, ChevronRight, Menu, X, LogOut,
   MessagesSquare, GitCompareArrows, Compass, GitBranch, TrendingDown, Home,
+  BookOpen,
 } from 'lucide-react'
 import { useUser, UserButton, SignOutButton } from '@clerk/nextjs'
 import { useOnboardingTour } from './onboarding/OnboardingTour'
 import { useFocusTrap } from '@/lib/use-focus-trap'
+import { requestSetupGuide } from '@/components/first-run-empty-state'
 
 /**
  * Row geometry shared by every sidebar entry — the nav links and the "Take a
@@ -62,12 +64,10 @@ function TakeTourButton({
 /**
  * Collapse state for the desktop rail.
  *
- * Every dashboard page mounts its own DashboardLayout (and swaps it for
- * DashboardSkeleton while loading), so <Sidebar> is torn down and rebuilt on
- * every navigation. With the state living only in component state, a
- * collapsed rail sprang back open the moment you tapped a nav item. The
- * module-level cache below survives those remounts, and localStorage carries
- * the choice across reloads.
+ * The dashboard route group keeps this component mounted across navigations,
+ * so the collapse state no longer resets on every click. The module-level
+ * cache below still guards the remaining remount paths (and any future
+ * layout change), and localStorage carries the choice across reloads.
  */
 const SIDEBAR_OPEN_KEY = 'swarmtrace-sidebar-open'
 let cachedSidebarOpen: boolean | null = null
@@ -92,6 +92,45 @@ function persistSidebarOpen(next: boolean): void {
     // localStorage may be unavailable (private mode); the module cache still
     // keeps the rail steady for the rest of this session.
   }
+}
+
+/**
+ * "Setup guide" trigger — reopens the first-run install walkthrough.
+ *
+ * The guide otherwise only appears for an account that has never had a
+ * trace, so once traces arrive (or on any other browser) there was no way
+ * back to the install steps. This puts them one click away, permanently.
+ */
+function SetupGuideButton({
+  collapsed,
+  onOpen,
+}: {
+  collapsed: boolean
+  onOpen?: () => void
+}) {
+  const router = useRouter()
+
+  const handleOpen = () => {
+    onOpen?.()
+    requestSetupGuide()
+    router.push('/overview')
+  }
+
+  return (
+    <button
+      type="button"
+      onClick={handleOpen}
+      title="Setup guide"
+      aria-label="Setup guide"
+      className={`${rowClasses(collapsed)} text-sidebar-foreground transition-colors duration-150 hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground active:bg-sidebar-accent`}
+    >
+      <BookOpen
+        className={`${ROW_ICON} transition-colors text-sidebar-foreground/60 group-hover:text-sidebar-accent-foreground`}
+        strokeWidth={1.7}
+      />
+      {!collapsed && <span className="truncate">Setup guide</span>}
+    </button>
+  )
 }
 
 const navGroups = [
@@ -284,6 +323,13 @@ export function Sidebar() {
   // collapsed rail never visibly animates open -> closed on a fresh load.
   const [animateWidth, setAnimateWidth] = useState(cachedSidebarOpen !== null)
   const drawerRef = useRef<HTMLElement>(null)
+  const navRef = useRef<HTMLElement>(null)
+  // The nav reserves a scrollbar gutter (scrollbar-gutter: stable in
+  // globals.css), so its rows are narrower than anything rendered outside
+  // it — which is why the "Take a tour" row sat wider than the nav rows
+  // instead of sharing their right edge. Measure what the gutter actually
+  // costs and mirror it on the footer below.
+  const [navGutter, setNavGutter] = useState(0)
   // Keep Tab inside the drawer while it covers the page on mobile, and give
   // focus back to the hamburger when it closes.
   useFocusTrap(drawerRef, mobileOpen)
@@ -299,6 +345,16 @@ export function Sidebar() {
     const id = window.requestAnimationFrame(() => setAnimateWidth(true))
     return () => window.cancelAnimationFrame(id)
   }, [])
+
+  useEffect(() => {
+    const el = navRef.current
+    if (!el) return
+    const measure = () => setNavGutter(el.offsetWidth - el.clientWidth)
+    measure()
+    const observer = new ResizeObserver(measure)
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [open])
 
   const toggleOpen = () => {
     const next = !open
@@ -435,6 +491,7 @@ export function Sidebar() {
       )}
 
       <nav
+        ref={navRef}
         aria-label="Dashboard navigation"
         data-collapsed={!open}
         className={`sidebar-nav-scroll flex-1 overflow-y-auto overflow-x-hidden overscroll-contain py-3 ${open ? 'px-3 space-y-3' : 'px-0 space-y-3 flex flex-col items-center'}`}
@@ -457,10 +514,15 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Keep the tour trigger outside the scrollable navigation. In the
-          collapsed rail the native scrollbar previously sat over the right
-          side of this button, which made clicks feel delayed or ignored. */}
-      <div className={`shrink-0 border-t border-sidebar-border py-2 ${open ? 'px-3' : 'px-0'}`}>
+      {/* Kept outside the scrollable navigation so the scrollbar never sits
+          over these buttons. The extra right padding is the nav's reserved
+          gutter, mirrored here so these rows share the nav rows' exact box
+          — same left edge, same right edge, same icon column. */}
+      <div
+        className={`shrink-0 border-t border-sidebar-border py-2 space-y-0.5 ${open ? 'px-3' : 'px-0'}`}
+        style={open ? { paddingRight: `calc(0.75rem + ${navGutter}px)` } : undefined}
+      >
+        <SetupGuideButton collapsed={!open} onOpen={() => setMobileOpen(false)} />
         <TakeTourButton collapsed={!open} onStart={() => setMobileOpen(false)} />
       </div>
 

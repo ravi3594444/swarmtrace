@@ -1,7 +1,6 @@
 'use client'
 
 import { useCallback, useEffect, useState } from 'react'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { formatRelativeTime } from '@/lib/api'
@@ -195,7 +194,7 @@ export default function RegressionPage() {
   const flaggedRuns = runs?.filter((r) => (r.regressions_count || 0) > 0).length ?? 0
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Regression"
         description="LLM-scored prompt comparisons reported by the SDK"
@@ -266,6 +265,6 @@ compare(
           </div>
         )}
       </div>
-    </DashboardLayout>
+    </>
   )
 }

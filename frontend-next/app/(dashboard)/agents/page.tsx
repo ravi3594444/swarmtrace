@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import Link from 'next/link'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { TimeRangeDropdown, useTimeRange } from '@/components/swarm/TimeRangeDropdown'
@@ -138,7 +137,7 @@ export default function AgentsPage() {
   }
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Agents"
         description="Registered swarm agents and their health"
@@ -206,6 +205,6 @@ export default function AgentsPage() {
           </Empty>
         )}
       </div>
-    </DashboardLayout>
+    </>
   )
 }

@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { DashboardSkeleton } from '@/components/dashboard-skeleton'
 import { fetchMetrics } from '@/lib/api'
@@ -105,8 +104,6 @@ export default function MetricsPage() {
     a.click(); URL.revokeObjectURL(a.href)
   }
 
-  // DashboardSkeleton already renders DashboardLayout itself — don't wrap
-  // it again or the sidebar renders twice while loading.
   if (loading) return (
     <DashboardSkeleton title="Metrics" description="Latency, token, and cost trends over time" />
   )
@@ -118,7 +115,7 @@ export default function MetricsPage() {
   const hasChartData = chart.length > 0
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Metrics"
         description="Token usage, cost, and throughput analytics"
@@ -207,6 +204,6 @@ export default function MetricsPage() {
           <RegressionMonitorPanel data={data} />
         )}
       </div>
-    </DashboardLayout>
+    </>
   )
 }
