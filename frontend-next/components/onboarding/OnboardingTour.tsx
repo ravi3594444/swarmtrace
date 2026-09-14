@@ -25,10 +25,10 @@ import { TOUR_STEPS, type TourStep } from './tour-steps'
 
 const STORAGE_PREFIX = 'swarmtrace-onboarding-completed:'
 /**
- * The tour is mounted app-wide (in the root layout) so it survives the
- * per-page DashboardLayout remounts, which means it also renders on the
- * marketing and auth pages. It must only ever run inside the dashboard, so
- * both auto-start and the overlay itself are gated on these routes.
+ * The tour is mounted app-wide (in the root layout), which means it also
+ * renders on the marketing and auth pages. It must only ever run inside the
+ * dashboard, so both auto-start and the overlay itself are gated on these
+ * routes.
  */
 const DASHBOARD_ROUTES = new Set([
   '/overview', '/agents', '/traces', '/threads', '/metrics',
@@ -41,8 +41,8 @@ function isDashboardRoute(pathname: string | null | undefined): boolean {
 }
 
 // Per-tab keys so an in-progress tour survives a page reload. The provider
-// itself no longer remounts on navigation (it lives in the root layout), so
-// these are only a reload safety net, not the mechanism the tour runs on.
+// itself no longer remounts on navigation, so these are only a reload safety
+// net, not the mechanism the tour runs on.
 const RUNNING_KEY = 'swarmtrace-onboarding-running'
 const STEP_KEY = 'swarmtrace-onboarding-step'
 const SPOTLIGHT_PADDING = 8
@@ -258,9 +258,8 @@ function TourOverlay({
   const step = TOUR_STEPS[index]
   const total = TOUR_STEPS.length
 
-  // Warm the next page while the user reads the current step. Each dashboard
-  // page owns its own DashboardLayout, so an unprefetched route can otherwise
-  // make the tour appear to pause while the provider remounts.
+  // Warm the next page while the user reads the current step, so stepping
+  // through the tour doesn't stall on a route that hasn't been fetched yet.
   useEffect(() => {
     const nextRoute = TOUR_STEPS.slice(index + 1).find((candidate) => candidate.route)?.route
     if (nextRoute) router.prefetch(nextRoute)

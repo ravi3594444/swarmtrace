@@ -1,7 +1,6 @@
 'use client'
 
 import { useState, useMemo, useRef } from 'react'
-import { DashboardLayout } from '@/components/dashboard-layout'
 import { PageHeader } from '@/components/page-header'
 import { useSwarmTraces } from '@/lib/use-swarm-traces'
 import { TruncationBanner } from '@/components/truncation-banner'
@@ -593,7 +592,7 @@ export default function TracesPage() {
   const errorCount = filtered.filter((t) => t.error).length
 
   return (
-    <DashboardLayout>
+    <>
       <PageHeader
         title="Traces"
         description="Click any row to inspect"
@@ -779,6 +778,6 @@ export default function TracesPage() {
           </div>
         </div>
       )}
-    </DashboardLayout>
+    </>
   )
 }
