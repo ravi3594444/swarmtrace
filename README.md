@@ -1,8 +1,9 @@
 # SwarmTrace
 
-[PyPI](https://pypi.org/project/swarmtrace/) · [Dashboard](https://swarmtrace.vercel.app/)
+This is my very own AI agent tracing tool!
+I just really got tired of not knowing what my agents were doing under the hood lol.
 
-This is my very own AI agent tracing tool! I just really got tired of not knowing what my agents were doing under the hood lol.
+[PyPI](https://pypi.org/project/swarmtrace/) · [Dashboard](https://swarmtrace.vercel.app/)
 
 ## What does it have?
 
@@ -16,10 +17,10 @@ This is my very own AI agent tracing tool! I just really got tired of not knowin
 
 When I built agents using frameworks like CrewAI and LangGraph, I had no idea what was happening under the hood when things failed. Print statements broke down on nested async calls, and other tracing tools felt too heavy for my old laptop or required rewriting code around their frameworks. I wanted something fast, lightweight, and simple that just works.
 
-## Current Status
+## Current status
 
-- **What's Working**: `@observe` decorator, local SQLite logging, CLI suite, `asyncio` support, dashboard visualization, and cost tracking.
-- **Rough Edges**: `ThreadPoolExecutor` breaks context tracking (async works fine), SQLite can hit lock contention under high concurrency, and custom/local models need manual pricing setup via `set_model_pricing`.
+- **What's working**: `@observe` decorator, local SQLite logging, CLI suite, `asyncio` support, dashboard visualization, and cost tracking.
+- **Rough edges**: `ThreadPoolExecutor` breaks context tracking (async works fine), SQLite can hit lock contention under high concurrency, and custom/local models need manual pricing setup via `set_model_pricing`.
 - **Experimental**: Token budgets, prompt regression diffs, tool selection, FOV capture, and MCP ingest.
 
 ## Built with
@@ -30,28 +31,16 @@ When I built agents using frameworks like CrewAI and LangGraph, I had no idea wh
 
 ## How to run
 
-1. Install the package:
-
-```bash
-pip install swarmtrace
-```
-
-2. Add `@observe` to your function:
-
+- Install the package: `pip install swarmtrace`
+- Add `@observe` to your function:
 ```python
-import swarmtrace
+  import swarmtrace
 
-swarmtrace.init()
+  swarmtrace.init()
 
-@swarmtrace.observe
-def my_agent(prompt):
-    ...
+  @swarmtrace.observe
+  def my_agent(prompt):
+      ...
 ```
-
-3. Check your terminal:
-
-```bash
-swarmtrace
-```
-credit ravi
-
+- Check your terminal: `swarmtrace`
+- credit 'ravibroo'
