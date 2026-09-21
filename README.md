@@ -2,80 +2,58 @@
 
 Tracing for AI agents. Decorate a function, inspect the entire call tree (latency, tokens, cost, errors) in your terminal or on a dashboard.
 
-[PyPI](https://pypi.org/project/swarmtrace/) · [Dashboard](https://swarmtrace.vercel.app/) · [Docs](#)
+[PyPI](https://pypi.org/project/swarmtrace/) · [Dashboard](https://swarmtrace.vercel.app/)
 
-## The problem
+This is my very own AI agent tracing tool! I just really got tired of not knowing what my agents were doing under the hood lol.
 
-An agent that calls a model, then a tool, then another agent, is a black box when it goes wrong. You get a final answer, but no sense of which step was slow, which used the most tokens, which one silently returned garbage that the rest were building on. Print statements don't survive nesting, and most tracing tools expect you to use their framework from the get-go.
+## What does it have?
 
-## What it does
+- **Decorator & Auto-Patching**: A simple `@observe` decorator that hooks into OpenAI, Anthropic, Gemini, and LiteLLM automatically to capture all sub-calls.
+- **CLI Inspection**: A terminal interface to view call trees, replay runs, and export data directly from your local environment.
+- **Offline-First Storage**: Uses a local SQLite database that caps at 10,000 rows so it doesn't clutter your drive or consume extra resources.
+- **Live Dashboard**: An optional web dashboard where you can view live agent cards and interactive inter-agent handoffs.
+- **Cost & Latency Tracking**: Uses LiteLLM's pricing registry to break down cost and time spent per span.
+
+## Why I built it
+
+When I built agents using frameworks like CrewAI and LangGraph, I had no idea what was happening under the hood when things failed. Print statements broke down on nested async calls, and other tracing tools felt too heavy for my old laptop or required rewriting code around their frameworks. I wanted something fast, lightweight, and simple that just works.
+
+## Current Status
+
+- **What's Working**: `@observe` decorator, local SQLite logging, CLI suite, `asyncio` support, dashboard visualization, and cost tracking.
+- **Rough Edges**: `ThreadPoolExecutor` breaks context tracking (async works fine), SQLite can hit lock contention under high concurrency, and custom/local models need manual pricing setup via `set_model_pricing`.
+- **Experimental**: Token budgets, prompt regression diffs, tool selection, FOV capture, and MCP ingest.
+
+## Built with
+
+- Python 3.10+
+- SQLite
+- LiteLLM
+
+## How to run
+
+1. Install the package:
 
 ```bash
-
 pip install swarmtrace
-
 ```
 
-```python
+2. Add `@observe` to your function:
 
+```python
 import swarmtrace
 
 swarmtrace.init()
 
 @swarmtrace.observe
-
 def my_agent(prompt):
-
-...
-
+    ...
 ```
+
+3. Check your terminal:
 
 ```bash
-
-swarmtrace  # the call tree for your last runs
-
+swarmtrace
 ```
+credit ravi
 
-`init()` patches whichever LLM clients you have installed already, so model calls that happen inside your agent are recorded separately and attributed to it. No configuration needed, no framework to adopt — everything ends up in a local SQLite file, so it works offline, but add an API key and traces also appear on the dashboard. Multi-agent runs are shown as separate nodes with the inter-agent handoffs drawn between them.
-
-## Status
-
-Working
-
-- `@observe` and automatic LLM patching — OpenAI, Anthropic, Gemini, LiteLLM
-
-- Local SQLite storage, offline, capped at 10k rows with age-based purging,
-
-- CLI: view, replay, export to JSON/CSV, resync
-
-- Async, including `asyncio.gather`
-
-- Dashboard with live agent cards and node map
-
-- Cost tracking via LiteLLM's pricing registry
-
-Rough
-
-- `ThreadPoolExecutor` breaks attribution. Context rides on `contextvars`, which thread pools don't propagate, so spans from `ex.map()` / `ex.submit()` become their own top-level traces instead of rolling into the agent. Async is fine, this isn't.
-
-- Under fast concurrent writes SQLite lock contention prints `database table is locked` and that span is dropped, not retried
-
-- Traces queued for the dashboard may not survive a process that exits immediately — delivery is on a background thread. `swarmtrace-resync` recovers anything that reached SQLite
-
-- `@observe` costs ~0.14 ms per call (2,000 calls, local only, no delivery).
-
-- PII redaction before upload is regex-based and best-effort.
-
-- Local and fine-tuned models show zero cost until you call `set_model_pricing`.
-
-Experimental — usable but not hardened: token budgets, prompt regression diffing, tool selection, FOV capture (HTTP, filesystem, screenshots), MCP ingest for agents that can't run the Python package. See docs.
-
-Python 3.10+. No JS/TS SDK.
-
-## Why I built it
-
-Because when I built agents using frameworks like CrewAI and LangGraph, I had no idea what's happening under the hood, but that's why I've built this project. I know that there are things, which I can improve, but I am working on an old laptop, so I cannot always keep up with the newest things.
-
-## License
-
-MIT. Built by [Ravi Kumar](https://raviportfollio.vercel.app/).
