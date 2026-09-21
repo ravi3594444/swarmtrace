@@ -1,7 +1,5 @@
 # SwarmTrace
 
-Tracing for AI agents. Decorate a function, inspect the entire call tree (latency, tokens, cost, errors) in your terminal or on a dashboard.
-
 [PyPI](https://pypi.org/project/swarmtrace/) · [Dashboard](https://swarmtrace.vercel.app/)
 
 This is my very own AI agent tracing tool! I just really got tired of not knowing what my agents were doing under the hood lol.
