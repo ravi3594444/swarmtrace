@@ -1,11 +1,11 @@
 import type { Trace } from './trace-types'
 
 export type ErrorCluster = {
-  /** Stable key derived from the normalized error signature. */
+  /** Stable key from the normalized error signature. */
   signature: string
-  /** Exception class / type (text before the first colon), e.g. "ValueError". */
+  /** Exception type (text before the first colon), e.g. "ValueError". */
   type: string
-  /** A representative raw error message for display. */
+  /** A representative raw message for display. */
   sample: string
   /** Number of errored spans in this cluster. */
   count: number
@@ -18,13 +18,9 @@ export type ErrorCluster = {
 }
 
 /**
- * Collapse an error message down to a stable signature so that the same bug
- * — which produces messages differing only in ids, numbers, paths, hex
- * addresses or quoted values — clusters into a single group instead of N
- * near-identical rows.
- *
- * The exception type (text before the first colon) is preserved verbatim;
- * only the message body is normalized.
+ * Collapse an error message to a stable signature so the same bug clusters
+ * together even when ids, numbers, paths, hex addresses or quoted values
+ * differ. The exception type (text before the first colon) is kept as is.
  */
 export function errorSignature(error: string): { type: string; signature: string } {
   const trimmed = error.trim()
@@ -47,10 +43,7 @@ export function errorSignature(error: string): { type: string; signature: string
   return { type, signature: `${type}|${normalizedBody}` }
 }
 
-/**
- * Group errored traces by their normalized signature. Non-errored traces are
- * ignored. Clusters are returned largest-first (ties broken by most recent).
- */
+/** Group errored traces by normalized signature, largest cluster first (ties by most recent). Non-errored traces are ignored. */
 export function clusterErrors(traces: Trace[]): ErrorCluster[] {
   const groups = new Map<string, { type: string; traces: Trace[]; funcs: Map<string, number> }>()
 

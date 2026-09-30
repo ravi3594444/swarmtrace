@@ -1,14 +1,6 @@
 """Tests for swarmtrace/tool_attention.py.
 
-Audit finding #8: tool_attention.py had zero test coverage.
-Audit finding #12: add_tools() was O(n²) — rebuilt the entire index
-on every call instead of incremental add. This test file covers both
-the existing select() behavior and the new incremental add_tools().
-
-`sentence-transformers`, `faiss-cpu`, and `numpy` are optional
-dependencies (`pip install swarmtrace[tools]`) and are not installed
-in the base test environment. These tests inject fakes into sys.modules
-to exercise the real ToolAttention logic without the heavy ML deps.
+sentence-transformers, faiss and numpy are optional, so fakes go into sys.modules.
 """
 
 from __future__ import annotations
@@ -21,9 +13,7 @@ import pytest
 
 import swarmtrace.tool_attention as ta
 
-# ---------------------------------------------------------------------------
-# Fake optional dependencies (numpy, sentence_transformers, faiss)
-# ---------------------------------------------------------------------------
+# Fake optional dependencies
 
 class _FakeIndex:
     """Stands in for faiss.IndexFlatL2. Tracks .add() calls so tests can
@@ -35,11 +25,11 @@ class _FakeIndex:
         self.search_calls = []
 
     def add(self, embeddings):
-        # Record what was added — tests check len() to verify incremental.
+        # Record what was added, tests check len() to verify incremental.
         self.added_embeddings.append(embeddings)
 
     def search(self, query_vec, k):
-        # Return (distances, indices) — fake uniform results.
+        # Return (distances, indices), fake uniform results.
         self.search_calls.append((query_vec, k))
         import numpy as np
         distances = np.zeros((1, k), dtype="float32")
@@ -93,9 +83,7 @@ def _remove_fake_deps():
         sys.modules.pop(mod, None)
 
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture()
 def fake_deps():
@@ -117,13 +105,7 @@ def sample_tools():
 
 @pytest.fixture()
 def records(monkeypatch, fake_runtime):
-    """Capture spans through the Phase 1 runtime seam (get_runtime().record())
-    instead of patching the removed ta.save_trace. tool_attention.py was
-    migrated to SpanRecord + get_runtime().record() (PRD Phase 1); this
-    fixture patches fake_runtime.repository.save (the pattern already used
-    in tests/test_run.py) and stores each span via to_storage_dict() so the
-    existing row["kind"] / row["function"] assertions keep working unchanged.
-    """
+    """Capture spans from fake_runtime.repository.save as storage-style dicts."""
     saved = []
 
     def _capture(span):
@@ -134,9 +116,7 @@ def records(monkeypatch, fake_runtime):
     return saved
 
 
-# ---------------------------------------------------------------------------
-# Tests — __init__ + _build_index
-# ---------------------------------------------------------------------------
+# __init__ + _build_index
 
 def test_build_index_succeeds_with_deps(fake_deps, sample_tools):
     """ToolAttention constructs without error when deps are available."""
@@ -151,29 +131,21 @@ def test_build_index_import_error_gives_helpful_message(monkeypatch, sample_tool
     """Without deps, the error message tells the user what to install."""
     # Ensure deps are NOT available
     _remove_fake_deps()
-    # Also block numpy if it's installed — _build_index imports it
+    # Also block numpy if it's installed, _build_index imports it
     monkeypatch.setitem(__import__('sys').modules, 'numpy', None)
 
     with pytest.raises(ImportError, match="sentence-transformers"):
         ta.ToolAttention(sample_tools, verbose=False)
 
 
-# ---------------------------------------------------------------------------
-# Tests — add_tools (audit finding #12: incremental, not rebuild)
-# ---------------------------------------------------------------------------
+# add_tools: incremental, not a rebuild
 
 def test_add_tools_is_incremental_not_rebuild(fake_deps, sample_tools):
-    """Audit finding #12: add_tools() must NOT call _build_index().
-
-    The old impl called _build_index() which re-encoded every tool from
-    scratch. The fix encodes only the new tools and uses index.add().
-    This test verifies _build_index is NOT called during add_tools by
-    spying on it.
-    """
+    """add_tools() must not call _build_index(); only the new tools get encoded."""
     att = ta.ToolAttention(sample_tools, verbose=False)
     _build_calls_before = att._build_index.__code__  # just verify method exists
 
-    # Spy on _build_index — replace it with a mock that counts calls
+    # Spy on _build_index, replace it with a mock that counts calls
     att._build_index = MagicMock()
     original_embeddings_len = len(att._embeddings)
 
@@ -183,7 +155,7 @@ def test_add_tools_is_incremental_not_rebuild(fake_deps, sample_tools):
     ]
     att.add_tools(new_tools)
 
-    # CRITICAL assertion: _build_index was NOT called (the old behavior).
+    # _build_index was not called
     att._build_index.assert_not_called()
 
     # The index grew by the new tools' embeddings
@@ -221,7 +193,7 @@ def test_add_tools_extends_tools_list(fake_deps, sample_tools):
 
 
 def test_add_tools_preserves_search(fake_deps, sample_tools):
-    """After add_tools, select() still works — the index is valid."""
+    """After add_tools, select() still works, the index is valid."""
     att = ta.ToolAttention(sample_tools, verbose=False)
     att.add_tools([{"name": "new_tool", "description": "new thing", "schema": {}}])
     # select() should not raise
@@ -244,9 +216,7 @@ def test_add_tools_raises_if_index_not_built(monkeypatch, sample_tools):
         att.add_tools([{"name": "x", "description": "y", "schema": {}}])
 
 
-# ---------------------------------------------------------------------------
-# Tests — select (existing behavior, now with coverage)
-# ---------------------------------------------------------------------------
+# select()
 
 def test_select_returns_list_of_tools(fake_deps, sample_tools, records):
     """select() returns a list of tool dicts."""

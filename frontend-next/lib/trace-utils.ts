@@ -1,23 +1,16 @@
 import type { Trace } from './trace-types'
 
-// ── Time-range filtering ────────────────────────────────────────────────────
-//
-// The dashboard defaults to "All Time" so it never looks empty when data
-// exists. A dropdown in the page header lets the user switch between Today /
-// This Week / This Month / All Time. Filtering happens client-side at the page level so
-// every widget (StatBar, CallTree, TokenChart, CostProjection, …) consumes a
-// single already-filtered array — no per-widget changes needed.
-//
-// "Today"/"This Week"/"This Month" are computed in the user's *local* time
-// (via the browser's Date), which matches how a human reads a dashboard.
-// All comparisons are inclusive of the boundary instant.
+// Time-range filtering. The dashboard defaults to "All Time"; the header
+// dropdown switches between Today / This Week / This Month. Filtering
+// happens once at the page level so every widget gets the same filtered
+// array. Ranges use the browser's local time, and boundaries are inclusive.
 
 export type TimeRangeKey = 'today' | 'week' | 'month' | 'all'
 
 export type TimeRange = {
   key: TimeRangeKey
   label: string
-  /** Short label shown in compact UI (e.g. the dropdown trigger). */
+  /** Short label for compact UI (e.g. the dropdown trigger). */
   short: string
 }
 
@@ -28,8 +21,7 @@ export const TIME_RANGES: readonly TimeRange[] = [
   { key: 'all',   label: 'All Time',     short: 'All Time'   },
 ] as const
 
-/** Inclusive lower-bound timestamp (ms since epoch) for the given range, or
- *  `null` for "All Time" (no lower bound). Computed in local time. */
+/** Inclusive lower bound (ms since epoch) for the range in local time, or `null` for "All Time". */
 export function rangeStartMs(key: TimeRangeKey, now: Date = new Date()): number | null {
   if (key === 'all') return null
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate())
@@ -47,22 +39,17 @@ export function rangeStartMs(key: TimeRangeKey, now: Date = new Date()): number 
   return null
 }
 
-/** Filter traces to those whose `timestamp` falls inside the selected range.
- *  Returns the input array reference for "All Time" (no copy) so callers can
- *  still do referential-equality checks in useMemo deps. */
+/** Filter traces to the selected range. Returns the same array for "All Time" so useMemo deps stay stable. */
 export function filterTracesByRange(traces: Trace[], key: TimeRangeKey, now: Date = new Date()): Trace[] {
   if (key === 'all') return traces
   const start = rangeStartMs(key, now)
   if (start == null) return traces
   return traces.filter((t) => {
     const ms = new Date(t.timestamp).getTime()
-    // Treat invalid/missing timestamps as "not in range" rather than letting
-    // NaN comparisons silently include them.
+    // invalid/missing timestamps count as out of range (NaN would slip through)
     return Number.isFinite(ms) && ms >= start
   })
 }
-
-// ── Call-chain helpers ──────────────────────────────────────────────────────
 
 export function buildCallChain(trace: Trace, all: Trace[]): Trace[] {
   const byId = new Map(all.map((t) => [t.id, t]))

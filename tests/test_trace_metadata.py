@@ -1,4 +1,4 @@
-"""Tests for Phase 5 metadata / trace_id propagation."""
+"""Tests for metadata / trace_id propagation."""
 
 from __future__ import annotations
 
@@ -165,7 +165,5 @@ def test_attributes_redacted_in_transport_payload():
         attributes={"secret": "token=sk-12345678901234567890abcdef"},
     )
     payload = http_payload(span)
-    # The transport does not redact attributes; the SDK redacts args/output
-    # and the attribute values should be redacted by the caller before placing
-    # secrets into attributes. We assert the payload faithfully carries them.
+    # the transport doesn't redact attributes (callers should); just check they're carried faithfully
     assert payload["attributes"]["secret"] == "token=sk-12345678901234567890abcdef"

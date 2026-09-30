@@ -9,7 +9,7 @@ Run with:
 The agent:
 1. Starts a root agent run.
 2. Generates a search query from the user question (llm span).
-3. Simulates a retrieval step (retrieval span) — in production this could be
+3. Simulates a retrieval step (retrieval span), in production this could be
    Tavily, Firecrawl, or a vector DB.
 4. Calls Mistral again with the retrieved context to produce the final answer
    (llm span).

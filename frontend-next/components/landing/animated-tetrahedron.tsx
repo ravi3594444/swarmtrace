@@ -18,7 +18,7 @@ export function AnimatedTetrahedron() {
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     // Cache the theme color so we don't read the DOM every frame. Updated
-    // via MutationObserver when the .dark class toggles — same pattern as
+    // via MutationObserver when the .dark class toggles - same pattern as
     // AnimatedSphere. Without this the tetrahedron is invisible in dark
     // mode (it hardcodes rgba(0,0,0,...) which is black-on-black).
     const colorRef = { current: typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "255,255,255" : "0,0,0" };

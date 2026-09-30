@@ -37,10 +37,7 @@ class TestReliability(unittest.TestCase):
     def test_tracer_storage_failure(self):
         # When _flush raises, _safe_flush must (a) not re-raise and (b) emit
         # a warning containing "trace flush warning" and the exception message.
-        # Originally verified via redirect_stderr (because the impl used
-        # print(file=sys.stderr)); now verified via assertLogs because the
-        # impl uses logging.getLogger("swarmtrace") per the library's
-        # logging policy (no handlers attached — host app's decision).
+        # logged via the "swarmtrace" logger, so assertLogs can see it
         with (
             patch('swarmtrace.tracer._flush', side_effect=Exception("DB Corrupted")),
             self.assertLogs("swarmtrace", level="WARNING") as cm,

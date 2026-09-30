@@ -1,20 +1,7 @@
 /**
- * Test: lib/sanitize-mcp-trace.ts — the MCP record_trace boundary
- * sanitization (audit pass 2, finding 1).
- *
- * Before this module, the MCP route passed args/output/error/attributes
- * straight into `upsert_trace_for_key`. The ingest and events routes both
- * redact at the boundary; the MCP route is the one path where non-SDK
- * clients (Hermes, Claude Desktop, Cursor) — which never run the Python
- * SDK's client-side redaction — could land PII/API keys in the database,
- * and attributes had no size cap (ingest caps at 64 KB).
- *
- * Covers:
- *   1. PII redaction of args/output/error (emails, API keys, JWTs, cards).
- *   2. Truncation to MAX_TEXT_LEN (before redaction, same order as ingest).
- *   3. Optional fields: undefined/null args/output/error normalize safely.
- *   4. attributes: plain-object validation + 64 KB JSON cap; invalid
- *      attributes reject with a message (the route turns that into isError).
+ * Tests for lib/sanitize-mcp-trace.ts: PII redaction and MAX_TEXT_LEN
+ * truncation of args/output/error, safe handling of missing fields, and
+ * attributes validation (plain object, 64 KB cap).
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -22,7 +9,7 @@ import assert from 'node:assert/strict'
 import { sanitizeMcpTraceFields } from '../lib/sanitize-mcp-trace.ts'
 import { MAX_TEXT_LEN, MAX_ATTRIBUTES_SIZE } from '../lib/validate-ingest.ts'
 
-describe('sanitizeMcpTraceFields — text fields', () => {
+describe('sanitizeMcpTraceFields: text fields', () => {
   test('redacts emails, API keys, JWTs, and card numbers from args/output/error', () => {
     const { ok, value } = sanitizeMcpTraceFields({
       args: 'tool call with admin@example.com and sk-abcdefghijklmnopqrstuvwxyz123456',
@@ -61,7 +48,7 @@ describe('sanitizeMcpTraceFields — text fields', () => {
   })
 })
 
-describe('sanitizeMcpTraceFields — attributes', () => {
+describe('sanitizeMcpTraceFields: attributes', () => {
   test('passes through a plain object', () => {
     const attrs = { provider: 'mcp', tool_name: 'scrape', status_code: 200 }
     const { ok, value } = sanitizeMcpTraceFields({ attributes: attrs })
@@ -85,8 +72,8 @@ describe('sanitizeMcpTraceFields — attributes', () => {
   })
 
   test('accepts attributes right at the cap', () => {
-    // The cap applies to the JSON-serialized size, so compute the exact
-    // content length that lands the serialized form on the boundary.
+    // the cap applies to serialized JSON size, so compute the content length
+    // that lands exactly on the boundary
     const atCap = { blob: 'a'.repeat(MAX_ATTRIBUTES_SIZE - JSON.stringify({ blob: '' }).length) }
     assert.equal(JSON.stringify(atCap).length, MAX_ATTRIBUTES_SIZE)
     const { ok } = sanitizeMcpTraceFields({ attributes: atCap })

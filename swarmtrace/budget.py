@@ -31,21 +31,17 @@ _session_tokens: dict[str, int] = {}
 _session_start:  dict[str, float] = {}
 _lock = threading.Lock()
 
-# FIX #3 (budget): use a pool instead of spawning a new thread per _count_tokens call.
-# _count_tokens is called TWICE per traced call (args + result) — in a busy agent loop
-# this was creating hundreds of OS threads per second.
+# pool for _count_tokens, which runs twice per traced call
 _tok_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="st-tok")
 
-# ---------------------------------------------------------------------------
 # Public helpers
-# ---------------------------------------------------------------------------
 
 def reset(func_name: str | None = None) -> None:
     """
     Reset token-budget counters.
 
-    - ``reset()``            — clears all tracked functions.
-    - ``reset("my_agent")``  — clears only that function.
+    - ``reset()``           , clears all tracked functions.
+    - ``reset("my_agent")`` , clears only that function.
     """
     with _lock:
         if func_name is None:
@@ -62,9 +58,7 @@ def get_usage() -> dict[str, int]:
         return dict(_session_tokens)
 
 
-# ---------------------------------------------------------------------------
 # Internal tracking
-# ---------------------------------------------------------------------------
 
 def _count_tokens(text: str) -> int:
     """Best-effort token count: tiktoken when available, fallback to len/4.
@@ -104,9 +98,7 @@ def _track(
     with _lock:
         now = time.time()
 
-        # FIX #8: auto-reset counters on a time window so budget isn't
-        # permanently tripped for long-running 24/7 agents.
-        # Without this, max_tokens=10_000 trips after ~10 min and never resets.
+        # reset the counters every window so long-running agents don't trip forever
         if reset_every_hours > 0:
             last_start = _session_start.get(func_name, 0.0)
             if now - last_start >= reset_every_hours * 3600:
@@ -137,9 +129,7 @@ def _track(
         )
 
 
-# ---------------------------------------------------------------------------
 # Decorator
-# ---------------------------------------------------------------------------
 
 def budget(
     max_tokens: int = 100_000,
@@ -148,14 +138,13 @@ def budget(
     reset_every_hours: float = 24.0,
 ):
     """
-    Token-budget decorator — warns when agents approach their token limit.
+    Token-budget decorator, warns when agents approach their token limit.
 
     Parameters
     ----------
     max_tokens:
         Cumulative token ceiling for this function within the current window.
-        Default raised to 100,000 (was 10,000 — the old default tripped in
-        ~10 minutes for any real LLM agent).
+        Default is 100,000.
     warn_at:
         Fraction of max_tokens at which to print a warning (default 0.8 = 80%).
     hard_stop:
@@ -177,9 +166,7 @@ def budget(
                     original_exc = exc
                     raise
                 finally:
-                    # FIX #9: don't let a budget RuntimeError swallow the
-                    # original exception — only raise budget error if there
-                    # was no prior exception in flight.
+                    # only raise the budget error if no other exception is in flight
                     try:
                         _track(func.__name__, args, result, max_tokens, warn_at,
                                hard_stop, reset_every_hours)

@@ -1,12 +1,4 @@
-"""Tests for swarmtrace/replay.py.
-
-Audit finding #8: replay.py had zero test coverage. Per the project's
-own history, this module "already burned us once" -- 196+ tests passed
-while a CLI crash, tree-view wrap bug, and grandchild-flattening bug all
-shipped, because nothing exercised the actual replay/failure-listing
-output. These tests cover show_failures() (this module) and the
-replay() function it re-exports from swarmtrace.cli.
-"""
+"""Tests for swarmtrace/replay.py: show_failures() and the re-exported replay()."""
 
 from __future__ import annotations
 
@@ -41,7 +33,7 @@ def _save(function="fn", error=None, trace_id="t1", **overrides):
     storage.save_trace(**defaults)
 
 
-# ── show_failures() ─────────────────────────────────────────────────────────
+# show_failures()
 
 def test_show_failures_no_failures_logs_none_found(replay_mod, caplog):
     caplog.set_level(logging.INFO, logger="swarmtrace.replay")
@@ -91,7 +83,7 @@ def test_show_failures_truncates_long_error_text(replay_mod, caplog):
     assert "x" * 38 in all_output
 
 
-# ── replay() re-export from swarmtrace.cli ──────────────────────────────────
+# replay() re-export from swarmtrace.cli
 
 def test_replay_is_reexported_from_cli(replay_mod):
     from swarmtrace import cli

@@ -4,15 +4,8 @@ import Link from 'next/link'
 import { CheckCircle, AlertTriangle, MoonStar } from 'lucide-react'
 
 /**
- * StatusBanner — the one-line answer to "how is it going?" at the top of
- * the Home page. Written for non-technical users: no error codes, no
- * jargon, just a plain statement plus a single next step when something
- * is wrong.
- *
- * Three states:
- *   - No activity yet today  → neutral, calm "nothing has run yet".
- *   - Activity, zero issues  → emerald all-clear.
- *   - Issues present         → destructive accent + a link to /failures.
+ * One-line status at the top of Home. Three states: no activity yet,
+ * all clear, or issues (with a link to /failures).
  */
 export function StatusBanner({
   hasActivity,

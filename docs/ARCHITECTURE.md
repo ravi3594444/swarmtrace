@@ -1,8 +1,7 @@
 # SwarmTrace Architecture
 
-This document is the maintainer-facing map for SwarmTrace. The PRD explains
-where the product is going; this document defines the code boundaries that keep
-that direction implementable.
+A map of the SwarmTrace code for maintainers: what lives where and which
+boundaries to keep.
 
 ## 1. System purpose
 
@@ -17,13 +16,13 @@ agent run
 └── error/output metadata
 ```
 
-The core promise is intentionally narrow: telemetry must never change the user's
-agent behavior. If storage, transport, auto-instrumentation, FOV capture, MCP, or
-OTLP fail, the application result and exception semantics remain unchanged.
+Telemetry must never change the user's agent behavior. If storage, transport,
+auto-instrumentation, FOV capture, MCP or OTLP fail, the application's result and
+exceptions stay the same.
 
 ## 2. Architectural style
 
-SwarmTrace uses a small ports-and-adapters architecture.
+The SDK is a small ports-and-adapters design.
 
 ```text
 ┌────────────────────────────────────────────────────────────────────┐
@@ -58,34 +57,35 @@ public APIs / gateways / optional integrations
             -> external systems
 ```
 
-Core modules must not import provider SDKs, agent frameworks, or concrete tool
-vendors. Optional integrations may import provider libraries defensively and must
-handle `ImportError` as "feature unavailable", not as a process failure.
+Core modules must not import provider SDKs, agent frameworks or tool vendors.
+Optional integrations import provider libraries defensively and treat
+`ImportError` as "feature unavailable".
 
 ## 3. Python SDK package map
 
 | Area | Files | Responsibility |
 |---|---|---|
-| Public façade | `swarmtrace/__init__.py`, `tracer.py`, `run.py` | Stable user APIs: `init`, `observe`, `session`, `run`, `span`. Backward-compatible private aliases live here only when needed. |
-| Shared config | `config.py` | Lazy remote API key/endpoint resolution, endpoint safety validation, base-URL normalization. Runtime, FOV, alerts, and tracer all use this instead of importing tracer internals. |
-| Core model/context | `span_model.py`, `trace_context.py`, `ports.py` | Canonical span shape, context propagation, repository/transport protocols. No I/O side effects beyond contextvars. |
-| Runtime seam | `runtime.py`, `events.py` | One record/resync entrypoint, event bus, runtime injection for tests/custom embeddings. |
-| Adapters | `adapters/sqlite_repository.py`, `adapters/http_transport.py` | Concrete persistence and HTTP ingest mapping. |
-| Delivery | `delivery/sender.py` | Bounded background queue, batching, retry, fork-safe sender state. |
-| Instrumentation | `auto_instrument.py`, `fov.py`, `scraper.py` | Optional capture around LLM SDKs, browser/network/filesystem events, scraping/retrieval. Must degrade safely. |
-| Protocol ingress | `mcp_gateway.py`, `gateway_config.py`, `gateway_cli.py`, `otlp.py`, `otlp_mapping.py` | Generic MCP and OTLP paths. No Firecrawl/LangGraph/CrewAI-specific core code. |
-| Local analysis | `budget.py`, `alerts.py`, `replay.py`, `export.py`, `regression.py`, `tool_attention.py` | Features that consume recorded spans/events. `regression.py` also reports prompt-comparison runs to the dashboard via `POST /api/regression` (`report_to_dashboard=True`, 0.6.7+). |
-| Persistence | `storage.py` | SQLite schema, migrations, retention, and row-shaped compatibility API. |
+| Public API | `swarmtrace/__init__.py`, `tracer.py`, `run.py` | `init`, `observe`, `session`, `run`, `span`, plus a few backward-compatible private aliases. |
+| Config | `config.py` | API key and endpoint resolution, endpoint scheme check, base-URL normalization. Runtime, FOV, alerts and tracer use this instead of tracer internals. |
+| Core model | `span_model.py`, `trace_context.py`, `ports.py` | Span shape, context propagation, repository and transport protocols. |
+| Runtime | `runtime.py`, `events.py` | Single record/resync entry point, event bus, runtime injection for tests. |
+| Adapters | `adapters/sqlite_repository.py`, `adapters/http_transport.py` | SQLite persistence and the HTTP ingest mapping. |
+| Delivery | `delivery/sender.py` | Bounded background queue, batching, retry, fork-safe state. |
+| Instrumentation | `auto_instrument.py`, `fov.py`, `scraper.py` | Optional capture around LLM SDKs, browser/network/file events and scraping. Must fail safely. |
+| Protocol ingress | `mcp_gateway.py`, `gateway_config.py`, `gateway_cli.py`, `otlp.py`, `otlp_mapping.py` | Generic MCP and OTLP paths. |
+| Local analysis | `budget.py`, `alerts.py`, `replay.py`, `export.py`, `regression.py`, `tool_attention.py` | Consume recorded spans and events. `regression.py` can also report runs to `POST /api/regression` (`report_to_dashboard=True`). |
+| Persistence | `storage.py` | SQLite schema, migrations, retention, and the row-shaped compatibility API. |
 
 ## 4. Frontend/dashboard map
 
 | Area | Files | Responsibility |
 |---|---|---|
-| API ingestion | `frontend-next/app/api/ingest/*`, `frontend-next/lib/validate-ingest.ts`, `decode-body.ts` | Accept SDK/MCP/OTLP trace payloads, validate and redact. |
-| Identity contract | `frontend-next/lib/resolve-trace-identity.ts`, `stable-agent-id.ts`, `derive-agent-cards.ts` | Keep `kind` and `agent_id` semantics synchronized with Python. See `docs/SDK_DASHBOARD_CONTRACT.md`. |
-| Trace querying | `frontend-next/lib/trace-query.ts`, `trace-types.ts`, `span-tree.ts`, `thread-grouping.ts` | Fetch, type, group, and tree spans for dashboard views. |
-| UI shell | `frontend-next/app/*`, `components/dashboard-*`, `components/sidebar.tsx` | Pages, layout, error boundaries, navigation. |\n| Regression reporting | `frontend-next/app/api/regression/*`, `lib/validate-regression.ts`, `app/regression/*`, `supabase/migrations/0011_regression_runs.sql` | Prompt-regression runs from `swarmtrace.regression.compare(report_to_dashboard=True)`: API-key POST (tenant stamped via `insert_regression_run_for_key`), Clerk/RLS GET, Regression page UI. |
-| Trace visualization | `frontend-next/components/swarm/*` | Trace table, call tree, waterfall, detail drawer, JSON views. |
+| API ingestion | `frontend-next/app/api/ingest/*`, `lib/validate-ingest.ts`, `decode-body.ts` | Accept, validate and redact SDK, MCP and OTLP payloads. |
+| Identity | `frontend-next/lib/resolve-trace-identity.ts`, `stable-agent-id.ts`, `derive-agent-cards.ts` | Keep `kind` and `agent_id` in step with the Python SDK. See `docs/SDK_DASHBOARD_CONTRACT.md`. |
+| Trace querying | `frontend-next/lib/trace-query.ts`, `trace-types.ts`, `span-tree.ts`, `thread-grouping.ts` | Fetch, type and group spans. |
+| UI shell | `frontend-next/app/*`, `components/dashboard-*`, `components/sidebar.tsx` | Pages, layout, navigation. |
+| Regression | `frontend-next/app/api/regression/*`, `lib/validate-regression.ts`, `app/regression/*`, `supabase/migrations/0011_regression_runs.sql` | API-key POST (tenant set by `insert_regression_run_for_key`), Clerk/RLS GET, Regression page. |
+| Trace views | `frontend-next/components/swarm/*` | Trace table, call tree, waterfall, detail drawer. |
 
 ## 5. Canonical data model
 
@@ -114,14 +114,14 @@ SpanRecord(
 )
 ```
 
-Important rules:
+Rules:
 
 1. `kind="agent"` spans define agent cards and run boundaries.
-2. `llm`, `tool`, `retrieval`, and `function` spans roll up to the nearest
-   active agent where context exists.
-3. Missing context creates an orphan span. Do not guess a parent.
-4. Redaction happens before persistence and before remote transmission.
-5. Generic metadata belongs in `attributes`, not provider-specific columns.
+2. `llm`, `tool`, `retrieval` and `function` spans roll up to the nearest active
+   agent when there is context.
+3. Without context a span is an orphan; don't guess a parent.
+4. Redact before persisting and before sending.
+5. Generic metadata goes in `attributes`, not provider-specific columns.
 
 ## 6. Main data flows
 
@@ -149,8 +149,8 @@ swarmtrace.init(auto_instrument=True)
   -> Runtime.record(kind="llm")
 ```
 
-Auto-instrumentation records metadata only; it should not persist prompt or
-response content by default.
+Auto-instrumentation records metadata only and does not store prompt or response
+content by default.
 
 ### 6.3 FOV live-event flow
 
@@ -162,7 +162,7 @@ swarmtrace.init(fov=True)
   -> /api/events sender if remote config exists
 ```
 
-FOV events are live activity annotations, not replacements for canonical spans.
+FOV events are live activity annotations and do not replace spans.
 
 ### 6.4 MCP gateway flow
 
@@ -174,8 +174,8 @@ agent MCP client
   -> response/error semantics returned unchanged
 ```
 
-The gateway observes generic MCP calls. It does not invent an agent root if the
-client sends no lifecycle/context information.
+The gateway records generic MCP calls. It does not invent an agent root when the
+client sends no context.
 
 ### 6.5 OTLP flow
 
@@ -188,15 +188,15 @@ OTel-capable app/framework
 
 ### 6.6 Dashboard architecture and network views
 
-The Traces page has an **Architecture** view that turns the current filtered
-trace set into product-level architecture layers:
+The Traces page has an Architecture view that groups the filtered traces into
+layers:
 
 ```text
 Agents -> LLM -> Tools -> Retrieval -> Functions
 ```
 
-The dashboard also exposes `/network`, a black desktop **Node Network Map** that
-uses `/api/graph` to render individual agent nodes and collaboration edges:
+`/network` is a desktop Node Network Map that uses `/api/graph` to draw agent
+nodes and collaboration edges:
 
 ```text
 agent node
@@ -206,24 +206,19 @@ agent node
 └── connections from parent agent spans and shared trace/session context
 ```
 
-Both views are computed entirely from canonical fields (`kind`, `agent_id`,
-`parent_id`, `trace_id`, `session_id`, tokens, cost, latency, and error state),
-so they work for SDK, MCP, and OTLP spans without a provider-specific dashboard
-schema.
+Both views use only the canonical fields (`kind`, `agent_id`, `parent_id`,
+`trace_id`, `session_id`, tokens, cost, latency, error state), so they work for
+SDK, MCP and OTLP spans alike.
 
 ## 7. Configuration ownership
 
-`swarmtrace.config` owns remote telemetry configuration:
+`swarmtrace.config` owns remote configuration: `SWARMTRACE_API_KEY`,
+`SWARMTRACE_ENDPOINT`, overrides passed to `swarmtrace.init(...)`, the endpoint
+scheme check and `/api` suffix normalization.
 
-- `SWARMTRACE_API_KEY`
-- `SWARMTRACE_ENDPOINT`
-- explicit overrides passed through `swarmtrace.init(...)`
-- endpoint scheme safety
-- `/api` suffix normalization
-
-`tracer.py` still exposes `_remote_config`, `_validate_endpoint_scheme`, and
-`_normalize_base_url` as compatibility wrappers, but new code should import from
-`swarmtrace.config` directly.
+`tracer.py` still exposes `_remote_config`, `_validate_endpoint_scheme` and
+`_normalize_base_url` as compatibility wrappers. New code should import from
+`swarmtrace.config`.
 
 ## 8. Extension guidelines
 
@@ -238,69 +233,62 @@ schema.
 ### Adding a new transport or repository
 
 1. Implement the relevant protocol from `ports.py`.
-2. Wire it by constructing a `Runtime(repository, transport, config)` and using
-   `set_runtime(...)` in tests or embedding code.
-3. Keep retries/queueing in delivery-level code, not in business logic.
+2. Build a `Runtime(repository, transport, config)` and use `set_runtime(...)` in
+   tests or embedding code.
+3. Keep retries and queueing in the delivery layer.
 
 ### Adding a new provider/framework integration
 
-1. Prefer a protocol-level integration (MCP, OTLP, generic `run/span`) over a
-   provider-specific module.
-2. If a provider-specific patch is necessary, keep it optional and defensive.
-3. Never allow integration import/patch failures to affect user code.
-4. Never persist provider secrets, request headers, or full prompt/response data
-   unless a documented opt-in exists.
+1. Prefer MCP, OTLP or generic `run/span` over a provider-specific module.
+2. If a provider patch is needed, keep it optional and defensive.
+3. Import or patch failures must not affect user code.
+4. Don't persist provider secrets, request headers or full prompts/responses
+   unless there is a documented opt-in.
 
 ### Adding a new dashboard trace field
 
-1. Decide whether it is generic enough for `SpanRecord`/schema or belongs in
-   `attributes`.
-2. Update SDK storage, ingest validation, Supabase migration, TypeScript trace
-   types, and UI rendering together.
-3. Update `docs/SDK_DASHBOARD_CONTRACT.md` if the change touches `kind`,
-   `agent_id`, or grouping behavior.
+1. Decide whether it belongs in `SpanRecord`/the schema or in `attributes`.
+2. Update SDK storage, ingest validation, the Supabase migration, TypeScript
+   types and UI together.
+3. Update `docs/SDK_DASHBOARD_CONTRACT.md` if it touches `kind`, `agent_id` or
+   grouping.
 
 ## 9. Resilience and privacy invariants
 
-- User exceptions are re-raised exactly as before.
-- Telemetry exceptions are caught and logged as warnings/errors.
-- Local persistence failures do not crash the observed application.
-- Remote delivery uses a bounded queue and must not block user code.
-- Unsynced trace rows are preserved for `swarmtrace-resync`.
-- API keys are never sent over plaintext HTTP except localhost development.
-- Args/output/error fields are redacted and bounded before storage.
-- Orphan non-agent spans must not become phantom dashboard agent cards.
+- User exceptions are re-raised unchanged.
+- Telemetry exceptions are caught and logged.
+- Local persistence failures don't crash the application.
+- Remote delivery uses a bounded queue and never blocks user code.
+- Unsynced rows are kept for `swarmtrace-resync`.
+- API keys are not sent over plain HTTP except to localhost.
+- Args, output and error fields are redacted and bounded before storage.
+- Orphan non-agent spans must not become dashboard agent cards.
 
 ## 10. Packaging invariant
 
-The published Python package must include nested architecture packages such as
-`swarmtrace.adapters` and `swarmtrace.delivery`. `pyproject.toml` therefore uses
-setuptools package discovery with `include = ["swarmtrace*"]`; do not replace it
-with a single-package list unless every runtime subpackage is still included.
+The wheel must include `swarmtrace.adapters` and `swarmtrace.delivery`, so
+`pyproject.toml` uses setuptools discovery with `include = ["swarmtrace*"]`. Don't
+replace it with a single-package list unless every subpackage is still included.
 
 ## 11. Architecture enforcement
 
-`tests/test_architecture_boundaries.py` turns the most important boundaries into
-executable checks:
+`tests/test_architecture_boundaries.py` checks that:
 
-- pure core modules must not import tracer, storage, adapters, delivery, or
-  optional instrumentation;
-- runtime/FOV/alerts must use `swarmtrace.config` instead of tracer-private
-  remote config helpers;
-- nested runtime packages must be included by Python package discovery;
-- this document must keep the required maintainer sections.
+- core modules don't import tracer, storage, adapters, delivery or optional
+  instrumentation;
+- runtime, FOV and alerts use `swarmtrace.config` rather than tracer-private
+  helpers;
+- nested packages are included by package discovery;
+- this document keeps its required sections.
 
-When intentionally changing these boundaries, update the architecture document
-and the boundary tests in the same change.
+If you change these boundaries on purpose, update this document and the tests
+together.
 
 ## 12. Current known architectural debt
 
-- `tracer.py` is still larger than ideal because it preserves historical
-  decorator behavior, stable agent identity rules, compatibility aliases, and
-  sender shims in one file.
-- Some optional modules still keep compatibility aliases for tests that patch
-  private names. New code should depend on `trace_context.py` and `config.py`.
-- The SQLite `storage.py` API remains row-shaped for backward compatibility;
-  new code should prefer `SpanRecord` through `SqliteRepository`.
-
-These are intentional migration seams, not new extension points.
+- `tracer.py` is larger than it should be: it holds the decorator behavior,
+  stable agent identity rules, compatibility aliases and sender shims.
+- Some optional modules keep compatibility aliases for tests that patch private
+  names. New code should use `trace_context.py` and `config.py`.
+- `storage.py` is still row-shaped for backward compatibility; new code should use
+  `SpanRecord` through `SqliteRepository`.

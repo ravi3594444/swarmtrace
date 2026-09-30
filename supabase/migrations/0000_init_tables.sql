@@ -1,8 +1,5 @@
 -- 0000_init_tables.sql
--- Creates the tables the dashboard and ingest API expect.
--- Run this FIRST in the Supabase SQL editor, then 0001_rls_and_indexes.sql.
--- If the dashboard shows "Failed to create API key", missing tables or
--- missing SUPABASE_URL / SUPABASE_SERVICE_KEY env vars are the usual cause.
+-- Tables the dashboard and ingest API expect. Run first, then 0001.
 
 create table if not exists public.api_keys (
   id          text primary key,

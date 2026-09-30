@@ -16,7 +16,7 @@ function CopyId({ id }: { id: string }) {
     <button
       onClick={async (e) => {
         e.stopPropagation();
-        // Wrap in try/catch — clipboard API rejects in non-secure contexts
+        // Wrap in try/catch - clipboard API rejects in non-secure contexts
         // (HTTP non-localhost) or on permission denial. Without this, the
         // unhandled rejection is logged and setCopied never runs.
         try {
@@ -24,7 +24,7 @@ function CopyId({ id }: { id: string }) {
           setCopied(true);
           setTimeout(() => setCopied(false), 1200);
         } catch {
-          // Silently ignore — the id text is visible for manual copy.
+          // Silently ignore - the id text is visible for manual copy.
         }
       }}
       title={copied ? "Copied!" : `Copy ${id}`}
@@ -65,7 +65,7 @@ function TreeNode({
         className="group flex w-full items-center gap-3 px-4 py-2.5 text-left text-xs transition-all hover:bg-muted/60 border-b border-border/50 last:border-0 focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2"
         style={{ paddingLeft: `${depth * 20 + 16}px` }}
       >
-        {/* Collapse/expand toggle — only shown for nodes with children.
+        {/* Collapse/expand toggle - only shown for nodes with children.
             Clicking it toggles children WITHOUT selecting the row (the
             outer button handles selection). stopPropagation prevents the
             row's onClick from also firing. */}
@@ -165,7 +165,7 @@ export function CallTree({ traces, onSelect }: { traces: Trace[]; onSelect: (t: 
       <div className="flex items-center justify-between border-b border-border bg-muted/40 px-4 py-3">
         <h3 className="text-sm font-semibold text-foreground">Agent Call Tree</h3>
         <div className="flex items-center gap-2">
-          {/* Collapse/expand all — saves clicking when a swarm has many
+          {/* Collapse/expand all - saves clicking when a swarm has many
               nested agents. The icons (ChevronsDownUp / ChevronsUpDown)
               match the convention used in IDEs and file explorers. */}
           <button

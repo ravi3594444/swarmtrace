@@ -1,11 +1,7 @@
 """Tests for auto-instrumentation of OpenAI / Anthropic / Gemini / LiteLLM.
 
-OpenAI and Anthropic are real installed SDKs here, so the response objects
-match production shapes exactly. Gemini and LiteLLM are exercised via fake
-modules injected into sys.modules — patch_gemini()/patch_litellm() are
-no-ops if those packages aren't installed, so this is the only way to test
-the wrapping logic without adding heavy optional dependencies to the test
-environment.
+Gemini and LiteLLM go through fake modules in sys.modules; the real packages
+aren't installed and the patchers no-op without them.
 """
 
 import asyncio
@@ -26,10 +22,7 @@ _SAVE_TRACE_FIELD_ORDER = (
 
 @pytest.fixture()
 def records(monkeypatch, fake_runtime):
-    """Capture spans through the Phase 1 runtime seam instead of patching
-    tracer.save_trace. The tuple shape is preserved so every existing
-    row[N] / row[-N] assertion keeps working unchanged.
-    """
+    """Capture saved spans as tuples via the runtime seam."""
     saved = []
 
     def _capture(span):
@@ -45,9 +38,7 @@ def records(monkeypatch, fake_runtime):
     return saved
 
 
-# ---------------------------------------------------------------------------
 # OpenAI
-# ---------------------------------------------------------------------------
 
 def _has_openai() -> bool:
     try:
@@ -171,12 +162,7 @@ def test_patch_openai_records_error_with_zero_tokens(records, monkeypatch):
     reason="openai package not installed",
 )
 def test_patch_openai_redacts_api_key_in_error_message(records, monkeypatch):
-    """LLM auth errors can echo the API key back in the exception message.
-    The auto-instrument path must redact it before saving/enqueuing —
-    this is the PII leak that the original Task 1 commit missed because
-    the args_str/output strings are synthesized ("model=…") and don't
-    carry user content, but the error string DOES (it comes from the
-    provider's exception, which we don't control)."""
+    """Auth errors can echo the API key; it must be redacted before saving."""
     from openai import OpenAI
     from openai.resources.chat.completions import Completions
 
@@ -209,9 +195,7 @@ def test_patch_openai_redacts_api_key_in_error_message(records, monkeypatch):
     assert "AuthenticationError" in error_str
 
 
-# ---------------------------------------------------------------------------
 # Anthropic
-# ---------------------------------------------------------------------------
 
 def _has_anthropic() -> bool:
     try:
@@ -268,10 +252,8 @@ def test_patch_anthropic_records_llm_trace(records, monkeypatch):
     assert llm_row[9] == 12
 
 
-# ---------------------------------------------------------------------------
-# Gemini (google-generativeai) — injected fake module, since the real
+# Gemini (google-generativeai), injected fake module, since the real
 # package isn't installed in this environment.
-# ---------------------------------------------------------------------------
 
 @pytest.fixture()
 def fake_genai(monkeypatch):
@@ -347,9 +329,7 @@ def test_patch_gemini_async_records_llm_trace(records, fake_genai):
     assert llm_row[9] == 16
 
 
-# ---------------------------------------------------------------------------
-# LiteLLM — injected fake module, since the real package isn't installed.
-# ---------------------------------------------------------------------------
+# LiteLLM, injected fake module, since the real package isn't installed.
 
 @pytest.fixture()
 def fake_litellm(monkeypatch):
@@ -394,9 +374,7 @@ def test_patch_litellm_records_llm_trace(records, fake_litellm):
     assert llm_row[9] == 4
 
 
-# ---------------------------------------------------------------------------
 # patch_all() / init()
-# ---------------------------------------------------------------------------
 
 def test_patch_all_does_not_raise(records):
     ai.patch_all()

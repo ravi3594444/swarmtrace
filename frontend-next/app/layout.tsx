@@ -61,9 +61,7 @@ export const metadata: Metadata = {
   },
 }
 
-// Structured data (schema.org) so AI answer engines and search generative
-// experiences can parse what SwarmTrace is, what it costs, and where to get
-// it without having to infer it from prose.
+// schema.org structured data
 const jsonLd = {
   "@context": "https://schema.org",
   "@type": "SoftwareApplication",
@@ -96,36 +94,21 @@ export default function RootLayout({
       signInUrl="/sign-in"
       signUpUrl="/sign-up"
     >
-      {/*
-        suppressHydrationWarning is required here:
-        next-themes writes the theme class (e.g. "dark") to <html> on the client
-        after SSR, which causes a React hydration mismatch without this flag.
-      */}
+      {/* suppressHydrationWarning: next-themes sets the theme class on <html> after SSR */}
       <html
         lang="en"
         suppressHydrationWarning
         className={`${GeistSans.variable} ${GeistMono.variable}`}
       >
         <head>
-          {/* Tabler Icons CDN <link> removed — landing page now uses Lucide
-              icons (already bundled via the lucide-react npm package), which
-              unifies the icon system with the dashboard and removes a
-              third-party network request + render-blocking stylesheet. */}
-          {/* schema.org structured data — lets AI answer engines (ChatGPT,
-              Perplexity, Google AI Overviews, etc.) reliably parse what
-              SwarmTrace is, its price, license, and where to get it. */}
+          {/* schema.org structured data */}
           <script
             type="application/ld+json"
             dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
           />
         </head>
         <body className="font-sans antialiased">
-          {/*
-            attribute="class" is REQUIRED — without it next-themes defaults to
-            data-theme="dark" on <html>, but globals.css uses
-            @custom-variant dark (&:is(.dark *)) which needs the .dark CLASS.
-            Omitting this breaks all dark-mode CSS variables and the sphere color.
-          */}
+          {/* attribute="class" is needed: globals.css keys dark mode off the .dark class */}
           <ThemeProvider
             attribute="class"
             defaultTheme="light"
@@ -133,10 +116,8 @@ export default function RootLayout({
           >
             <IntegrationsProvider>
               {/*
-                The onboarding tour provider lives here, at the root, so a
-                single instance spans the whole app and the overlay survives
-                every route change. It is gated on dashboard routes inside,
-                so it never starts on the marketing or auth pages.
+                Tour provider sits at the root so it survives route changes; it
+                only activates on dashboard routes.
               */}
               <OnboardingTourProvider>
                 {children}

@@ -1,21 +1,7 @@
 /**
- * Test: resolveTraceIdentity — the fix for "kind is hardcoded on the MCP
- * path" (const kind = 'agent' in app/api/mcp/route.ts).
- *
- * Uses Node's built-in node:test runner + tsx (to import .ts directly).
- * Imports the REAL resolveTraceIdentity, same pattern as
- * test-derive-agent-cards.mjs — no inlined copy to go stale.
- *
- * Run:  npm test   (which runs: node --import tsx --test scripts/test-*.mjs)
- *
- * What this guards against:
- *   - Regressing back to a hardcoded kind='agent' for every MCP trace.
- *   - Accepting a tool/llm/function/retrieval trace with no agent_id,
- *     which would silently misattribute it (MCP has no context to infer
- *     the enclosing agent the way the Python SDK's contextvars can).
- *   - Breaking the bare-@observe-style stable-id aggregation for the
- *     'agent' kind (repeat calls of the same function should collapse
- *     into one dashboard card).
+ * Tests for resolveTraceIdentity (lib/resolve-trace-identity.ts), using the
+ * real function. Covers kind defaulting to 'agent', agent_id being required
+ * for non-agent kinds, and stable-id derivation for 'agent' calls.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -24,7 +10,7 @@ import { resolveTraceIdentity } from '../lib/resolve-trace-identity.ts'
 import { stableAgentId } from '../lib/stable-agent-id.ts'
 
 describe('resolveTraceIdentity', () => {
-  test('defaults kind to "agent" when omitted (back-compat with pre-fix callers)', () => {
+  test('defaults kind to "agent" when omitted', () => {
     const result = resolveTraceIdentity({ function: 'my_agent' })
     assert.equal(result.ok, true)
     if (result.ok) assert.equal(result.kind, 'agent')
@@ -47,7 +33,7 @@ describe('resolveTraceIdentity', () => {
     if (result.ok) assert.equal(result.agentId, 'explicit-id')
   })
 
-  test('kind="tool" without agent_id is rejected — MCP has no context to infer it', () => {
+  test('kind="tool" without agent_id is rejected', () => {
     const result = resolveTraceIdentity({ function: 'search_web', kind: 'tool' })
     assert.equal(result.ok, false)
     if (!result.ok) assert.match(result.error, /agent_id is required/)
@@ -88,9 +74,8 @@ describe('resolveTraceIdentity', () => {
     if (result.ok) assert.equal(result.agentName, 'Orchestrator')
   })
 
-  test('regression guard: kind is never silently coerced to "agent" for a non-agent request', () => {
-    // Pre-fix behavior hardcoded `const kind = 'agent'` regardless of any
-    // caller input. This asserts the tool kind actually survives.
+  test('kind is never silently coerced to "agent" for a non-agent request', () => {
+    // the old code hardcoded kind='agent'; make sure the tool kind survives
     const result = resolveTraceIdentity({
       function: 'qdrant_search',
       kind: 'retrieval',

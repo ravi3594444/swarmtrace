@@ -1,49 +1,18 @@
 /**
- * Regression-run payload validation — shared between the /api/regression
- * route and its tests.
+ * Validation for /api/regression payloads, separate from the route so it can
+ * be tested. Follows lib/validate-ingest.ts: free text is truncated to
+ * MAX_TEXT_LEN then PII-redacted before it reaches Supabase.
  *
- * Mirrors lib/validate-ingest.ts conventions: the route imports the
- * validator here, tests import the same functions directly, and free-text
- * fields are truncated to the shared MAX_TEXT_LEN and PII-redacted BEFORE
- * they reach Supabase (defense-in-depth — the SDK redacts too, but any
- * client that posts directly bypasses the SDK).
+ * Payload (sent by swarmtrace.regression.compare with report_to_dashboard,
+ * SDK 0.6.7+): run_id, name, threshold (0..1), version_a_prompt,
+ * version_b_prompt, inputs_count, regressions_count, duration_sec, and
+ * results[] of { input, output_a, output_b, latency_a_sec, latency_b_sec,
+ * similarity, regressed }.
  *
- * The payload shape (sent by swarmtrace.regression.compare(...,
- * report_to_dashboard=True) — SDK 0.6.7+):
- *
- *   {
- *     run_id: "…",                     // client idempotency key (unique per user)
- *     name: "optional run name",
- *     threshold: 0.6,                  // 0..1
- *     version_a_prompt: "…",
- *     version_b_prompt: "…",
- *     inputs_count: 3,
- *     regressions_count: 1,
- *     duration_sec: 12.4,
- *     results: [
- *       {
- *         input: "…",
- *         output_a: "…",
- *         output_b: "…",
- *         latency_a_sec: 1.2,
- *         latency_b_sec: 1.5,
- *         similarity: 0.42,
- *         regressed: true,
- *       }
- *     ]
- *   }
- *
- * Validation rules:
- *   - run_id: required, 1..64 chars, [A-Za-z0-9_-] only (safe to use as an
- *     idempotency key in the DB unique constraint).
- *   - results: required array, capped at MAX_REGRESSION_RESULTS entries.
- *   - Free text (prompts, input, outputs): sliced to MAX_TEXT_LEN then
- *     redacted — same order as the ingest path.
- *   - Numeric fields: coerced with the same rules as ingest (non-finite or
- *     wrong-typed values become 0); similarity is clamped to 0..1.
- *   - `regressed` is recomputed server-side as similarity < threshold so
- *     the flag is always consistent with the run's own threshold, even for
- *     third-party clients that omit or disagree on it.
+ * Rules: run_id is required, 1..64 chars of [A-Za-z0-9_-]. results is a
+ * required array capped at MAX_REGRESSION_RESULTS. Numbers are coerced like
+ * ingest (bad values become 0) and similarity is clamped to 0..1. `regressed`
+ * is recomputed as similarity < threshold, whatever the client sent.
  */
 
 import { redact } from './redact'
@@ -77,7 +46,7 @@ export interface RegressionRun {
 
 export interface ValidationError {
   error: string
-  // Index into the results array, when the error is about one entry.
+  // index into results, when the error is about one entry
   index?: number
 }
 
@@ -105,7 +74,7 @@ export function validateRegressionResult(
   const input = redact(text(p.input))!
   const similarity = clamp01(num(p.similarity))
   const threshold = p.threshold === undefined || p.threshold === null
-    ? 0.6  // SDK default — mirrors DEFAULT_THRESHOLD in swarmtrace/regression.py
+    ? 0.6  // SDK default, mirrors DEFAULT_THRESHOLD in swarmtrace/regression.py
     : clamp01(num(p.threshold))
 
   return {
@@ -116,17 +85,15 @@ export function validateRegressionResult(
       latency_a_sec: Math.max(0, num(p.latency_a_sec)),
       latency_b_sec: Math.max(0, num(p.latency_b_sec)),
       similarity,
-      // Recompute so the flag is always consistent with the run threshold.
+      // recompute so the flag matches the run threshold
       regressed: similarity < threshold,
     },
   }
 }
 
 /**
- * Validate a complete regression-run payload. Returns the normalized run
- * or the first error. On any error the whole payload is rejected (the SDK
- * treats the report as best-effort and just logs, so rejecting is simpler
- * and safer than partial-accept).
+ * Validate a full regression-run payload. Returns the normalized run or the
+ * first error; any error rejects the whole payload.
  */
 export function validateRegressionRun(
   payload: unknown,
@@ -143,7 +110,7 @@ export function validateRegressionRun(
     : null
 
   const threshold = p.threshold === undefined || p.threshold === null
-    ? 0.6  // SDK default — mirrors DEFAULT_THRESHOLD in swarmtrace/regression.py
+    ? 0.6  // SDK default, mirrors DEFAULT_THRESHOLD in swarmtrace/regression.py
     : clamp01(num(p.threshold))
 
   if (!Array.isArray(p.results))
@@ -154,9 +121,8 @@ export function validateRegressionRun(
   const results: RegressionResultInput[] = []
   for (let i = 0; i < p.results.length; i++) {
     const entry = p.results[i]
-    // Check object-ness HERE (before the spread) so a non-object entry
-    // (string, number, array) is rejected with its index instead of being
-    // silently spread into an object of character keys.
+    // Check object-ness before the spread so a non-object entry is rejected
+    // with its index instead of spreading into character keys.
     if (typeof entry !== 'object' || entry === null || Array.isArray(entry))
       return { error: { error: 'each result must be a JSON object', index: i } }
 

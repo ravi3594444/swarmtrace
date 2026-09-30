@@ -66,12 +66,7 @@ export function CommandPalette() {
     }
   }, [])
 
-  // Focus the input and fetch agents each time the palette opens.
-  // Previously this was gated by fetchedRef (fetch once per session),
-  // which meant new agents that started after the first open wouldn't
-  // appear until a page reload. Re-fetching on every open keeps the
-  // agent list fresh — the request is cheap (small payload) and the
-  // palette is user-initiated so the latency is expected.
+  // Focus the input and refetch agents on every open so new agents show up.
   useEffect(() => {
     if (!open) return
     inputRef.current?.focus()
@@ -130,13 +125,8 @@ export function CommandPalette() {
     })),
   ]
 
-  // Fuzzy match: for each item, compute a match score against the query.
-  // The algorithm walks the query characters in order, finding each one in
-  // the target string. Consecutive matches and word-boundary matches (char
-  // after a space or at position 0) score higher. Items where not all query
-  // chars are found in order are filtered out. This lets users type "ov"
-  // to match "Overview", "st" to match "Settings", etc. — much more
-  // forgiving than the old strict substring filter.
+  // Fuzzy match: query chars must appear in order ("ov" -> Overview).
+  // Consecutive and word-start matches score higher.
   const q = query.trim().toLowerCase()
   const filtered: Item[] = q
     ? items

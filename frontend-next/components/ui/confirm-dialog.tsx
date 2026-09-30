@@ -15,16 +15,9 @@ interface ConfirmDialogProps {
   onCancel: () => void
 }
 
-// A small dependency-free replacement for window.confirm() on destructive
-// actions. window.confirm() is a blocking native dialog that's easy to
-// dismiss with a stray Enter/click and gives no room to make the
-// consequences of an irreversible action clear — not appropriate for
-// something like permanent account deletion.
-//
-// Split into an outer wrapper (no hooks, just an open/closed gate) and inner
-// content that's only mounted while open=true. Mounting fresh each time
-// gives clean initial state (typed='') for free instead of resetting it in
-// an effect keyed on `open`.
+// Replacement for window.confirm() on destructive actions like account
+// deletion. The inner content only mounts while open, so `typed` starts
+// empty every time without an effect to reset it.
 export function ConfirmDialog(props: ConfirmDialogProps) {
   if (!props.open) return null
   return <ConfirmDialogContent {...props} />
@@ -45,9 +38,7 @@ function ConfirmDialogContent({
   const titleId = useId()
   const descId = useId()
 
-  // Focus trap: keeps Tab inside the dialog and restores focus to the
-  // trigger button when it closes. Previously Tab could escape to the
-  // background page.
+  // Keep Tab inside the dialog; focus returns to the trigger on close.
   useFocusTrap(dialogRef, true)
 
   useEffect(() => {

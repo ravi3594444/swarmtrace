@@ -1,9 +1,4 @@
-"""Executable architecture checks.
-
-These tests keep the dependency boundaries documented in docs/ARCHITECTURE.md
-from drifting as the codebase grows. They are intentionally lightweight AST
-checks, not a full import-linter dependency.
-"""
+"""AST checks that keep the dependency boundaries from docs/ARCHITECTURE.md."""
 
 from __future__ import annotations
 
@@ -15,17 +10,11 @@ import pytest
 
 try:  # Python 3.11+
     import tomllib
-except ModuleNotFoundError:  # Python 3.10 — tomllib landed in 3.11
+except ModuleNotFoundError:  # Python 3.10, tomllib landed in 3.11
     try:
         import tomli as tomllib
     except ModuleNotFoundError:  # pragma: no cover - pytest supplies tomli here
-        # In practice unreachable: pytest itself declares
-        # `tomli>=1; python_version < "3.11"`, so anywhere pytest runs on 3.10
-        # tomli is already installed and these checks really do run. This
-        # branch only guards a hand-built environment — and it skips rather
-        # than erroring, because a bare `import tomllib` here took the WHOLE
-        # suite down at collection time on 3.10 (the version pyproject.toml
-        # claims to support), which is how 3.10 went untested for so long.
+        # pytest pulls in tomli on 3.10, so this only matters for hand-built envs
         pytest.skip(
             "needs tomllib (Python 3.11+) or tomli",
             allow_module_level=True,
@@ -36,12 +25,7 @@ PACKAGE = ROOT / "swarmtrace"
 
 
 def _distribution_packages() -> set[str]:
-    """Discover packages using the include patterns configured in pyproject.
-
-    Architecture checks should run with only the standard library and pytest.
-    Importing ``setuptools`` here made test collection depend on a build-time
-    package that is not necessarily installed in source checkouts.
-    """
+    """Discover packages from the include patterns in pyproject, stdlib only."""
     config = tomllib.loads((ROOT / "pyproject.toml").read_text())
     patterns = config["tool"]["setuptools"]["packages"]["find"]["include"]
     packages = {

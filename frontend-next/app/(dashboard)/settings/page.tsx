@@ -8,17 +8,11 @@ import { fetchApiKeys, createApiKey, revokeApiKey, fetchBillingInfo } from '@/li
 import { useIntegrations, type Integration } from '@/contexts/IntegrationsContext'
 import { SkeletonCard } from '@/components/skeleton'
 
-// ─── Types ────────────────────────────────────────────────────────────────────
+// Types
 interface ApiKey { id: string; name: string; created: string; last_used?: string | null; prefix: string }
 
-// ─── Billing Page ─────────────────────────────────────────────────────────────
 function BillingTab() {
-  // `plan` and `traces_limit` come from the billing API so the UI never
-  // disagrees with the backend about which plan the user is on. The plan
-  // cards below still hardcode the marketing copy for Hobby/Pro/Enterprise,
-  // but the "current plan" highlight is driven by `plan` from the API —
-  // so when billing goes live and the API starts returning 'Pro', the
-  // highlight moves automatically.
+  // Plan cards are static copy; the "current plan" highlight follows `plan` from the API.
   const [usage, setUsage] = useState<{
     plan?: string
     traces_used?: number
@@ -245,7 +239,7 @@ def my_agent(prompt: str) -> str:
       setCopiedSnippet(true)
       setTimeout(() => setCopiedSnippet(false), 2000)
     } catch {
-      // Non-secure context or permission denied — user can select manually.
+      // Non-secure context or permission denied - user can select manually.
       // The snippet is visible in the <pre> below for manual copy.
     }
   }
@@ -327,7 +321,7 @@ def my_agent(prompt: str) -> str:
   )
 }
 
-// ─── Main Page ────────────────────────────────────────────────────────────────
+// Main Page
 export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState('general')
 
@@ -357,7 +351,7 @@ export default function SettingsPage() {
     fullName: user?.fullName ?? user?.firstName ?? '',
     email: user?.primaryEmailAddress?.emailAddress ?? '',
   }))
-  // Compare on the derived *values* rather than the user object reference —
+  // Compare on the derived *values* rather than the user object reference
   // Clerk can mutate its user resource in place, so identity checks miss the
   // moment the profile data becomes available.
   const clerkFullName = user?.fullName ?? user?.firstName ?? ''
@@ -416,10 +410,8 @@ export default function SettingsPage() {
     }
   }, [])
 
-  // Load API keys when the API tab is activated. Inlined here (NOT calling
-  // loadApiKeys) so all setState calls are inside the async function after
-  // the first await — avoids the cascading-render lint violation. The
-  // cancelled flag prevents setState after unmount.
+  // Load API keys when the API tab opens. Inlined rather than calling
+  // loadApiKeys so setState only happens after the first await.
   useEffect(() => {
     if (activeTab !== 'api') return
     let cancelled = false
@@ -603,7 +595,7 @@ export default function SettingsPage() {
           {/* Content */}
           <div className="lg:col-span-3 space-y-6">
 
-            {/* ── General ─────────────────────────────────────────────── */}
+            {/* General */}
             {activeTab === 'general' && (
               <>
                 <div className="bg-card border border-border rounded-xl p-6">
@@ -701,7 +693,7 @@ export default function SettingsPage() {
               </>
             )}
 
-            {/* ── API Keys ─────────────────────────────────────────────── */}
+            {/* API Keys */}
             {activeTab === 'api' && (
               <div className="space-y-6">
                 {/* Quick Setup */}
@@ -811,10 +803,10 @@ export default function SettingsPage() {
               </div>
             )}
 
-            {/* ── Billing ──────────────────────────────────────────────── */}
+            {/* Billing */}
             {activeTab === 'billing' && <BillingTab />}
 
-            {/* ── Integrations ─────────────────────────────────────────── */}
+            {/* Integrations */}
             {activeTab === 'integrations' && (
               <div className="space-y-6">
                 {integrationError && (

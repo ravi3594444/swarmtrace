@@ -3,15 +3,8 @@
 import { useEffect, useState } from 'react'
 import { Star, Download } from 'lucide-react'
 
-/**
- * SocialProofBadges — fetches GitHub stars + PyPI download count on mount
- * and renders them as small badges. Gives new visitors immediate trust
- * signals.
- *
- * Client-side fetch (the hero is a client component, so this can't be a
- * server component). The APIs are public, no auth needed. If either fetch
- * fails, the badge is omitted rather than showing "0".
- */
+// GitHub stars + PyPI downloads, fetched client-side from public APIs.
+// A badge is skipped if its fetch fails instead of showing "0".
 function formatNumber(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`

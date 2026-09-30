@@ -14,28 +14,17 @@ import { filterTracesByRange } from '@/lib/trace-utils'
 import { AlertTriangle } from 'lucide-react'
 
 /**
- * Home — the plain-English "how is it going?" page for non-technical
- * users. It answers three questions at a glance: Is everything OK? What
- * did it do today? What needs my attention? Every number and group is
- * derived from the same trace data (and the same math) as the developer
- * pages, so nothing here contradicts Overview / Traces / Failures — the
- * difference is purely in how it's phrased and how little is shown.
- *
- * Deliberately absent (kept on the advanced pages): date pickers, charts,
- * raw JSON, token counts, trace IDs, span trees. Copy rules for this page
- * and its components: no "trace/span/token/latency/p95/regression" — say
- * "request/run/usage/response time/issue" instead.
+ * Plain-English "how is it going today?" page. Numbers come from the same
+ * trace data as the developer pages. Copy here avoids jargon: say
+ * "request/run/response time/issue", not trace/span/latency.
  */
 export default function HomePage() {
   const { traces, truncated, loading, isLive } = useSwarmTraces()
 
-  // Fixed window: today (local midnight). No picker — this page answers
-  // "how is TODAY going"; wider windows live on the advanced pages.
+  // Fixed window: since local midnight. No picker on this page.
   const todayTraces = useMemo(() => filterTracesByRange(traces, 'today'), [traces])
 
-  // First-run detection — same pattern as Overview: show the setup guide
-  // only to a brand-new user (never had traces per localStorage), not to
-  // an existing user who simply has a quiet day.
+  // First-run detection, same as Overview.
   const [firstRunChecked, setFirstRunChecked] = useState(false)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- post-hydration localStorage read; runs once.

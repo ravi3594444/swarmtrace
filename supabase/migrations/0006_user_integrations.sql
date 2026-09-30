@@ -1,5 +1,5 @@
 -- 0006_user_integrations.sql
--- Persists per-user integration enabled/disabled state for Settings → Integrations tab.
+-- Persists per-user integration enabled/disabled state for Settings -> Integrations tab.
 -- Run after 0005_production_fixes.sql in the Supabase SQL editor.
 
 CREATE TABLE IF NOT EXISTS public.user_integrations (

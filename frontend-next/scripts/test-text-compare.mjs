@@ -1,6 +1,4 @@
-/**
- * Test: text similarity + line diff used by the Compare view.
- */
+/** Tests for the text similarity and line diff used by the Compare view. */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 

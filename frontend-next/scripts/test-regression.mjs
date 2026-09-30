@@ -1,27 +1,9 @@
 /**
- * Test: lib/validate-regression.ts — the /api/regression payload contract.
- *
- * The dashboard exposure for swarmtrace.regression (the PRD-flagged
- * unfinished item) accepts one payload shape from SDK 0.6.7+:
- *
- *   compare(..., report_to_dashboard=True) → POST /api/regression
- *
- * Covers:
- *   1. A well-formed run validates and normalizes (name sliced, optional
- *      prompts pass through, threshold defaults to 0.6 when absent).
- *   2. run_id is required, [A-Za-z0-9_-], 1..64 chars (idempotency key).
- *   3. results must be an array, capped at MAX_REGRESSION_RESULTS.
- *   4. Per-entry validation: non-object rejected, missing input rejected
- *      (with the entry index in the error), similarity clamped to 0..1,
- *      and `regressed` recomputed server-side as similarity < threshold.
- *   5. Free text is truncated to MAX_TEXT_LEN and PII-redacted before the
- *      row hits Supabase (same boundary defense as ingest).
- *   6. Non-object bodies are rejected.
- *
- * The HTTP route (app/api/regression/route.ts) delegates validation to
- * these pure functions; route-only concerns (auth, rate limits, body size,
- * the Supabase RPC) are integration concerns covered by the route code
- * review + Postgres integration tests.
+ * Tests for lib/validate-regression.ts, the /api/regression payload
+ * contract: normalization and defaults, run_id format, results cap,
+ * per-entry validation (index in errors, similarity clamped, `regressed`
+ * recomputed), and truncation plus PII redaction of free text. The route
+ * itself only adds auth, rate limiting and the RPC.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -57,7 +39,7 @@ function mkRun(overrides = {}) {
   }
 }
 
-describe('validateRegressionRun — well-formed payloads', () => {
+describe('validateRegressionRun: well-formed payloads', () => {
   test('accepts a well-formed run and preserves all fields', () => {
     const { run, error } = validateRegressionRun(mkRun())
     assert.equal(error, undefined)
@@ -117,7 +99,7 @@ describe('validateRegressionRun — well-formed payloads', () => {
   })
 })
 
-describe('validateRegressionRun — rejection cases', () => {
+describe('validateRegressionRun: rejection cases', () => {
   test('rejects non-object bodies', () => {
     for (const bad of [null, 42, 'str', [1, 2], true]) {
       const { error } = validateRegressionRun(bad)
@@ -166,7 +148,7 @@ describe('validateRegressionRun — rejection cases', () => {
   })
 })
 
-describe('validateRegressionRun — PII redaction at the boundary', () => {
+describe('validateRegressionRun: PII redaction at the boundary', () => {
   test('redacts emails and API keys from input/output/prompts', () => {
     const { run } = validateRegressionRun(mkRun({
       version_a_prompt: 'email admin@example.com key sk-abcdefghijklmnopqrstuvwxyz123456',
@@ -185,7 +167,7 @@ describe('validateRegressionRun — PII redaction at the boundary', () => {
   })
 })
 
-describe('validateRegressionResult — standalone entry validation', () => {
+describe('validateRegressionResult: standalone entry validation', () => {
   test('clamps similarity to 0..1 and coerces latencies', () => {
     const { result } = validateRegressionResult({
       input: 'x', similarity: 5, latency_a_sec: -3, latency_b_sec: 'nope',
@@ -195,11 +177,11 @@ describe('validateRegressionResult — standalone entry validation', () => {
     assert.equal(result.latency_b_sec, 0)
   })
 
-  test('defaults similarity to 0 (neutral-ish floor) when absent', () => {
+  test('defaults similarity to 0 when absent', () => {
     const { result } = validateRegressionResult({ input: 'x' })
     assert.equal(result.similarity, 0)
-    // 0 < default threshold 0.6 → flagged as regressed (fail-safe: unknown
-    // similarity is treated as a regression, never a silent pass).
+    // 0 < default threshold 0.6, so it's flagged (unknown similarity counts
+    // as a regression, never a silent pass)
     assert.equal(result.regressed, true)
   })
 })

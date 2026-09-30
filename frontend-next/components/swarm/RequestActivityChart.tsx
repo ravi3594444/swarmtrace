@@ -8,20 +8,16 @@ export interface ActivityPoint {
   requests: number
 }
 
-/**
- * Request-activity area chart for the Overview page. Split into its own
- * component (loaded via next/dynamic in app/overview/page.tsx) so recharts
- * — ~492 KB across 3 chunks, per the bundle audit — isn't parsed/executed
- * as part of the page's initial JS, only once this chart actually renders.
- */
+// Area chart for the Overview page. Split out so recharts can be loaded
+// with next/dynamic.
 export function RequestActivityChart({ activity }: { activity: ActivityPoint[] }) {
   return (
     <ResponsiveContainer width="100%" height="100%">
       <AreaChart data={activity} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
         {/* Reserved accent: this blue is spent nowhere else in the
             dashboard chrome. It's the one moment the palette
-            breaks from achromatic — when real trace data starts
-            drawing here — so it reads as a distinct, earned
+            breaks from achromatic - when real trace data starts
+            drawing here - so it reads as a distinct, earned
             signal instead of matching every other button/border. */}
         <defs>
           <linearGradient id="colorReq" x1="0" y1="0" x2="0" y2="1">

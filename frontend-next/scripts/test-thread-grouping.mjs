@@ -1,6 +1,4 @@
-/**
- * Test: thread grouping contract for the Threads dashboard.
- */
+/** Tests for thread grouping on the Threads page. */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 

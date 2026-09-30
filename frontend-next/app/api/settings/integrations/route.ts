@@ -11,7 +11,7 @@ const INTEGRATIONS_META = [
   { id: 'regression-detector', name: 'Regression Detector', description: 'LLM-based output regression detection across agent runs',          requires: 'Optional: any LLM callable (or litai + LIGHTNING_API_KEY)',  default_connected: false },
 ]
 
-// Human-driven settings toggle, not a poller — 60/min is generous headroom.
+// Human-driven settings toggle, not a poller; 60/min is plenty.
 const rateLimiter = createUserRateLimiter({ limit: 60, prefix: 'st_user_rl_integrations' })
 
 export async function GET() {
@@ -21,15 +21,13 @@ export async function GET() {
 
   let savedRows: Array<{ integration_id: string; connected: boolean }> = []
   try {
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT in the Authorization header). The user_id filter in the URL is
-    // now defence-in-depth, not the only guard.
+    // RLS is enforced via the Clerk JWT; the user_id filter is a second guard.
     savedRows = await supaUserRequest(
       `user_integrations?user_id=eq.${encodeURIComponent(userId)}&select=integration_id,connected`,
       userId
     ) || []
   } catch {
-    // table may not exist yet — fall back to defaults
+    // table may not exist yet, fall back to defaults
   }
 
   const savedMap = new Map(savedRows.map(r => [r.integration_id, r.connected]))

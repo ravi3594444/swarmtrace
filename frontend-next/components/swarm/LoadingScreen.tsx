@@ -8,10 +8,7 @@ import { DotLottie } from '@lottiefiles/dotlottie-web'
 // (which would be blocked by connect-src CSP)
 DotLottie.setWasmUrl('/dotlottie-player.wasm')
 
-// Read prefers-reduced-motion via useSyncExternalStore — the proper
-// React 18+ pattern for subscribing to an external value that lives
-// outside React (a media query). This avoids the set-state-in-effect
-// lint violation and is SSR-safe (the server snapshot defaults to false).
+// prefers-reduced-motion via useSyncExternalStore; server snapshot is false.
 const reducedMotionSubscribe = (cb: () => void) => {
   if (typeof window === 'undefined') return () => {}
   const mq = window.matchMedia('(prefers-reduced-motion: reduce)')

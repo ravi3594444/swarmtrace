@@ -1,9 +1,4 @@
-/**
- * Test: Trace Architecture summary.
- *
- * The dashboard Architecture view must be derived from canonical trace fields
- * only, so it works for SDK, MCP, and OTLP spans without provider-specific UI.
- */
+/** Tests for the architecture summary, which uses canonical trace fields only so it works for SDK, MCP and OTLP spans. */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 

@@ -24,13 +24,13 @@ def scrape(url: str, verbose=True, kind: str = "tool"):
     'function' for generic function calls, or 'retrieval' when the
     scrape is part of a RAG document-loading pipeline (matches the
     kind taxonomy in docs/SDK_DASHBOARD_CONTRACT.md). Whatever you
-    pick rolls up into the enclosing @observe agent's stats — it
+    pick rolls up into the enclosing @observe agent's stats, it
     never becomes its own phantom agent card.
 
     Raises the underlying exception on failure (after saving the trace)
     so callers are not silently handed a None.
     """
-    trace_id = uuid.uuid4().hex  # full 32-char hex — short IDs are collision-prone
+    trace_id = uuid.uuid4().hex  # full 32-char hex, short IDs are collision-prone
     parent_id = _current_parent()
     agent_id, agent_name = _current_agent() or (None, None)
     token = _parent_ctx.set(trace_id)

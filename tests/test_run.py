@@ -16,10 +16,7 @@ _SAVE_TRACE_FIELD_ORDER = (
 
 @pytest.fixture()
 def records(monkeypatch, fake_runtime):
-    """Capture spans through the Phase 1 runtime seam instead of patching
-    tracer.save_trace. The tuple shape is preserved so every existing
-    row[N] / row[-N] assertion keeps working unchanged.
-    """
+    """Capture saved spans as tuples via the runtime seam."""
     saved = []
 
     def _capture(span):
@@ -218,11 +215,7 @@ def test_nested_async_span_under_run(records):
 
 
 def test_current_span_attributes_emits_event():
-    """current_span_attributes must emit an event without crashing.
-
-    Regression: earlier code passed attrs as a positional arg to emit(),
-    which only accepts keyword arguments.
-    """
+    """current_span_attributes must emit an event without crashing."""
     from swarmtrace import events
 
     captured = {}

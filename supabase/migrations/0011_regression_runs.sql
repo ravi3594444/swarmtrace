@@ -1,25 +1,12 @@
 -- 0011_regression_runs.sql
--- Prompt-regression runs reported by the SDK's swarmtrace.regression.compare().
+-- Prompt-regression runs reported by swarmtrace.regression.compare().
 --
--- Background
--- ----------
--- docs/PRD.md §17 flags regression.py (LLM-based prompt-regression scoring) as
--- a public Python API that was never exposed on the dashboard. This migration
--- adds the storage half of that exposure:
+--   SDK: POST /api/regression (X-API-Key) -> insert_regression_run_for_key
+--   UI:  GET /api/regression (Clerk JWT) -> RLS select on regression_runs
 --
---   * SDK (Python)  → POST /api/regression  (X-API-Key)  → insert_regression_run_for_key
---   * Dashboard UI  → GET  /api/regression  (Clerk JWT)  → RLS select on regression_runs
---
--- The write path follows migration 0010's tenant-isolation pattern exactly:
--- the SDK authenticates with an API key, and insert_regression_run_for_key is
--- a SECURITY DEFINER function that resolves key_hash → user_id inside
--- Postgres and stamps user_id itself. The app layer never chooses the tenant
--- for the write path, so a buggy/compromised service-role caller cannot
--- insert a regression run under an arbitrary user_id.
---
--- Idempotency: (user_id, run_id) is unique. The SDK generates a fresh run_id
--- per compare() call and retries on network failure; ON CONFLICT DO NOTHING
--- makes a retried POST a no-op instead of a duplicate row.
+-- The write path follows 0010: insert_regression_run_for_key is SECURITY DEFINER
+-- and resolves key_hash to user_id inside Postgres.
+-- (user_id, run_id) is unique; ON CONFLICT DO NOTHING makes retried POSTs no-ops.
 
 CREATE TABLE IF NOT EXISTS public.regression_runs (
     id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -40,7 +27,7 @@ CREATE TABLE IF NOT EXISTS public.regression_runs (
 CREATE INDEX IF NOT EXISTS regression_runs_user_created_idx
     ON public.regression_runs (user_id, created_at DESC);
 
--- ── RLS: dashboard reads only ever see the caller's own runs ────────────────
+-- RLS: dashboard reads only ever see the caller's own runs
 ALTER TABLE public.regression_runs ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "regression_runs_select_own" ON public.regression_runs;
@@ -48,12 +35,10 @@ CREATE POLICY "regression_runs_select_own" ON public.regression_runs
     FOR SELECT
     USING (user_id = auth.jwt() ->> 'sub');
 
--- The insert path is intentionally NOT exposed to the JWT role: writes come
--- exclusively through the API-key RPC below (service_role), which stamps the
--- tenant itself. A per-user INSERT policy would let a client with a valid
--- session write runs with an arbitrary user_id via the REST API.
+-- No INSERT policy for the JWT role: writes go through the API-key RPC below,
+-- which stamps the tenant itself.
 
--- ── Write path: key-hash-scoped insert ──────────────────────────────────────
+-- Write path: key-hash-scoped insert
 CREATE OR REPLACE FUNCTION public.insert_regression_run_for_key(
     p_key_hash          TEXT,
     p_run_id            TEXT,
@@ -103,11 +88,8 @@ BEGIN
 END;
 $$;
 
--- anon/authenticated are revoked EXPLICITLY (not just PUBLIC): on Supabase
--- projects whose default privileges (ALTER DEFAULT PRIVILEGES ... GRANT
--- EXECUTE ON FUNCTIONS) hand them a DIRECT grant on newly created functions,
--- a PUBLIC revoke alone leaves that direct grant in place. (This exact gap
--- made this function anon/authenticated-callable in production once.)
+-- Revoke anon/authenticated explicitly: Supabase default privileges grant them
+-- a direct EXECUTE on new functions, which a PUBLIC revoke does not remove.
 REVOKE ALL ON FUNCTION public.insert_regression_run_for_key(
     TEXT, TEXT, TEXT, DOUBLE PRECISION, TEXT, TEXT,
     INTEGER, INTEGER, DOUBLE PRECISION, JSONB, TIMESTAMPTZ

@@ -1,17 +1,10 @@
 'use client'
 
 /**
- * OnboardingTour — a guided, step-by-step product tour for new users.
- *
- * New sign-ups are walked through each dashboard feature one at a time with a
- * spotlight over the relevant sidebar item and a short explanation, because
- * several features (Threads, Compare, Failure clustering) aren't obvious at
- * first glance. The tour auto-starts once per user (tracked in localStorage,
- * keyed by the Clerk user id) and can be replayed anytime from the sidebar.
- *
- * It is intentionally dependency-free: the spotlight is a transparent element
- * with a large box-shadow that dims everything else, and the tooltip is
- * positioned against the target's bounding rect and clamped to the viewport.
+ * Guided product tour with a spotlight over sidebar items. Auto-starts once
+ * per Clerk user (tracked in localStorage); replayable from the sidebar.
+ * No dependencies: the spotlight is a box-shadow and the card is clamped to
+ * the viewport.
  */
 
 import {
@@ -24,12 +17,8 @@ import { X, ChevronLeft, ChevronRight } from 'lucide-react'
 import { TOUR_STEPS, type TourStep } from './tour-steps'
 
 const STORAGE_PREFIX = 'swarmtrace-onboarding-completed:'
-/**
- * The tour is mounted app-wide (in the root layout), which means it also
- * renders on the marketing and auth pages. It must only ever run inside the
- * dashboard, so both auto-start and the overlay itself are gated on these
- * routes.
- */
+// Mounted in the root layout, so auto-start and the overlay are limited to
+// these routes.
 const DASHBOARD_ROUTES = new Set([
   '/overview', '/agents', '/traces', '/threads', '/metrics',
   '/compare', '/failures', '/settings', '/home', '/network', '/regression',
@@ -40,9 +29,7 @@ function isDashboardRoute(pathname: string | null | undefined): boolean {
   return DASHBOARD_ROUTES.has(`/${pathname.split('/')[1] ?? ''}`)
 }
 
-// Per-tab keys so an in-progress tour survives a page reload. The provider
-// itself no longer remounts on navigation, so these are only a reload safety
-// net, not the mechanism the tour runs on.
+// Per-tab keys so an in-progress tour survives a reload.
 const RUNNING_KEY = 'swarmtrace-onboarding-running'
 const STEP_KEY = 'swarmtrace-onboarding-step'
 const SPOTLIGHT_PADDING = 8
@@ -53,7 +40,7 @@ type TourContextValue = { startTour: () => void }
 
 const TourContext = createContext<TourContextValue | null>(null)
 
-/** Access `startTour()` — e.g. from a "Take a tour" button in the sidebar. */
+/** Access `startTour()` - e.g. from a "Take a tour" button in the sidebar. */
 export function useOnboardingTour(): TourContextValue {
   const ctx = useContext(TourContext)
   if (!ctx) {
@@ -265,13 +252,8 @@ function TourOverlay({
     if (nextRoute) router.prefetch(nextRoute)
   }, [index, router])
 
-  // Navigate to the step's route before measuring the target. This is what
-  // makes the tour actually show each page instead of just spotlighting
-  // sidebar entries from /overview. We skip the push when already on the
-  // target route (e.g. the welcome step has no route, or the user manually
-  // navigated to the same page). `router.push` is the only side effect here
-  // — no setState, so no cascading render. The pathname change triggers the
-  // measure effect below to re-attempt targeting on the new page.
+  // Go to the step's route before measuring its target. The pathname change
+  // re-triggers the measure effect below.
   useEffect(() => {
     if (!step.route) return
     if (pathname === step.route) return
@@ -280,9 +262,7 @@ function TourOverlay({
     router.replace(step.route)
   }, [step.route, pathname, router])
 
-  // Locate the target element, retrying briefly while the page mounts.
-  // Retries matter most right after a route push (above), when the new
-  // page's sidebar item may not be in the DOM yet on the first frame.
+  // Find the target element, retrying briefly while the new page mounts.
   useEffect(() => {
     let cancelled = false
     let raf = 0
@@ -294,11 +274,8 @@ function TourOverlay({
         return
       }
       if (step.target && tries > 0) {
-        // Hold the previous rect while we retry. Clearing it here would drop
-        // the spotlight and snap the card to the centre of the screen for the
-        // frames a page swap takes — the flicker the tour used to show on
-        // every step. The rect only really goes away once the retries are
-        // exhausted, or when the step has no target at all.
+        // Keep the previous rect while retrying so the spotlight doesn't
+        // flicker between pages.
         raf = window.setTimeout(() => attempt(tries - 1), 80)
         return
       }
@@ -377,7 +354,7 @@ function TourOverlay({
         <div style={spotlight} aria-hidden />
       ) : (
         // No target: plain dim backdrop for the centred welcome/finish cards.
-        // Only those click to dismiss — a targeted step whose element is
+        // Only those click to dismiss - a targeted step whose element is
         // briefly missing must not close the tour under a stray click.
         <div
           className="fixed inset-0 z-[1000] bg-[rgba(10,10,10,0.55)]"
@@ -403,10 +380,7 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
   const pathname = usePathname()
   const onDashboard = isDashboardRoute(pathname)
   const [active, setActive] = useState(false)
-  // Pulled out to a primitive on its own line: closing over `user?.id`
-  // directly inside the callback made the React Compiler infer a dependency
-  // on the whole `user` object (coarser than the declared [user?.id]),
-  // which meant it couldn't preserve the manual memoization below.
+  // Kept as a primitive so the React Compiler doesn't depend on the whole `user`.
   const userId = user?.id
 
   const finish = useCallback(() => {
@@ -443,21 +417,17 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
   // Resume an in-progress tour after a reload, or auto-start once for users
   // who haven't seen it yet. This has to live in an effect (not derived
   // during render) because sessionStorage/localStorage don't exist during
-  // SSR/hydration — reading them earlier would desync server and client
+  // SSR/hydration - reading them earlier would desync server and client
   // output. The two setActive(true) calls below are an intentional
   // post-hydration sync with those browser-only APIs, not an accidental
   // render cascade, so the set-state-in-effect rule is disabled locally.
   //
-  // Auto-start is GATED on `swarmtrace:has_traces === '1'` so that brand-new
-  // users (who are seeing <FirstRunEmptyState> on /overview) don't get two
-  // overlapping onboarding experiences at once. Those users reach the tour
-  // via the explicit "Take the tour" button in FirstRunEmptyState instead.
-  // Returning users who somehow never saw the tour still get auto-started
-  // because they have traces (has_traces === '1') and seen === false.
+  // Auto-start needs `swarmtrace:has_traces === '1'` so new users don't get
+  // the tour on top of the setup guide.
   useEffect(() => {
     if (typeof window === 'undefined') return
     // The provider is app-wide now, so never start (or resume) the tour on the
-    // landing, auth or legal pages — none of its targets exist there.
+    // landing, auth or legal pages - none of its targets exist there.
     if (!onDashboard) return
     let running = false
     try {
@@ -478,10 +448,8 @@ export function OnboardingTourProvider({ children }: { children: React.ReactNode
       seen = false
     }
     if (seen) return
-    // Don't auto-start the tour for brand-new users who are still on the
-    // first-run empty state — they get the 3-step setup guide instead, and
-    // can launch the tour explicitly via "Take the tour". This avoids the
-    // two-overlapping-onboarding-experiences problem.
+    // Brand-new users get the setup guide instead; they can start the tour
+    // from its "Take the tour" button.
     let hasTraces = false
     try {
       hasTraces = window.localStorage.getItem('swarmtrace:has_traces') === '1'

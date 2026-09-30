@@ -1,50 +1,30 @@
 /**
- * Schema health check — verifies the Supabase project actually has the
- * objects the app depends on, and names the exact migration file to run
- * when something is missing.
+ * Schema health check for GET /api/health/db. Verifies the Supabase project
+ * has the tables, columns and RPCs the app needs and names the migration file
+ * to run when something is missing. Pure function with an injected fetch so
+ * it tests without network or env.
  *
- * Serves GET /api/health/db. Written as a pure function with an injected
- * fetch so it is unit-testable without network, Next, or env vars.
+ * It's read-only: a reachability probe, `GET <table>?select=<cols>&limit=0`
+ * per column group (PostgREST's error text says what's missing), and each
+ * *_for_key RPC called with a fake key hash and its full parameter list.
+ * Those RPCs validate the key before writing, so 400/28000 means the function
+ * exists with the current signature and PGRST202 means it's missing or stale.
  *
- * WHY THIS EXISTS: "valid API key, zero traces on dashboard, opaque 500s"
- * is what you get when the dashboard is deployed but its migrations were
- * never applied (or only 0000 was). Before this endpoint, the only way to
- * discover that was reading Vercel function logs. Now:
- *
- *     curl https://<deployment>/api/health/db
- *     → { ok: false, missingMigrations: ["0010_tenant_isolation_ingest.sql"], … }
- *
- * WHAT IT CHECKS (read-only, no user data touched):
- *   1. PostgREST reachability.
- *   2. Every table/column group the app reads or writes, via
- *      `GET <table>?select=<cols>&limit=0` — PostgREST answers 200 only if
- *      ALL selected columns exist, and its error text (42P01 / 42703 /
- *      "column … does not exist") tells us exactly what's missing.
- *   3. Every SECURITY DEFINER RPC, probed with a syntactically-valid fake
- *      key hash and ITS FULL parameter list. All four *_for_key functions
- *      resolve the key FIRST and raise `invalid_api_key` (SQLSTATE 28000)
- *      before writing anything, so a 400/28000 answer proves the function
- *      exists with the current signature. PGRST202 proves it is missing —
- *      including "exists but with an older signature" (PostgREST matches
- *      RPCs by name+parameter names, so passing the full 2010-era arg list
- *      fails against any stale definition).
- *
- * SECURITY: results reveal which of this (open-source) project's own
- * schema objects exist — no user data, no key material, no row counts.
- * The route adds per-IP rate limiting.
+ * The result only says which of the project's own schema objects exist, no
+ * user data. The route adds per-IP rate limiting.
  */
 
 import { MIGRATION_HINT } from './ingest-errors'
 
-export const FAKE_KEY_HASH = 'f'.repeat(64) // 64 hex chars: passes length guard, matches nothing
+export const FAKE_KEY_HASH = 'f'.repeat(64) // 64 hex chars: passes the length guard, matches nothing
 
 export interface SchemaCheck {
   /** Human-readable check name, e.g. "traces metadata columns". */
   name: string
   ok: boolean
-  /** Which migration file provides this object (populated when ok=false). */
+  /** Migration file that provides this object (set when ok=false). */
   fix?: string
-  /** Class of failure for quick scanning: 'unreachable' | 'missing' | 'error'. */
+  /** 'unreachable' | 'missing' | 'error' */
   failure?: 'unreachable' | 'missing' | 'error' | 'misconfigured'
 }
 
@@ -63,8 +43,7 @@ export interface TableCheck {
   fix: string
 }
 
-/** Column-group checks. Grouped so a failure names the precise file.
- * Exported for tests and docs generation. */
+/** Column-group checks, grouped so a failure names the exact migration file. Exported for tests. */
 export const TABLE_CHECKS: TableCheck[] = [
   { name: 'api_keys table',               table: 'api_keys',        fix: '0000_init_tables.sql',
     columns: ['id', 'key_hash', 'key_prefix', 'user_id', 'name', 'created_at', 'last_used', 'revoked'] },
@@ -94,10 +73,10 @@ export interface RpcCheck {
 }
 
 /**
- * RPC probes — EVERY parameter of the current signature is sent so that a
- * stale (older-signature) definition fails the match, not just a missing
- * one. All functions validate the key first, so with a fake hash they
- * answer 400/28000 'invalid_api_key' and write nothing. Exported for tests.
+ * RPC probes. Every parameter of the current signature is sent so a stale
+ * older-signature definition fails the match, not just a missing one. The
+ * functions check the key first, so a fake hash gets 400/28000 and nothing
+ * is written. Exported for tests.
  */
 export const RPC_CHECKS: RpcCheck[] = [
   { name: 'resolve_api_key_user_id()', fn: 'resolve_api_key_user_id', fix: '0010_tenant_isolation_ingest.sql',
@@ -137,11 +116,7 @@ async function bodyText(res: Response): Promise<string> {
   return res.text().catch(() => '')
 }
 
-/**
- * Run all schema checks against a Supabase project. Never throws for
- * expected failure modes — each becomes a failed check entry. Only truly
- * exceptional programmer errors propagate.
- */
+/** Run all schema checks. Expected failures become failed check entries rather than throwing. */
 export async function checkSchemaHealth(deps: HealthDeps): Promise<SchemaHealth> {
   const fetchImpl = deps.fetchImpl ?? fetch
   const timeoutMs = deps.timeoutMs ?? 4000
@@ -154,7 +129,7 @@ export async function checkSchemaHealth(deps: HealthDeps): Promise<SchemaHealth>
 
   const checks: SchemaCheck[] = []
 
-  // ── Reachability ──────────────────────────────────────────────────────
+  // Reachability
   try {
     const res = await fetchImpl(`${base}/`, {
       headers,
@@ -169,7 +144,7 @@ export async function checkSchemaHealth(deps: HealthDeps): Promise<SchemaHealth>
       failure: 'unreachable',
       fix: undefined,
     })
-    // Nothing else can work — short-circuit.
+    // nothing else can work
     return {
       ok: false,
       checks,
@@ -180,7 +155,7 @@ export async function checkSchemaHealth(deps: HealthDeps): Promise<SchemaHealth>
     }
   }
 
-  // ── Table / column-group checks ───────────────────────────────────────
+  // Table / column-group checks
   for (const tc of TABLE_CHECKS) {
     const select = tc.columns.join(',')
     try {
@@ -209,7 +184,7 @@ export async function checkSchemaHealth(deps: HealthDeps): Promise<SchemaHealth>
     }
   }
 
-  // ── RPC signature probes (fake key ⇒ expect 400 'invalid_api_key') ────
+  // RPC signature probes (fake key, expect 400 'invalid_api_key')
   for (const rc of RPC_CHECKS) {
     try {
       const res = await fetchImpl(`${base}/rpc/${rc.fn}`, {
@@ -220,15 +195,14 @@ export async function checkSchemaHealth(deps: HealthDeps): Promise<SchemaHealth>
       })
       const text = await bodyText(res)
       if (/invalid_api_key/.test(text) || /"28000"/.test(text)) {
-        // The function exists with the probed signature and rejected our
-        // fake key exactly as designed.
+        // exists with this signature and rejected the fake key
         checks.push({ name: rc.name, ok: true })
         continue
       }
       const missing =
         /PGRST20[0-9]/.test(text) || /Could not find the .{1,120} in the schema cache/i.test(text)
       const permission = res.status === 401 || res.status === 403 || /42501/.test(text)
-      // res.status 404 on rpc path is also "function not in schema cache".
+      // a 404 on the rpc path also means not in the schema cache
       checks.push({
         name: rc.name,
         ok: false,

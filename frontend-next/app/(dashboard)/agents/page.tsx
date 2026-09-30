@@ -118,8 +118,6 @@ export default function AgentsPage() {
     load()
   }, [load])
 
-  // Audit finding: this poller never paused on hidden tabs, so a
-  // backgrounded tab kept re-fetching agents every 30s all night.
   useVisibleInterval(load, 30_000)
 
   if (loading) return (

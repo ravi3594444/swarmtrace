@@ -21,16 +21,9 @@ const highlights = [
 ]
 
 /**
- * Shared chrome for /sign-in and /sign-up.
- *
- * Layout: a full-bleed sky photograph fills the viewport. On lg+ the screen
- * splits into a brand/marketing column and the auth card; below lg the brand
- * column collapses and only a compact wordmark + the card remain, so the form
- * is never pushed below the fold on a phone.
- *
- * The background is a real <Image> (not a CSS background) so Next can serve
- * an optimized/responsive variant and so `priority` avoids a flash of empty
- * blue on first paint of the auth route.
+ * Shared layout for /sign-in and /sign-up: sky photo background, brand column
+ * on lg+, just a wordmark and the card below that. The background is an
+ * <Image> so Next can optimize it.
  */
 export function AuthShell({ eyebrow, headline, subline, children }: AuthShellProps) {
   return (
@@ -71,7 +64,7 @@ export function AuthShell({ eyebrow, headline, subline, children }: AuthShellPro
       </Link>
 
       <div className="relative z-10 mx-auto flex min-h-screen w-full max-w-[1400px] flex-col items-center justify-center gap-12 px-6 py-24 lg:flex-row lg:items-center lg:justify-between lg:gap-16 lg:px-12">
-        {/* Brand panel — hidden on small screens to keep the form above the fold */}
+        {/* Brand panel - hidden on small screens to keep the form above the fold */}
         <section className="hidden max-w-xl flex-1 text-white lg:block">
           <span className="inline-flex items-center gap-3 font-mono text-sm uppercase tracking-[0.2em] text-white/80">
             <span className="h-px w-8 bg-white/50" aria-hidden />

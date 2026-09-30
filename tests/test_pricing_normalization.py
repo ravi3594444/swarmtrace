@@ -1,21 +1,4 @@
-"""Regression tests for the pricing.py model-name normalization fix.
-
-Bug: calculate_cost() used bidirectional substring matching as a fallback
-when an exact match wasn't found:
-    if key in name.lower() or name.lower() in key
-
-This meant 'gpt-4' substring-matched 'gpt-4o', 'gpt-4-turbo', 'gpt-4.1',
-etc., and which model's price won depended on dict iteration order. For
-a cost-tracking product, a quietly wrong per-token rate is worse than
-no number.
-
-Fix: replaced the fuzzy fallback with proper normalization (strip
-provider prefix + date suffix), then exact match. Returns 0.0 for
-unknown models instead of guessing.
-
-These tests pin the fix so a future refactor can't silently reintroduce
-the substring-matching bug with green CI.
-"""
+"""Model-name normalization in calculate_cost(): exact match after prefix/date stripping, no substring guessing."""
 
 import threading
 
@@ -26,11 +9,7 @@ from swarmtrace import pricing
 
 @pytest.fixture(autouse=True)
 def reset_pricing_state(monkeypatch):
-    """Clean cache/refresh/custom-override state per test, and wait out any
-    leftover warm_cache() thread from module import so it can't race a test's
-    own mocked fetch. Same pattern as test_pricing.py, plus _CUSTOM clearing
-    so set_model_pricing() calls in one test don't leak into the next.
-    """
+    """Reset cache/refresh/custom-override state, same as test_pricing.py plus _CUSTOM."""
     for t in threading.enumerate():
         if t.name in ("swarmtrace-pricing-warm", "swarmtrace-pricing-refresh") and t.is_alive():
             t.join(timeout=5)
@@ -41,9 +20,8 @@ def reset_pricing_state(monkeypatch):
     yield
 
 
-# ── Mock pricing table for tests ────────────────────────────────────────────
-# Realistic per-token costs (from LiteLLM's registry, approx).
-# input_cost_per_token is in USD/token (so 0.0000025 = $2.50 per million).
+# Mock pricing table for tests
+# approximate per-token USD costs from LiteLLM's registry (0.0000025 = $2.50/M)
 MOCK_TABLE = {
     "gpt-4o":                 {"input_cost_per_token": 0.0000025,  "output_cost_per_token": 0.00001},
     "gpt-4o-mini":            {"input_cost_per_token": 0.00000015, "output_cost_per_token": 0.0000006},
@@ -61,7 +39,7 @@ def _load_mock_table(monkeypatch):
     monkeypatch.setattr(pricing, "_cache_ts", float("inf"))  # never stale
 
 
-# ── _normalize_model unit tests ──────────────────────────────────────────────
+# _normalize_model unit tests
 
 def test_normalize_strips_provider_prefix():
     assert pricing._normalize_model("openai/gpt-4o") == "gpt-4o"
@@ -73,7 +51,7 @@ def test_normalize_strips_provider_prefix():
 
 def test_normalize_strips_date_suffix():
     assert pricing._normalize_model("gpt-4o-2024-08-06") == "gpt-4o"
-    assert pricing._normalize_model("claude-3-5-sonnet-20241022") != "claude-3-5-sonnet"  # YYYYMMDD not stripped — only YYYY-MM-DD
+    assert pricing._normalize_model("claude-3-5-sonnet-20241022") != "claude-3-5-sonnet"  # YYYYMMDD not stripped, only YYYY-MM-DD
     assert pricing._normalize_model("claude-3-5-sonnet-2024-10-22") == "claude-3-5-sonnet"
     assert pricing._normalize_model("gpt-4-turbo-2024-04-09") == "gpt-4-turbo"
 
@@ -93,15 +71,11 @@ def test_normalize_lowercases():
     assert pricing._normalize_model("OpenAI/GPT-4o") == "gpt-4o"
 
 
-# ── calculate_cost: the mis-pricing regression test ─────────────────────────
-# This is the core test. 'gpt-4' must NOT pick up 'gpt-4o's price via
-# substring match. The old code would have matched because:
-#   "gpt-4" in "gpt-4o"  →  True  (substring fallback)
-# With the bundled fallback, 'gpt-4' now has its own price and still must
-# not be mis-priced as 'gpt-4o'.
+# calculate_cost: the mis-pricing regression test
+# 'gpt-4' must not pick up gpt-4o's price via substring match.
 
 def test_gpt4_does_not_steal_gpt4o_price(monkeypatch):
-    """THE regression test: 'gpt-4' must not be priced as 'gpt-4o'."""
+    """'gpt-4' must not be priced as 'gpt-4o'."""
     _load_mock_table(monkeypatch)
 
     cost_gpt4 = pricing.calculate_cost("gpt-4", input_tokens=1000, output_tokens=500)
@@ -114,12 +88,11 @@ def test_gpt4_does_not_steal_gpt4o_price(monkeypatch):
         f"gpt-4 mis-priced as {cost_gpt4} (gpt-4o is {cost_gpt4o}) — "
         "substring-matching bug reintroduced?"
     )
-    # Belt-and-suspenders: explicitly confirm they're not equal
     assert cost_gpt4 != cost_gpt4o
 
 
 def test_gpt4_does_not_steal_gpt4_turbo_price(monkeypatch):
-    """Same regression, different model pair: 'gpt-4' must not match 'gpt-4-turbo'."""
+    """'gpt-4' must not match 'gpt-4-turbo'."""
     _load_mock_table(monkeypatch)
 
     cost_gpt4 = pricing.calculate_cost("gpt-4", input_tokens=1000, output_tokens=500)
@@ -132,19 +105,19 @@ def test_gpt4_does_not_steal_gpt4_turbo_price(monkeypatch):
 
 
 def test_gpt4o_mini_does_not_steal_gpt4o_price(monkeypatch):
-    """'gpt-4o-mini' must not match 'gpt-4o' — they have very different prices."""
+    """'gpt-4o-mini' must not match 'gpt-4o', they have very different prices."""
     _load_mock_table(monkeypatch)
 
     cost_mini = pricing.calculate_cost("gpt-4o-mini", input_tokens=1_000_000, output_tokens=0)
     cost_full = pricing.calculate_cost("gpt-4o", input_tokens=1_000_000, output_tokens=0)
 
-    # gpt-4o-mini is $0.15/M input; gpt-4o is $2.50/M input — 16x difference
+    # gpt-4o-mini is $0.15/M input; gpt-4o is $2.50/M input, 16x difference
     assert cost_mini == pytest.approx(0.15, abs=0.001), f"gpt-4o-mini mis-priced: {cost_mini}"
     assert cost_full == pytest.approx(2.50, abs=0.001), f"gpt-4o mis-priced: {cost_full}"
     assert cost_mini != cost_full
 
 
-# ── calculate_cost: normalization still works for legitimate cases ──────────
+# calculate_cost: normalization still works for legitimate cases
 
 def test_provider_prefix_normalized_correctly(monkeypatch):
     """'openai/gpt-4o' should match 'gpt-4o' in the table via prefix strip."""
@@ -192,7 +165,7 @@ def test_case_insensitive_match(monkeypatch):
     assert pricing.calculate_cost("GPT-4o", 1000, 500) == pricing.calculate_cost("gpt-4o", 1000, 500)
 
 
-# ── calculate_cost: unknown models return 0.0, never guess ──────────────────
+# calculate_cost: unknown models return 0.0, never guess
 
 def test_unknown_model_returns_zero(monkeypatch):
     """Unknown model must return 0.0, not a guessed price from a substring match."""
@@ -212,7 +185,7 @@ def test_zero_tokens_returns_zero(monkeypatch):
     assert pricing.calculate_cost("gpt-4o", 0, 0) == 0.0
 
 
-# ── Custom overrides still take precedence ──────────────────────────────────
+# Custom overrides still take precedence
 
 def test_custom_override_takes_precedence(monkeypatch):
     """set_model_pricing() override must win over the live table, even when
@@ -230,14 +203,13 @@ def test_custom_override_takes_precedence(monkeypatch):
     assert cost_gpt4 != cost_gpt4o
 
 
-# ── The full mis-pricing scenario from the original bug report ──────────────
+# The full mis-pricing scenario from the original bug report
 
 def test_no_model_steals_another_models_price(monkeypatch):
-    """Comprehensive: every model in the table should only match itself,
-    not any other model that happens to contain it as a substring."""
+    """Every table model matches only itself, not names that merely contain it."""
     _load_mock_table(monkeypatch)
 
-    # Substrings of real table keys — none of these are in the table
+    # Substrings of real table keys, none of these are in the table
     # themselves, so they must all return 0.0 (not steal the parent's price)
     not_in_table = [
         "gpt-4-prototype",  # substring of gpt-4, gpt-4o, gpt-4-turbo, gpt-4o-mini
