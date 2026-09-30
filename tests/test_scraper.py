@@ -1,13 +1,4 @@
-"""Tests for swarmtrace/scraper.py.
-
-Audit finding #8: scraper.py had zero test coverage.
-
-`scrapling` is an optional dependency (`pip install swarmtrace[scraper]`)
-and is not installed in this environment, so these tests inject a fake
-`scrapling.fetchers.Fetcher` into sys.modules -- exercising the real
-import-and-call path in scraper.py without requiring the real (heavy,
-browser-automation-adjacent) package.
-"""
+"""Tests for swarmtrace/scraper.py, with a fake `scrapling.fetchers.Fetcher` injected into sys.modules."""
 
 from __future__ import annotations
 
@@ -78,8 +69,7 @@ def fake_scrapling_failing():
 
 @pytest.fixture()
 def records(monkeypatch, fake_runtime):
-    """Capture spans through the Phase 1 runtime seam, exposed with the same
-    storage.save_trace kwarg keys the existing assertions read."""
+    """Capture saved spans with the storage.save_trace kwarg keys the assertions read."""
     saved = []
 
     def _capture(span):
@@ -214,19 +204,18 @@ def test_scrape_failure_has_zero_cost_and_tokens(fake_scrapling_failing, records
 
 def test_scrape_kind_defaults_to_tool(fake_scrapling_ok, records):
     """Backward-compat: kind='tool' is the default. Existing callers that
-    don't pass kind= keep getting 'tool' — no behavior change."""
+    don't pass kind= keep getting 'tool', no behavior change."""
     scraper.scrape("https://example.com", verbose=False)
     assert records[0]["kind"] == "tool"
 
 
 def test_scrape_kind_override_to_retrieval(fake_scrapling_ok, records):
-    """Audit finding #12: scrape() no longer hardcodes kind='tool'.
-    Override to 'retrieval' for RAG document-loading pipelines."""
+    """kind can be overridden, e.g. 'retrieval' for RAG loaders."""
     scraper.scrape("https://example.com", verbose=False, kind="retrieval")
     assert records[0]["kind"] == "retrieval"
 
 
 def test_scrape_kind_override_to_function(fake_scrapling_ok, records):
-    """kind='function' is also valid — for generic function-call categorization."""
+    """kind='function' is also valid, for generic function-call categorization."""
     scraper.scrape("https://example.com", verbose=False, kind="function")
     assert records[0]["kind"] == "function"

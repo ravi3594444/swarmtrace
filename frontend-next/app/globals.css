@@ -4,11 +4,11 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  /* SwarmTrace AI Monitoring - Light theme (#F4F4F4 neutral canvas, white cards) */
+  /* Light theme: #F4F4F4 canvas, white cards */
   --background: oklch(0.9672 0 0); /* #F4F4F4 */
   --foreground: oklch(0.18 0 0);
 
-  /* Material Design surface tokens — light mode */
+  /* Surface tokens */
   --surface: oklch(1 0 0);
   --surface-container: oklch(1 0 0);
   --surface-container-high: oklch(0.93 0 0);
@@ -21,15 +21,15 @@
   --card-foreground: oklch(0.25 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.25 0 0);
-  --primary: oklch(0.2178 0 0); /* #1A1A1A charcoal — was brand green */
+  --primary: oklch(0.2178 0 0); /* #1A1A1A charcoal */
   --primary-foreground: oklch(0.98 0 0);
   --secondary: oklch(0.95 0 0);
   --secondary-foreground: oklch(0.25 0 0);
   --muted: oklch(0.95 0 0);
-  --muted-foreground: oklch(0.4386 0 0); /* darkened from 0.55 — was failing WCAG AA (~3.4:1); now ~7.8:1 on white */
-  --accent: oklch(0.37 0 0); /* charcoal-gray secondary accent — was brand green */
+  --muted-foreground: oklch(0.4386 0 0); /* ~7.8:1 on white */
+  --accent: oklch(0.37 0 0); /* charcoal-gray secondary accent */
   --accent-foreground: oklch(0.98 0 0);
-  --destructive: oklch(0.5054 0.1905 27.5); /* softened from 0.577/0.245 — less neon, ~6.5:1 on white */
+  --destructive: oklch(0.5054 0.1905 27.5); /* ~6.5:1 on white */
   --destructive-foreground: oklch(0.98 0.01 0);
   --border: oklch(0.90 0 0);
   --input: oklch(0.90 0 0);
@@ -39,23 +39,11 @@
   --chart-3: oklch(0.50 0 0);
   --chart-4: oklch(0.65 0 0);
   --chart-5: oklch(0.80 0 0);
-  /* The palette is otherwise achromatic except for red (errors) and the
-     emerald/amber status dots (live/paused). Blue is the one remaining
-     accent — used elsewhere only for "started" events in LiveActivity — and
-     is deliberately not spent on any other chrome. It's reserved for the
-     Request Activity chart on Overview, so the line only "lights up" in
-     color at the exact moment real trace data starts drawing; the empty
-     state stays fully neutral. Don't reuse this color elsewhere. */
+  /* Blue is reserved for the Request Activity chart on Overview. The rest of
+     the palette is grayscale plus red/emerald/amber status colors. */
   --chart-activity-accent: #3b82f6; /* tailwind blue-500 */
   --radius: 1rem;
-  /* Sidebar now follows the theme toggle — light sidebar in light mode
-     (white/ivory rail against the light canvas), dark charcoal sidebar in
-     dark mode. Values mirror the dark-mode structure: the primary token is
-     the darkest/strongest color (used for the logo mark and the "Trace"
-     word in the wordmark), foreground sits one step softer, accent is a
-     subtle hover/selected tint one rung down from pure white, and border
-     is a crisp hairline gray. This keeps the rail on the existing achromatic
-     tonal ramp instead of introducing one-off colors. */
+  /* Sidebar follows the theme: white rail in light mode, charcoal in dark */
   --sidebar: #ffffff;
   --sidebar-foreground: #3f3f3f;
   --sidebar-primary: #1a1a1a;
@@ -64,10 +52,7 @@
   --sidebar-accent-foreground: #1a1a1a;
   --sidebar-border: #e5e5e5;
   --sidebar-ring: #1a1a1a;
-  /* NodeNetworkMap theme tokens — light mode. The map uses a light gradient
-     background with dark grid lines and dark vignette glow so it reads as
-     an integrated part of the page instead of a dark island. Values are
-     inverted in .dark below. */
+  /* NodeNetworkMap tokens (light). Inverted in .dark below. */
   --network-bg-from: #f4f4f4;
   --network-bg-to: #e8e8e8;
   --network-bg-end: #d4d4d4;
@@ -76,9 +61,7 @@
   --network-center-glow: rgba(0, 0, 0, 0.06);
   --network-label-bg: rgba(255, 255, 255, 0.92);
   --network-label-border: rgba(100, 100, 100, 0.3);
-  /* Node fill colors — light mode: dark nodes on light background (inverted
-     from dark mode). The tonal ramp goes primary (darkest) → outline (lightest)
-     so orchestrator nodes still read as "most emphasis". */
+  /* Node fills: dark on light, ramp from primary (darkest) to outline */
   --network-node-primary: #1a1a1a;
   --network-node-primary-glow: rgba(26, 26, 26, 0.35);
   --network-node-on-surface: #404040;
@@ -87,9 +70,7 @@
   --network-node-on-surface-variant-glow: rgba(107, 107, 107, 0.28);
   --network-node-outline: #9a9a9a;
   --network-node-outline-glow: rgba(154, 154, 154, 0.25);
-  /* Font stacks — Geist is loaded from the geist npm package (local font files,
-     no Google Fonts network fetch needed at build time). The --font-geist-sans and
-     --font-geist-mono variables are injected by the geist package via className on <html>. */
+  /* Geist comes from the geist package, which sets --font-geist-sans/mono on <html> */
   --font-geist: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
   --font-geist-mono-stack: var(--font-geist-mono), 'Courier New', monospace;
   --font-instrument: var(--font-geist-sans), system-ui, -apple-system, sans-serif;
@@ -100,9 +81,7 @@
   --font-display: var(--font-instrument-serif), 'Instrument Serif', Georgia, serif;
 }
 
-/* Themed thin scrollbar — used on horizontally/vertically scrollable panels
-   (filter bars, event lists, etc.) so overflow reads as an intentional,
-   styled affordance instead of the raw OS scrollbar. */
+/* Thin themed scrollbar for filter bars, event lists, etc. */
 .scrollbar-thin {
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
@@ -122,11 +101,8 @@
   background-color: var(--outline);
 }
 
-/* Dashboard rail scrollbar. Chromium on Windows otherwise renders its wide
-   classic scrollbar (including arrow buttons) inside the 56px collapsed rail,
-   where it crowds the navigation icons and steals part of their click target.
-   The expanded rail keeps a subtle, inset thumb; the collapsed rail remains
-   wheel/touch-scrollable but does not paint a scrollbar over its controls. */
+/* Sidebar scrollbar. Chromium on Windows would draw its wide classic bar
+   over the collapsed rail, so the collapsed state hides it (still scrolls). */
 .sidebar-nav-scroll {
   scrollbar-color: var(--sidebar-border) transparent;
   scrollbar-gutter: stable;
@@ -158,16 +134,12 @@
 }
 
 .dark {
-  /* SwarmTrace AI Monitoring - Dark theme.
-     Charcoal & Ivory Monochrome — values pulled 1:1 from
-     stitch_swarmtrace_developer_dashboard/charcoal_ivory_monochrome/DESIGN.md.
-     Strictly achromatic: no blue/indigo/warm undertones anywhere except the
-     error/destructive role, which keeps a small amount of red chroma on
-     purpose so failures stay visually distinct from everything else. */
+  /* Dark theme: charcoal and ivory. Grayscale except the destructive
+     role, which keeps some red so failures stand out. */
   --background: #0e0e0e;           /* surface-container-lowest */
   --foreground: #e5e2e1;           /* on-surface */
 
-  /* Material Design surface tokens — dark mode */
+  /* Surface tokens */
   --surface: #131313;
   --surface-container: #201f1f;
   --surface-container-high: #2a2a2a;
@@ -176,11 +148,11 @@
   --on-surface-variant: #c4c7c8;
   --outline: #8e9192;
   --outline-variant: #444748;
-  --card: #1c1b1b;                 /* elevated surface — tonal layering, no shadows */
+  --card: #1c1b1b;                 /* elevated surface */
   --card-foreground: #e5e2e1;
-  --popover: #2a2a2a;               /* overlay layer — tooltips / floating menus */
+  --popover: #2a2a2a;               /* tooltips, floating menus */
   --popover-foreground: #e5e2e1;
-  --primary: #ffffff;               /* reserved for CTAs, active states, critical info */
+  --primary: #ffffff;               /* CTAs, active states */
   --primary-foreground: #2f3131;
   --secondary: #2a2a2a;
   --secondary-foreground: #e5e2e1;
@@ -192,13 +164,13 @@
   --destructive-foreground: #ffdad6; /* on-error-container */
   --border: #444748;
   --input: #444748;
-  --ring: #ffffff;                  /* focus state moves the border to white, per DESIGN.md */
+  --ring: #ffffff;                  /* focus border goes white */
   --chart-1: #ffffff;
   --chart-2: #c6c6c7;
   --chart-3: #8e9192;
   --chart-4: #636565;
   --chart-5: #444748;
-  --chart-activity-accent: #60a5fa; /* tailwind blue-400 — reserved, see :root note */
+  --chart-activity-accent: #60a5fa; /* tailwind blue-400, see :root note */
   --sidebar: #1c1b1b;
   --sidebar-foreground: #e5e2e1;
   --sidebar-primary: #ffffff;
@@ -207,8 +179,7 @@
   --sidebar-accent-foreground: #e5e2e1;
   --sidebar-border: #444748;
   --sidebar-ring: #ffffff;
-  /* NodeNetworkMap theme tokens — dark mode. Matches the original hardcoded
-     charcoal gradient so the dark-mode visual is unchanged. */
+  /* NodeNetworkMap tokens (dark) */
   --network-bg-from: #0e0e0e;
   --network-bg-to: #0a0a0a;
   --network-bg-end: #000000;
@@ -217,7 +188,7 @@
   --network-center-glow: rgba(255, 255, 255, 0.10);
   --network-label-bg: rgba(14, 14, 14, 0.85);
   --network-label-border: rgba(142, 145, 146, 0.3);
-  /* Node fill colors — dark mode: original white/light values. */
+  /* Node fills: light on dark */
   --network-node-primary: #ffffff;
   --network-node-primary-glow: rgba(255, 255, 255, 0.55);
   --network-node-on-surface: #e5e2e1;
@@ -229,7 +200,6 @@
 }
 
 @theme inline {
-  /* optional: --font-sans, --font-serif, --font-mono if they are applied in the layout.tsx */
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -255,16 +225,10 @@
   --color-chart-4: var(--chart-4);
   --color-chart-5: var(--chart-5);
   --color-chart-activity-accent: var(--chart-activity-accent);
-  /* Radius scale — use these tokens consistently:
-     • rounded-md    → small controls (selects, compact buttons in toolbars)
-     • rounded-lg    → standard buttons, inputs
-     • rounded-xl    → cards, panels, drawers, tables (the default card radius)
-     • rounded-2xl   → the Card primitive (matches shadcn base-nova)
-     • rounded-full  → pills, chips, badges, status dots, icon-only buttons
-     • rounded-[2rem] → NodeNetworkMap container only (deliberate cinematic depth)
-     Avoid mixing radii within a single visual group — if a card uses
-     rounded-xl, its child elements should use rounded-lg or rounded-md,
-     not rounded-2xl. */
+  /* Radius usage: md for small controls, lg for buttons/inputs, xl for
+     cards and panels, 2xl for the Card primitive, full for pills and dots,
+     2rem for the NodeNetworkMap container only. Child elements should use a
+     smaller radius than their parent. */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
@@ -277,7 +241,7 @@
   --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
-  /* Material Design surface token mappings for Tailwind utilities */
+  /* Surface tokens for Tailwind utilities */
   --color-surface: var(--surface);
   --color-surface-container: var(--surface-container);
   --color-surface-container-high: var(--surface-container-high);
@@ -297,7 +261,7 @@
   }
 }
 
-/* Custom animations for smooth card interactions */
+/* Card animations */
 @keyframes float {
   0%,
   100% {
@@ -319,7 +283,7 @@
   }
 }
 
-/* Added barSlideUp animation for modern analytics chart */
+/* Chart bar entrance */
 @keyframes barSlideUp {
   from {
     transform: scaleY(0);
@@ -343,7 +307,7 @@
   }
 }
 
-/* Added shimmer and fade-in animations for chart interactions */
+/* Shimmer and fade-in */
 @keyframes shimmer {
   0% {
     transform: translateX(-100%);
@@ -372,7 +336,7 @@
   animation: slideInUp 0.5s ease-out both;
 }
 
-/* Added utility classes for new animations */
+/* Animation utilities */
 .animate-shimmer {
   animation: shimmer 1.5s ease-in-out infinite;
 }
@@ -424,7 +388,7 @@
   animation: palette-pop-in 0.18s ease-out forwards;
 }
 
-/* ─── Landing page animations ─────────────────────────────────────────────── */
+/* Landing page */
 
 @keyframes marquee {
   from { transform: translateX(0); }
@@ -435,7 +399,7 @@
   animation: marquee 30s linear infinite;
 }
 
-/* Pause marquee when user prefers reduced motion */
+/* Respect reduced motion */
 @media (prefers-reduced-motion: reduce) {
   .marquee {
     animation: none;
@@ -462,7 +426,7 @@
   animation: char-in 0.3s ease forwards;
 }
 
-/* ─── Swarm dashboard (Overview / Traces / Agents / Metrics / Failures) ───── */
+/* Dashboard */
 
 @keyframes swarm-pulse {
   0%, 100% { opacity: 1; }

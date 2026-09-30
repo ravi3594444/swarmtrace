@@ -3,18 +3,9 @@
 import { AlertTriangle } from 'lucide-react'
 
 /**
- * Banner shown when the backend returned `truncated: true` for a query —
- * meaning the row cap was hit and more data exists beyond what's displayed.
- *
- * The cap (default 500) is passed in from the API response so the banner
- * never lies if the backend cap changes. An optional `onLoadMore` callback
- * renders a "Load more" button when the backend supports pagination —
- * otherwise the user is told to narrow the date filter (the only way to
- * see older data without pagination support).
- *
- * Audit finding #4 follow-up: the backend has returned `truncated` since
- * commit 2475287, but it was dropped on the floor by lib/swarm-api.ts.
- * This banner is the client half of that fix.
+ * Shown when the backend hit its row cap (`truncated: true`). With
+ * `onLoadMore` it offers a "Load more" button, otherwise it tells the user
+ * to narrow the date filter.
  */
 export function TruncationBanner({
   range = 'this range',

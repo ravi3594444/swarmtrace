@@ -1,12 +1,4 @@
-/**
- * Shared Recharts tooltip style for the SwarmTrace dashboard.
- *
- * Previously duplicated in app/overview/page.tsx and app/metrics/page.tsx
- * as identical object literals. Extracted so both pages (and any future
- * chart page) stay visually consistent. The `cursor` prop is included
- * even though metrics didn't have it — Recharts ignores extra props, and
- * having the dashed cursor on hover improves chart readability.
- */
+/** Shared Recharts tooltip style for the overview and metrics pages. */
 export const chartTooltip = {
   contentStyle: {
     background: 'var(--card)',

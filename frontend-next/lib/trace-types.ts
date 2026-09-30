@@ -15,9 +15,9 @@ export type Trace = {
   kind?: 'agent' | 'tool' | 'llm' | 'function' | 'retrieval'
   agent_id?: string
   agent_name?: string
-  // added in swarmtrace 0.5.0 — groups multi-turn runs into one conversation
+  // groups multi-turn runs into one conversation (swarmtrace 0.5.0)
   session_id?: string | null
-  // added in Phase 5 — generic JSON metadata for each span
+  // generic JSON metadata for each span
   attributes?: Record<string, unknown> | null
 }
 
@@ -40,8 +40,7 @@ export type DailyMetricRow = {
   input_tokens: number
   output_tokens: number
   trace_count: number
-  // Not a real column in the current schema — some callers defensively
-  // check `total_cost ?? cost_usd` anyway; kept optional so that pattern
-  // still type-checks without implying the column actually exists.
+  // Not a real column; some callers check `total_cost ?? cost_usd`, so it's
+  // optional to keep that type-checking.
   total_cost?: number
 }

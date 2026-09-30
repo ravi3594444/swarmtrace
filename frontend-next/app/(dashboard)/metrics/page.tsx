@@ -9,9 +9,7 @@ import { Download, TrendingDown, CheckCircle2, BarChart3 } from 'lucide-react'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
 import { Empty, EmptyMedia, EmptyTitle, EmptyDescription } from '@/components/ui/empty'
 
-// recharts is ~492 KB across 3 chunks (bundle audit) — split out of the
-// page's initial JS and only fetched once a chart actually needs to render.
-// ssr: false because recharts' ResponsiveContainer measures the DOM.
+// Lazy-load recharts. ssr: false because ResponsiveContainer measures the DOM.
 const chartLoading = <div className="h-full w-full animate-pulse rounded-lg bg-muted/30" />
 const TokenUsageChart = dynamic(() => import('@/components/swarm/MetricsCharts').then((m) => m.TokenUsageChart), { ssr: false, loading: () => chartLoading })
 const CostChart = dynamic(() => import('@/components/swarm/MetricsCharts').then((m) => m.CostChart), { ssr: false, loading: () => chartLoading })
@@ -94,9 +92,7 @@ export default function MetricsPage() {
 
   const exportCSV = () => {
     const chart = data?.chart ?? []
-    // Guard against empty data — without this, the user could download a
-    // CSV containing only the header row (no data rows). The button is also
-    // disabled when there's no data, but this is a belt-and-suspenders check.
+    // Button is disabled when empty too; this is a second guard.
     if (chart.length === 0) return
     const rows = chart.map((r) => `${r.date},${r.input},${r.output},${r.cost},${r.traces}`).join('\n')
     const blob = new Blob(['date,input_tokens,output_tokens,cost_usd,traces\n' + rows], { type: 'text/csv' })

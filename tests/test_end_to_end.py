@@ -1,29 +1,9 @@
-"""End-to-end tests for the whole local pipeline — no fakes.
+"""End-to-end tests for the local pipeline with nothing faked.
 
-Every other test in this suite substitutes something: ``tests/_fakes.py``
-replaces the repository and the transport, ``test_batching.py`` drives the
-``Sender`` with a stub, ``test_cli.py`` calls ``storage.save_trace`` directly.
-That leaves the seams *between* those layers untested, which is exactly where
-this project's shipped bugs have lived (the CLI's 14-vs-16 column unpack, the
-grandchild-flattening tree, the "valid key, zero traces" ingest failure — all
-shipped green).
-
-These tests wire the real thing together:
-
-    @observe'd functions
-      → tracer._flush → SpanRecord
-      → Runtime.record
-      → SqliteRepository (a real SQLite file)
-      → Sender (a real background thread)
-      → HttpTransport (real gzip + urllib)
-      → a real HTTP server on 127.0.0.1
-      → back to mark rows synced=1
-      → CLI view / export rendering the same DB
-
-and assert what a user would see at each end. Nothing is mocked except the
-dashboard itself, which is a genuine HTTP server here rather than a stub
-object, so the gzip encoding, the ``{"traces": [...]}`` body shape, and the
-``X-API-Key`` header are all really exercised.
+@observe -> SpanRecord -> Runtime -> SQLite -> Sender thread -> HttpTransport
+-> a real HTTP server on 127.0.0.1, then CLI view/export over the same DB.
+The server is genuine, so the gzip body, the {"traces": [...]} shape and the
+X-API-Key header are all really exercised.
 """
 
 from __future__ import annotations
@@ -46,21 +26,13 @@ from swarmtrace.delivery.sender import Sender
 from swarmtrace.runtime import Runtime, set_runtime
 from swarmtrace.tracer import observe, session
 
-# How long to wait for the background sender to deliver. The sender flushes
-# every _FLUSH_TIMEOUT seconds, so this is generous by ~50x — long enough that
-# a loaded CI runner won't flake, short enough that a genuine hang fails the
-# test instead of hanging the suite.
+# generous vs. the flush interval so a loaded CI runner doesn't flake, but a real hang still fails
 _DELIVERY_TIMEOUT = 10.0
 _FLUSH_TIMEOUT = 0.05
 
 
 class _IngestServer:
-    """A real HTTP server standing in for the dashboard's /api/ingest.
-
-    Records every request it receives (path, headers, decoded body) so tests
-    can assert on the actual wire format, and can be flipped into failing mode
-    to simulate a dashboard outage.
-    """
+    """Real HTTP server standing in for /api/ingest; records requests and can be made to fail."""
 
     def __init__(self) -> None:
         self.requests: list[dict] = []
@@ -96,7 +68,6 @@ class _IngestServer:
         self._thread = threading.Thread(target=self._httpd.serve_forever, daemon=True)
         self._thread.start()
 
-    # -- assertions helpers -------------------------------------------------
 
     def spans(self) -> list[dict]:
         """Every span the server has received, flattened across requests."""
@@ -135,11 +106,9 @@ def ingest():
 
 @pytest.fixture()
 def pipeline(tmp_path, ingest, monkeypatch):
-    """Wire the real SQLite + HTTP stack against a temp DB and the test server.
+    """Point the real SQLite + HTTP stack at a temp DB and the test server.
 
-    Endpoint/key go through the environment and ``config.remote_config`` so
-    the scheme validation and base-URL normalization run for real too — a
-    hand-rolled ``lambda: (key, url)`` would skip both.
+    Endpoint/key go through env + config.remote_config so the URL validation runs too.
     """
     monkeypatch.setattr(storage_module, "DB_PATH", str(tmp_path / "e2e.db"))
     monkeypatch.setattr(storage_module, "_conn", None)
@@ -154,8 +123,7 @@ def pipeline(tmp_path, ingest, monkeypatch):
         transport,
         repository,
         config_module.remote_config,
-        # No real backoff sleeps and a single attempt: the outage test wants
-        # the failure path to resolve immediately, not 3 s later.
+        # no backoff sleeps, single attempt, so the outage test resolves fast
         sleep=lambda _seconds: None,
         batch_flush_timeout=_FLUSH_TIMEOUT,
         retries=1,
@@ -166,19 +134,14 @@ def pipeline(tmp_path, ingest, monkeypatch):
     try:
         yield runtime
     finally:
-        # Order matters: stop the worker BEFORE closing the connection it
-        # writes through. Closing first is a use-after-free that takes the
-        # whole interpreter down with SIGSEGV — that is how this pair of
-        # APIs came to exist.
+        # stop the worker before closing the connection it writes through
         assert sender.stop(timeout=5.0), "sender thread did not shut down"
         set_runtime(None)
         config_module.clear_remote_config()
         storage_module.close()
 
 
-# ---------------------------------------------------------------------------
-# The traced workload under test — a small RAG-shaped agent.
-# ---------------------------------------------------------------------------
+# The traced workload under test, a small RAG-shaped agent.
 
 class _LLMResponse:
     """Stands in for an SDK response object carrying usage metadata."""
@@ -226,9 +189,7 @@ def _rows_by_function() -> dict[str, dict]:
     return {row["function"]: row for row in storage_module.get_traces(limit=50)}
 
 
-# ---------------------------------------------------------------------------
 # Tests
-# ---------------------------------------------------------------------------
 
 def test_observed_run_persists_the_whole_call_tree(pipeline):
     """Local SQLite must hold every span, correctly parented and attributed."""
@@ -297,7 +258,7 @@ def test_spans_reach_the_ingest_endpoint_and_are_marked_synced(pipeline, ingest)
 def test_secrets_in_arguments_are_redacted_before_they_leave_the_process(
     pipeline, ingest,
 ):
-    """Redaction happens once, so SQLite and the wire agree — and neither leaks."""
+    """Redaction happens once, so SQLite and the wire agree, and neither leaks."""
     secret = "sk-abcdefghijklmnopqrstuvwxyz0123456789ABCD"
     _run_agent(f"charge my key {secret} please")
 
@@ -336,7 +297,7 @@ def test_endpoint_outage_leaves_rows_unsynced_and_resync_recovers_them(
     assert len(ingest.spans()) == before + 4
     assert all(row["synced"] for row in storage_module.get_traces(limit=50))
 
-    # Resync is idempotent — a second run has nothing left to send.
+    # Resync is idempotent, a second run has nothing left to send.
     assert pipeline.resync(retries=1) == (0, 0, 0)
 
 

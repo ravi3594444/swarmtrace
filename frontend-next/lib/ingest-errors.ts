@@ -1,39 +1,23 @@
 /**
- * Ingest error classification — turn raw PostgREST/Postgres/network failures
- * into stable, operator-actionable error codes + remediation hints.
- *
- * WHY THIS EXISTS (root cause of "valid API key, zero traces on dashboard"):
- * /api/ingest writes each trace via the PostgREST RPC `upsert_trace_for_key`
- * (migration 0010). When a deployment's Supabase project has not applied the
- * migrations in supabase/migrations/ — e.g. only 0000 was run (enough for
- * the settings UI to create an API key) but 0010 was not — the RPC call
- * fails with PGRST202 ("function not found in schema cache") on EVERY
- * ingest POST. The route used to map that to a generic
- * `500 {"error":"Internal server error"}`, and the Python SDK's urllib
- * error handling discarded even that body, so the operator saw only
- * "remote ingest failed: HTTP Error 500" with no path forward.
- *
- * Now the route (and the /api/health/db self-check) classify the failure:
- * the response body carries a stable `code` and a static `hint` that names
- * the fix. Raw database error text goes ONLY to server-side logs — never
- * the response — so we don't leak schema internals to anonymous callers.
+ * Turns raw PostgREST/Postgres/network failures into stable error codes with
+ * a remediation hint. Typical case: migrations weren't applied, so
+ * upsert_trace_for_key fails with PGRST202 on every ingest POST. Raw database
+ * text goes to server logs only, never the response.
  */
 
 export type IngestErrorCode =
-  /** The RPC, a table, or a column the app expects is missing from the
-   * database — i.e. supabase/migrations/ has not been (fully) applied. */
+  /** The RPC, a table or a column is missing, i.e. migrations not (fully) applied. */
   | 'SCHEMA_NOT_MIGRATED'
-  /** Supabase/PostgREST itself answered 5xx, or the network failed. */
+  /** Supabase/PostgREST answered 5xx, or the network failed. */
   | 'DB_UNAVAILABLE'
-  /** The Supabase request exceeded its timeout budget. */
+  /** The Supabase request timed out. */
   | 'DB_TIMEOUT'
-  /** Anything else (constraint violation, unexpected Postgres error, …). */
+  /** Anything else (constraint violation, unexpected Postgres error). */
   | 'DB_ERROR'
 
 export interface ClassifiedError {
   code: IngestErrorCode
-  /** Static, operator-actionable remediation text. Safe to expose publicly:
-   * never contains database error messages or schema internals. */
+  /** Static remediation text, safe to expose: never includes database messages. */
   hint: string
 }
 
@@ -60,36 +44,23 @@ const GENERIC_HINT =
   'checks schema state.'
 
 /**
- * Classify a failure thrown by the Supabase fetch helpers.
- *
- * Error shapes seen in practice:
- *  - `Error("Supabase 404: {...PGRST202...}")`   — RPC/table missing
- *  - `Error("Supabase 400: {...42P01/42703/P0001/28000...}")` — SQL errors
- *  - `Error("Supabase 500/502/503: ...")`        — Supabase-side outage
- *  - `Error("Supabase RPC <fn> 404: ...")`       — RPC variant (supaRpc)
- *  - AbortError / TimeoutError                   — AbortSignal.timeout()
- *  - TypeError("fetch failed")                   — Node undici network error
- *
- * Matching is intentionally string-based and conservative: when in doubt we
- * return DB_ERROR (generic hint) rather than mis-claim a schema problem.
+ * Classify a failure thrown by the Supabase fetch helpers: missing RPC or
+ * table (PGRST202, 42P01, 42703), SQL errors, 5xx, AbortSignal timeouts and
+ * undici network errors. Matching is string-based and conservative, so when
+ * unsure it returns DB_ERROR rather than blame the schema.
  */
 export function classifySupabaseError(err: unknown): ClassifiedError {
   const msg = err instanceof Error ? err.message : String(err)
   const name = err instanceof Error ? err.name : ''
 
-  // Timeouts first — AbortSignal.timeout() rejects with TimeoutError in
-  // modern Node (AbortError in older versions). Either way the message is
-  // ours, never the database's.
+  // timeouts first (TimeoutError, or AbortError on older Node)
   if (name === 'TimeoutError' || name === 'AbortError' || /timed?\s*out/i.test(msg)) {
     return { code: 'DB_TIMEOUT', hint: TIMEOUT_HINT }
   }
 
-  // Schema drift: the objects the app expects simply aren't there.
-  //   PGRST202 — "Could not find the function … in the schema cache"
-  //   PGRST204/PGRST205-ish column/table misses surface as Postgres codes
-  //   42P01 (undefined_table) / 42703 (undefined_column) embedded in the
-  //   PostgREST error body, as do plain-English "relation … does not exist"
-  //   / "column … does not exist" / "Could not find the … in the schema cache".
+  // Schema drift. PGRST202 is a missing function; missing tables/columns come
+  // through as Postgres 42P01 / 42703 or the plain-English equivalents in the
+  // PostgREST error body.
   if (
     /PGRST20[0-9]/.test(msg) ||
     /\b(42P01|42703)\b/.test(msg) ||
@@ -99,14 +70,13 @@ export function classifySupabaseError(err: unknown): ClassifiedError {
     return { code: 'SCHEMA_NOT_MIGRATED', hint: MIGRATION_HINT }
   }
 
-  // Supabase-side 5xx (from our supa()/supaRpc() "Supabase <status>:" /
-  // "Supabase RPC <fn> <status>:" wrappers, and events/mcp's variants
-  // "Supabase error <status>:" / "Supabase RPC error:").
+  // Supabase-side 5xx, from the "Supabase <status>:" / "Supabase RPC <fn> <status>:"
+  // wrappers and the events/mcp variants
   if (/Supabase[^\n]{0,64}?\b5\d\d\b/.test(msg)) {
     return { code: 'DB_UNAVAILABLE', hint: UNAVAILABLE_HINT }
   }
 
-  // Network-level failures (undici) — DNS, TLS, connection refused/reset.
+  // network-level failures (DNS, TLS, refused/reset)
   if (
     /fetch failed|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|socket hang up/i.test(msg)
   ) {
@@ -117,9 +87,8 @@ export function classifySupabaseError(err: unknown): ClassifiedError {
 }
 
 /**
- * Build the public response body for a classified ingest-stage failure.
- * `error` text is fixed per-code (safe); the raw database message is never
- * included — route handlers console.error() it for the server logs instead.
+ * Build the public response body for a classified failure. The error text is
+ * fixed per code; raw database messages are logged server-side only.
  */
 export function ingestErrorBody(classified: ClassifiedError): {
   error: string

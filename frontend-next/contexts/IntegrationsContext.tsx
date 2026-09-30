@@ -36,16 +36,15 @@ export function IntegrationsProvider({ children }: { children: ReactNode }) {
         setIntegrations(data.integrations || [])
       }
     } catch {
-      // silently fail — unauthenticated pages or network errors
+      // unauthenticated pages or network errors: fail quietly
     } finally {
       setLoading(false)
     }
   }, [])
 
-  // Initial load on mount. All setState calls are inside the async function
-  // (after the first await), NOT synchronous in the effect body — avoids
-  // the cascading-render lint violation. `refresh` is kept as a useCallback
-  // for manual refresh from the settings page.
+  // Initial load on mount. setState only happens after the first await, to
+  // keep the cascading-render lint rule happy. `refresh` stays a useCallback
+  // for the settings page.
   useEffect(() => {
     let cancelled = false
     const attempt = async (): Promise<boolean> => {
@@ -64,9 +63,8 @@ export function IntegrationsProvider({ children }: { children: ReactNode }) {
       }
     }
     const load = async () => {
-      // The first request can race auth/session setup right after sign-in and
-      // fail transiently, so retry a couple of times with a short backoff
-      // before giving up.
+      // the first request can race session setup right after sign-in, so
+      // retry a couple of times with a short backoff
       for (let i = 0; i < 3; i++) {
         if (await attempt()) break
         if (cancelled) return

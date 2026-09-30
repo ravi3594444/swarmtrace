@@ -62,17 +62,11 @@ function OutputPanel({ title, trace }: { title: string; trace: Trace | undefined
 export default function ComparePage() {
   const { traces, loading } = useSwarmTraces(10000)
   const { range, setRange } = useTimeRange()
-  // null = "no explicit user selection yet" — falls back to the two most
-  // recent traces. Derived directly from `traces` instead of seeded via a
-  // useEffect + setState, which was re-running (and re-rendering) on every
-  // poll tick once traces had already loaded.
+  // null = no explicit selection yet; falls back to the two most recent traces.
   const [selectedIdA, setIdA] = useState<string | null>(null)
   const [selectedIdB, setIdB] = useState<string | null>(null)
 
-  // Filter to the selected time range so the TracePicker dropdowns only
-  // show recent runs — picking "Today" on the dashboard carries over here
-  // so you don't scroll through 6 months of history to find today's two
-  // runs to compare.
+  // Limit the pickers to the selected time range.
   const filteredTraces = useMemo(
     () => filterTracesByRange(traces, range),
     [traces, range],

@@ -1,25 +1,8 @@
 /**
- * Test: ingest payload validation — single-object + batch shapes.
- *
- * Covers the task 4 "backend accepts both shapes" requirement:
- *   1. Single-object payload (the legacy shape from older SDK versions)
- *      validates and produces one row.
- *   2. Batch payload `{ traces: [...] }` (the new shape from SDK 0.6.0+)
- *      validates and produces N rows, preserving order.
- *   3. Empty batch `{ traces: [] }` is rejected (so a misconfigured SDK
- *      can't spam no-op POSTs).
- *   4. A batch with one bad trace rejects the WHOLE batch (atomicity —
- *      the SDK retries the whole batch, never partial).
- *   5. Non-object bodies (arrays, primitives) are rejected.
- *   6. Session_id is preserved on both shapes (task 4 spec: "session
- *      grouping intact").
- *
- * The actual HTTP route (app/api/ingest/route.ts) is an edge function
- * that calls validateIngest — testing it directly would require standing
- * up the edge runtime. Instead we test the pure validation functions,
- * which the route delegates to. The route's only extra logic is auth,
- * rate-limiting, body-size check, and the Supabase RPC loop — those are
- * integration concerns, not validation contracts.
+ * Tests for ingest validation (lib/validate-ingest.ts): single-object
+ * (legacy) and batch `{ traces: [...] }` payloads, batch rejection on any
+ * bad trace, session_id preservation, and gzip decoding. The route itself
+ * only adds auth, rate limiting and the RPC loop, so it isn't covered here.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -55,7 +38,7 @@ function mkTrace(overrides = {}) {
   }
 }
 
-describe('validateTrace — single trace object', () => {
+describe('validateTrace: single trace object', () => {
   test('accepts a well-formed trace and normalizes optional fields', () => {
     const { row, error } = validateTrace(mkTrace({ id: 'abc', function: 'fn' }))
     assert.equal(error, undefined)
@@ -85,7 +68,7 @@ describe('validateTrace — single trace object', () => {
   })
 })
 
-describe('normalizeIngestPayload — shape detection', () => {
+describe('normalizeIngestPayload: shape detection', () => {
   test('single-object shape wraps into a one-element array', () => {
     const single = mkTrace({ id: 's1' })
     const traces = normalizeIngestPayload(single)
@@ -113,7 +96,7 @@ describe('normalizeIngestPayload — shape detection', () => {
   })
 })
 
-describe('validateIngest — end-to-end both shapes', () => {
+describe('validateIngest: end-to-end both shapes', () => {
   test('single-object payload produces one valid row', () => {
     const payload = mkTrace({
       id: 'single-1',
@@ -142,8 +125,7 @@ describe('validateIngest — end-to-end both shapes', () => {
       rows.map(r => r.id),
       ['batch-1', 'batch-2', 'batch-3'],
     )
-    // Session grouping preserved — the dashboard's thread view relies on
-    // session_id landing in the DB exactly as sent.
+    // the thread view relies on session_id landing in the DB as sent
     assert.equal(rows[0].session_id, 'sess-1')
     assert.equal(rows[1].session_id, 'sess-1')
     assert.equal(rows[2].session_id, 'sess-2')
@@ -153,17 +135,16 @@ describe('validateIngest — end-to-end both shapes', () => {
     const payload = {
       traces: [
         mkTrace({ id: 'good-1' }),
-        mkTrace({ id: '', function: 'bad' }), // missing id → invalid
+        mkTrace({ id: '', function: 'bad' }), // missing id
         mkTrace({ id: 'good-2' }),
       ],
     }
     const { rows, error } = validateIngest(payload)
-    // No partial accept — the SDK retries the whole batch.
+    // no partial accept; the SDK retries the whole batch
     assert.equal(rows, undefined)
     assert.ok(error)
     assert.match(error.error, /id must be a non-empty string/)
-    // The index identifies which trace was bad (0-based) so the SDK can
-    // log which item caused the rejection.
+    // index says which trace was bad (0-based)
     assert.equal(error.index, 1)
   })
 
@@ -180,16 +161,14 @@ describe('validateIngest — end-to-end both shapes', () => {
   })
 
   test('array at top level is rejected (must be wrapped in { traces: [...] })', () => {
-    // A bare array is NOT a valid ingest payload — the SDK must wrap it in
-    // { traces: [...] }. This prevents ambiguity with a future schema that
-    // might accept a bare array.
+    // a bare array isn't a valid payload; it must be wrapped in { traces: [...] }
     const { rows, error } = validateIngest([mkTrace({ id: 'x' })])
     assert.equal(rows, undefined)
     assert.match(error.error, /single trace object or \{ traces/)
   })
 
   test('large batch validates every trace (no silent truncation)', () => {
-    // 20 traces — matches the SDK's batch-size trigger. All should validate.
+    // 20 traces, the SDK's batch-size trigger
     const payload = {
       traces: Array.from({ length: 20 }, (_, i) =>
         mkTrace({ id: `trace-${i}`, function: `agent_${i}` }),
@@ -203,9 +182,8 @@ describe('validateIngest — end-to-end both shapes', () => {
   })
 })
 
-describe('decodeIngestBody — gzip round-trip (the SDK batch wire format)', () => {
-  // Byte-for-byte what the SDK's _send_batch_remote puts on the wire:
-  // gzip(JSON({"traces": [...]})) with Content-Encoding: gzip.
+describe('decodeIngestBody: gzip round-trip (SDK batch wire format)', () => {
+  // matches what the SDK's _send_batch_remote sends: gzip(JSON({"traces": [...]}))
   const toArrayBuffer = (buf) => buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
 
   test('gzipped batch body decodes and validates end-to-end', async () => {
@@ -226,7 +204,7 @@ describe('decodeIngestBody — gzip round-trip (the SDK batch wire format)', () 
     assert.equal(rows[0].id, 'plain-1')
   })
 
-  test('gzip bytes WITHOUT decompression are not valid JSON (the pre-fix bug)', () => {
+  test('gzip bytes WITHOUT decompression are not valid JSON', () => {
     const wire = gzipSync(Buffer.from(JSON.stringify({ traces: [mkTrace()] })))
     assert.throws(() => JSON.parse(new TextDecoder().decode(wire)))
   })

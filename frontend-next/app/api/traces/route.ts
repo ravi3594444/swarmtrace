@@ -19,20 +19,10 @@ export async function GET(request: Request) {
   if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT in the Authorization header). The user_id filter in the URL is
-    // now defence-in-depth, not the only guard.
-    //
-    // `since` and `before` are pushed into the Supabase query (not applied
-    // post-fetch) so the 500-row cap applies to the user's selected window,
-    // not to all-time. Audit finding #4: previously this route had no
-    // time-range filter at all and just returned the 500 most-recent traces
-    // — silently truncating anything older.
-    //
-    // `before` is the cursor for backward pagination: pass the oldest
-    // timestamp seen in the current page to fetch the page before it. Not
-    // currently used by the dashboard UI (which doesn't paginate), but
-    // supported so pagination can be added later without a route change.
+    // RLS is enforced via the user's Clerk JWT; the user_id filter is a
+    // second guard. `since` and `before` go into the query so the 500-row cap
+    // applies to the selected window. `before` is a cursor for paging back
+    // (the UI doesn't paginate yet).
     const since  = parseSinceParam(request.url)
     const before = parseBeforeParam(request.url)
     const rows = (await supaUserRequest(
@@ -45,7 +35,7 @@ export async function GET(request: Request) {
         parent_id: r.parent_id,
         trace_id: r.trace_id ?? null,
         function: r.function,
-        function_name: r.function, // compatible fallback
+        function_name: r.function, // compat fallback
         kind: r.kind,
         agent_id: r.agent_id,
         agent_name: r.agent_name,
@@ -61,10 +51,8 @@ export async function GET(request: Request) {
         output: r.output || '{}',
         error: r.error,
       })),
-      // True when the DB returned exactly 500 rows — signals that more
-      // pages likely exist. The dashboard can offer a "Load older" button
-      // that passes `before=<oldest timestamp>` to fetch the next page.
-      // Audit finding #4: previously this was silent.
+      // true when the DB returned exactly 500 rows, i.e. more pages probably
+      // exist (fetch them with before=<oldest timestamp>)
       truncated: isTruncated(rows, DEFAULT_TRACE_LIMIT),
     })
   } catch (error) {

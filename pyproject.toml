@@ -14,9 +14,7 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
-    # Every version listed here is exercised: 3.10 and 3.12 in CI's matrix,
-    # and the full suite was run against a clean wheel install on 3.10, 3.11,
-    # 3.12 and 3.13 before they were added. Don't list a version CI can't back.
+    # only list versions we've actually run the suite on
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
@@ -66,11 +64,7 @@ line-length = 100
 target-version = "py310"
 
 [tool.ruff.lint]
-# CI used to lint only E9,F63,F7,F82 ("critical errors only"), which let real
-# defect classes through: bare `except Exception` with no justification (BLE),
-# mutable-default / loop-variable-capture bugs (B), naive datetimes (DTZ),
-# unsorted imports (I). This is the enforced set — `ruff check swarmtrace
-# tests` must stay clean.
+# `ruff check swarmtrace tests` must stay clean.
 select = [
     "E", "W",   # pycodestyle
     "F",        # pyflakes
@@ -85,30 +79,24 @@ select = [
     "TID",      # tidy imports
     "DTZ",      # naive datetimes
     "RUF",      # ruff-specific (incl. RUF100 unused-noqa)
-    "BLE",      # blind except — every one must carry a `# noqa: BLE001 -- why`
+    "BLE",      # blind except, each needs a `# noqa: BLE001 -- why`
 ]
 ignore = [
-    # Line length is a formatting concern; the existing code wraps at 100 by
-    # convention but several justification comments run over and reflowing
-    # them would churn more than it clarifies.
+    # wraps at ~100 by convention, but some comments run over
     "E501",
-    # The codebase deliberately uses en/em dashes and arrows in prose.
+    # non-ascii punctuation in comments/docstrings
     "RUF002", "RUF003",
-    # RET504 misfires on `result = f(); return result` when a `finally` block
-    # also reads `result` (budget.py) — and elsewhere the named intermediate
-    # is what makes a transform chain readable.
+    # misfires when a finally block also reads `result` (budget.py)
     "RET504",
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Test doubles implement protocol methods they don't need, and asserting on
-# private helpers is the point of several regression tests.
+# tests poke at private helpers on purpose
 "tests/*" = ["B011"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-# Integration tests require a live Postgres (POSTGRES_TEST_URL) and are run
-# by the dedicated CI job. Unit CI and bare `pytest` skip them by default.
+# integration tests need a live Postgres (POSTGRES_TEST_URL), CI runs them separately
 norecursedirs = [".git", ".venv", "dist", "build", "*.egg", "frontend-next", "node_modules"]
 addopts = ["--ignore=tests/integration"]
 markers = [

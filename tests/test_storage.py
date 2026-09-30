@@ -52,7 +52,7 @@ def test_purge_all(storage):
 
 
 def test_save_never_raises(storage, monkeypatch):
-    # Simulate a broken connection — save_trace must swallow the error.
+    # Simulate a broken connection, save_trace must swallow the error.
     monkeypatch.setattr(storage, "_get_conn", lambda: (_ for _ in ()).throw(OSError("disk")))
     _save(storage)  # must not raise
 
@@ -80,16 +80,10 @@ def test_save_trace_round_trips_session_id(storage):
     assert row["synced"] == 0
 
 
-# ---------------------------------------------------------------------------
-# _purge_old_rows — must NOT evict unsynced rows (silent data loss guard)
-# ---------------------------------------------------------------------------
+# _purge_old_rows must not evict unsynced rows
 
 def test_purge_only_evicts_synced_rows(storage, monkeypatch):
-    """When the DB exceeds MAX_ROWS, _purge_old_rows must only evict rows
-    that have already been synced (synced=1). Evicting an unsynced row is
-    silent data loss — that trace was captured but never reached the
-    dashboard, and there's no other copy. The resync CLI can't recover
-    what's been deleted."""
+    """Over MAX_ROWS, only synced rows are evicted; dropping an unsynced one loses the trace for good."""
     # Lower MAX_ROWS so we can test without inserting 10k rows.
     monkeypatch.setattr(storage, "MAX_ROWS", 5)
     # Lower PURGE_EVERY so _purge_old_rows runs on the next save.
@@ -132,7 +126,7 @@ def test_purge_only_evicts_synced_rows(storage, monkeypatch):
     assert storage.get_by_id("synced-1") is None, "2nd oldest synced row should be evicted"
     # The newest synced row survives.
     assert storage.get_by_id("synced-2") is not None
-    # ALL unsynced rows survive — even though the DB is over MAX_ROWS.
+    # ALL unsynced rows survive, even though the DB is over MAX_ROWS.
     for i in range(3):
         assert storage.get_by_id(f"unsynced-{i}") is not None, (
             f"unsynced-{i} must NOT be evicted (silent data loss)"
@@ -141,14 +135,11 @@ def test_purge_only_evicts_synced_rows(storage, monkeypatch):
 
 
 def test_purge_leaves_db_over_max_when_only_unsynced_rows(storage, monkeypatch):
-    """If the DB only has unsynced rows and exceeds MAX_ROWS, _purge_old_rows
-    must NOT evict anything — the DB stays over MAX_ROWS. This is deliberate:
-    better to grow the local DB (bounded by disk) than silently drop traces
-    the user thinks are safe. The operator should notice via metrics/alerting."""
+    """With only unsynced rows, nothing is evicted even over MAX_ROWS (better to grow than drop)."""
     monkeypatch.setattr(storage, "MAX_ROWS", 3)
     monkeypatch.setattr(storage, "PURGE_EVERY", 1)
 
-    # Insert 5 unsynced rows — all over MAX_ROWS.
+    # Insert 5 unsynced rows, all over MAX_ROWS.
     for i in range(5):
         storage.save_trace(
             id_=f"unsynced-{i}", parent_id=None, function="fn", args="()", output="out",
@@ -174,9 +165,7 @@ def test_purge_leaves_db_over_max_when_only_unsynced_rows(storage, monkeypatch):
 
 
 def test_purge_evicts_oldest_synced_first(storage, monkeypatch):
-    """When multiple synced rows exist, the oldest are evicted first
-    (ORDER BY timestamp ASC). This matches the pre-fix behavior — only
-    the WHERE synced=1 filter is new."""
+    """The oldest synced rows go first."""
     monkeypatch.setattr(storage, "MAX_ROWS", 3)
     monkeypatch.setattr(storage, "PURGE_EVERY", 1)
     # Disable time-based retention so test rows (2026-01) are not age-purged.
@@ -207,18 +196,10 @@ def test_purge_evicts_oldest_synced_first(storage, monkeypatch):
     assert storage.get_by_id("row-3") is not None
 
 
-# ---------------------------------------------------------------------------
-# DB file permission hardening (audit finding: world-readable DB)
-#
-# Bug: ~/.swarmtrace.db was created with the process umask (typically 0644
-# on most systems), so on a multi-user machine any local user could read
-# captured prompts, outputs, args, error messages, and FOV browser-event
-# data. Fix: _secure_db_path() securely opens a regular DB file as 0600,
-# creates only package-owned directories as 0700, and rejects unsafe paths.
-# ---------------------------------------------------------------------------
+# DB file permissions: 0600 file, 0700 for directories we create, unsafe paths rejected
 
 def test_db_file_created_with_0600_permissions(storage):
-    """The DB file must be 0600 (owner-only) — not the umask default of 0644."""
+    """The DB file must be 0600 (owner-only), not the umask default of 0644."""
     # Trigger _get_conn() (which calls _secure_db_path).
     conn = storage._get_conn()
     conn.execute("CREATE TABLE IF NOT EXISTS t (x INT)")
@@ -246,15 +227,9 @@ def test_db_parent_dir_created_with_0700_when_we_create_it(storage, tmp_path):
 
 
 def test_db_parent_dir_NOT_chmod_when_it_already_exists(storage, tmp_path):
-    """Reviewer P1 fix: we must NOT chmod an existing parent directory.
-
-    The first implementation unconditionally chmod'd the parent to 0700,
-    which broke /tmp (1777→0700 when running as root), the user's home
-    directory, and shared app directories. Now we only chmod dirs we
-    created ourselves.
-    """
+    """An existing parent directory must not be chmod'd (think /tmp or $HOME)."""
     # tmp_path already exists (pytest creates it). Put the DB directly
-    # inside it — tmp_path is the parent, and it already exists.
+    # inside it, tmp_path is the parent, and it already exists.
     db = tmp_path / "traces.db"
     os.environ["SWARMTRACE_DB_PATH"] = str(db)
     import importlib as _il
@@ -310,15 +285,13 @@ def test_secure_db_path_pre_creates_file_with_0600(tmp_path):
 
 
 def test_secure_db_path_does_not_raise_on_missing_file(tmp_path):
-    """_secure_db_path must not raise when the DB file doesn't exist yet.
-    It pre-creates it with 0600. The parent dir (tmp_path) already exists
-    and must NOT be chmod'd (reviewer P1 fix)."""
+    """_secure_db_path must not raise when the DB file doesn't exist yet."""
     from swarmtrace.storage import _secure_db_path
     missing = tmp_path / "never.db"
 
     # Set a non-0700 mode on tmp_path to verify we don't overwrite it.
     # (pytest's tmp_path may default to 0o700 on some systems, so we
-    # can't just assert "!= 0o700" — we need to set a known different
+    # can't just assert "!= 0o700", we need to set a known different
     # mode and verify it's preserved.)
     os.chmod(str(tmp_path), 0o755)
 
@@ -331,11 +304,11 @@ def test_secure_db_path_does_not_raise_on_missing_file(tmp_path):
     assert mode == 0o600
 
     # Parent dir (tmp_path, which already existed) must NOT have been
-    # chmod'd — that was the P1 bug. Mode must still be 0o755.
+    # chmod'd. Mode must still be 0o755.
     dirmode = stat.S_IMODE(os.stat(str(tmp_path)).st_mode)
     assert dirmode == 0o755, (
         f"existing parent dir was chmod'd from 0o755 to {oct(dirmode)} — "
-        f"this is the P1 bug"
+        f"parent dirs we did not create must be left alone"
     )
 
 
@@ -383,16 +356,8 @@ def test_secure_db_path_rejects_other_writable_parent(tmp_path):
         storage_mod._secure_db_path(str(tmp_path / "traces.db"))
 
 
-# ---------------------------------------------------------------------------
-# close() — lock-safe connection teardown
-#
-# The connection is opened with check_same_thread=False so the background
-# sender can write through it, which makes storage._lock the only thing
-# serializing access. Closing the raw _conn from outside the lock while
-# another thread is mid-query is a use-after-free: it takes the interpreter
-# down with SIGSEGV, not a catchable Python exception. Reproduced 3/3 before
-# close() existed.
-# ---------------------------------------------------------------------------
+# close(): must be safe while other threads are mid-query. Closing the raw connection
+# outside storage._lock is a use-after-free that segfaults the interpreter.
 
 _CLOSE_RACE_SCRIPT = """
 import os, sys, threading, time
@@ -423,11 +388,7 @@ print("OK")
 
 
 def test_close_is_safe_while_other_threads_are_querying(tmp_path):
-    """close() must not race the worker threads into a segfault.
-
-    Run in a subprocess: if this regresses the failure mode is SIGSEGV, which
-    would take the whole pytest process down rather than failing one test.
-    """
+    """close() must not race worker threads into a segfault (run in a subprocess for that reason)."""
     import subprocess
     import sys
 
@@ -460,15 +421,9 @@ def test_close_is_idempotent(storage):
     assert storage._conn is None
 
 
-# ---------------------------------------------------------------------------
-# Periodic WAL checkpoint
-#
-# The checkpoint used to be issued before conn.commit(), i.e. inside the write
-# transaction the INSERT opens implicitly. SQLite cannot checkpoint inside a
-# transaction, so every attempt raised SQLITE_LOCKED, the outer handler
-# swallowed it as "storage warning: database table is locked", and the
+# Periodic WAL checkpoint. It has to run after commit; inside the write
+# transaction SQLite raises SQLITE_LOCKED and the handler swallows it.
 # explicit checkpoint never once ran.
-# ---------------------------------------------------------------------------
 
 def test_periodic_checkpoint_runs_without_warnings(storage, caplog, monkeypatch):
     """Crossing the checkpoint interval must not log a storage warning."""
@@ -481,7 +436,7 @@ def test_periodic_checkpoint_runs_without_warnings(storage, caplog, monkeypatch)
             _save(storage, trace_id=f"ckpt-{i}")
 
     # caplog.at_level() sets the level but does NOT filter caplog.records, so
-    # narrow to this library's own warnings — an unrelated record from another
+    # narrow to this library's own warnings, an unrelated record from another
     # logger would otherwise fail this assertion for the wrong reason.
     warnings = [
         r.getMessage()
@@ -495,11 +450,9 @@ def test_periodic_checkpoint_runs_without_warnings(storage, caplog, monkeypatch)
 
 
 def test_checkpoint_actually_executes(storage, monkeypatch):
-    """The PRAGMA must reach SQLite, not be swallowed by the error handler.
+    """The checkpoint PRAGMA must actually reach SQLite, not be swallowed by the error handler.
 
-    Uses sqlite3's trace callback, which reports every statement the
-    connection actually executes — so this fails if the checkpoint raises
-    SQLITE_LOCKED and gets swallowed, and it fails if the call is dropped.
+    Uses sqlite3's trace callback to see every executed statement.
     """
     monkeypatch.setattr(storage, "CHECKPOINT_EVERY", 3)
     monkeypatch.setattr(storage, "_write_count", 0)
@@ -517,6 +470,5 @@ def test_checkpoint_actually_executes(storage, monkeypatch):
     assert len(checkpoints) == 2, (
         f"expected 2 checkpoints across 6 writes, saw {checkpoints}"
     )
-    # A checkpoint issued inside the write transaction raises and leaves the
-    # connection mid-transaction; after the fix it runs on a clean one.
+    # inside the write transaction it raises and leaves the connection mid-transaction
     assert conn.in_transaction is False

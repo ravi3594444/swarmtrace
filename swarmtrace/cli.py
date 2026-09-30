@@ -25,23 +25,14 @@ recent traces are listed.
 
 
 class UsageError(ValueError):
-    """Bad command-line input — the caller prints usage and exits non-zero."""
+    """Bad command-line input, the caller prints usage and exits non-zero."""
 
 
 def parse_limit(args: list[str], default: int) -> int:
-    """Parse ``--limit N`` / ``--limit=N`` out of *args*, rejecting anything else.
+    """Parse ``--limit N`` / ``--limit=N`` out of *args*.
 
-    Shared by `swarmtrace`, `swarmtrace-alerts list` and `swarmtrace-resync`,
-    which each used to carry their own copy of this loop — and each silently
-    fell back to the default on a non-integer value, so
-    ``swarmtrace --limit twenty`` looked like it had honoured the flag while
-    showing 100 rows.
-
-    Unrecognized arguments are rejected too. Skipping them left exactly the
-    same silent failure one typo over: ``swarmtrace --limti 5`` printed 100
-    rows and exited 0, so the flag looked accepted. ``--limit`` is the only
-    option these three commands take, so anything else is a mistake worth
-    reporting rather than ignoring.
+    Shared by the view, alerts list and resync commands. Non-integer values
+    and unknown args raise instead of silently using the default.
     """
     limit = default
     seen = False
@@ -71,7 +62,7 @@ def _parse_limit(default: int = DEFAULT_VIEW_LIMIT) -> int:
     return parse_limit(sys.argv[1:], default)
 
 
-# ---------- helpers ----------
+# helpers
 
 def _wants_help(args: list[str]) -> bool:
     """Return True if *args* asks for help anywhere, not just in first position.
@@ -124,7 +115,7 @@ def _print_tree(traces, parent_id=None, indent=0):
     for t in children:
         # Rows are dicts keyed by column name (storage.py), so any future
         # migration column is automatically available under its own name here
-        # with no code change needed — see storage.py:TraceRow.
+        # with no code change needed, see storage.py:TraceRow.
         id_, func, error = t["id"], t["function"], t["error"]
         latency, in_tok, out_tok, cost, kind = (
             t["latency_sec"], t["input_tokens"], t["output_tokens"],
@@ -144,12 +135,8 @@ def _print_tree(traces, parent_id=None, indent=0):
 def _load_rich():
     """Return the rich classes the pretty renderers need, or ``None``.
 
-    The import is probed in isolation, on its own, so that an ImportError
-    raised from *inside* the rendering code cannot be mistaken for "rich
-    isn't installed". Wrapping the whole render block in
-    ``except ImportError`` used to silently downgrade the CLI to plain text
-    whenever a rendering bug raised ImportError — the failure looked like a
-    missing optional dependency and nothing surfaced it.
+    Only the import is probed here, so an ImportError from inside the
+    rendering code isn't mistaken for "rich not installed".
     """
     try:
         from rich.console import Console
@@ -162,7 +149,7 @@ def _load_rich():
     return {"Console": Console, "Panel": Panel, "Table": Table, "Text": Text, "Tree": Tree}
 
 
-# ---------- view ----------
+# view
 
 def _view_rich(rich, traces, total_cost, total_tokens) -> None:
     """Render the trace table + agent tree with rich."""
@@ -190,11 +177,9 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
     console.print(table)
 
     console.print("\n[bold cyan]=== Agent Tree ===[/bold cyan]")
-    # Tree-view labels are wrapped in Text(no_wrap=True, overflow="ellipsis")
-    # so rich truncates with "…" instead of word-wrapping onto a second
-    # line (which broke indentation — see commit 2655ec9 for the original
-    # wrap bug). Status is placed RIGHT AFTER the function name so it's
-    # preserved even when the trailing trace ID gets truncated.
+    # labels use Text(no_wrap=True, overflow="ellipsis") so a long one gets
+    # cut off instead of wrapping and breaking the indentation. Status goes
+    # right after the function name so it survives truncation.
     #
     # Field order: func → status → kind-tag → latency → cost → id
     # (id last because it's the longest and least scannable; full ID
@@ -217,10 +202,7 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
         # parser treats them as literal brackets, not style tags. Without
         # escaping, [root-1] is interpreted as a (nonexistent) style tag
         # and silently dropped from the output.
-        # `latency or 0`: traces.latency_sec is a nullable REAL column, and a
-        # NULL reaches `.3f` as None, raising TypeError — which aborted the
-        # WHOLE rich view, not just the offending row. (The plain fallback
-        # survived it because it interpolates without a format spec.)
+        # latency_sec can be NULL, and None blows up in the .3f format
         label = (
             f"[blue]{func}()[/blue] {status}{tag}{detached_tag} "
             f"[yellow]{(latency or 0):.3f}s[/yellow] "
@@ -242,10 +224,8 @@ def _view_rich(rich, traces, total_cost, total_tokens) -> None:
             )
             clatency, ccost = child["latency_sec"], child["cost_usd"]
             branch = tree_node.add(_tree_label(cfunc, cerror, ckind, clatency, ccost, cid))
-            # CRITICAL: recurse into `branch` (the new child node),
-            # NOT `tree_node` (the parent). Recursing into tree_node
-            # flattens grandchildren into siblings — see commit
-            # 2655ec9 for the regression that did exactly this.
+            # recurse into branch, not tree_node, or grandchildren get
+            # flattened into siblings
             add_children(branch, cid)
 
     for root, detached in _tree_roots(ordered):
@@ -308,7 +288,7 @@ def view(limit=None):
     return 0
 
 
-# ---------- replay ----------
+# replay
 
 def replay(trace_id):
     trace = get_by_id(trace_id)
@@ -346,7 +326,7 @@ def replay(trace_id):
         return 0
 
     console = rich["Console"]()
-    # Pad the plain label (not the markup) so the colons line up — padding
+    # Pad the plain label (not the markup) so the colons line up, padding
     # the marked-up string counts the tag characters and skews the column.
     body = "\n".join(
         f"[cyan]{label + ':':<10}[/cyan] {value}" for label, value in fields
@@ -373,7 +353,7 @@ def main_replay():
     return replay(args[0])
 
 
-# ---------- alerts ----------
+# alerts
 
 def _alerts_list(limit: int = 20) -> None:
     from swarmtrace.alerts import list_alerts
@@ -461,8 +441,7 @@ def main_alerts():
       ack <alert_id>    Mark an alert as acknowledged
     """
     args = sys.argv[1:]
-    # Check the whole argv, not just args[0]: `swarmtrace-alerts list --help`
-    # used to fall through to the subcommand and print the alert table.
+    # check all of argv so `list --help` prints help too
     if not args or _wants_help(args):
         print(main_alerts.__doc__)
         return
@@ -488,10 +467,10 @@ def main_alerts():
         sys.exit(2)
 
 
-# ---------- resync ----------
+# resync
 
 def main_resync():
-    """swarmtrace-resync — re-send traces that failed to reach the remote endpoint.
+    """swarmtrace-resync, re-send traces that failed to reach the remote endpoint.
 
     Reads rows from the local SQLite DB where synced=0 (i.e. the background
     sender's 3 retries were exhausted, or the endpoint was unreachable when

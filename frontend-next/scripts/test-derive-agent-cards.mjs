@@ -1,31 +1,19 @@
 /**
- * Test: deriveAgentCards contract.
+ * Tests for the deriveAgentCards contract (lib/derive-agent-cards.ts), using
+ * the real deriveAgentCards and stableAgentId. Guards against re-adding the
+ * `t.id === agent_id` check, phantom cards from orphan tool/llm spans, and
+ * drift from the SDK contract.
  *
- * Uses Node's built-in node:test runner + tsx (to import .ts directly).
- * Zero behavior change vs before, but now imports the REAL
- * deriveAgentCards and stableAgentId instead of inlining copies — so
- * if someone edits lib/derive-agent-cards.ts or lib/stable-agent-id.ts,
- * this test exercises the actual code, not a stale duplicate.
- *
- * Run:  npm test   (which runs: node --import tsx --test <this file>)
- *
- * What this guards against:
- *   - Re-introducing the `t.id === agent_id` check (would drop every
- *     bare-@observe agent under the stable-id scheme).
- *   - Phantom agent cards from orphan tool/llm/function spans.
- *   - Silent breakage of the SDK<->API contract when either side changes.
- *   - Divergence between the test and the real source (closed by tsx import).
+ * Run with `npm test`.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
-// Import the REAL functions — no inlined copies. If these files change,
-// the test automatically uses the new code. (This is the whole point of
-// the tsx migration; previously a copy lived here and could go stale.)
+// Real functions, not inlined copies.
 import { deriveAgentCards } from '../lib/derive-agent-cards.ts'
 import { stableAgentId }    from '../lib/stable-agent-id.ts'
 
-// ── Helpers ────────────────────────────────────────────────────────────────
+// Helpers
 const NOW = new Date('2026-07-05T17:00:00Z')
 const RECENT = new Date(NOW.getTime() - 60_000).toISOString()       // 1 min ago
 const OLD    = new Date(NOW.getTime() - 60 * 60_000).toISOString()  // 1 hour ago
@@ -50,9 +38,9 @@ function mkTrace(overrides) {
   }
 }
 
-describe('deriveAgentCards — contract with swarmtrace SDK', () => {
+describe('deriveAgentCards: contract with swarmtrace SDK', () => {
 
-  test('NEW-SDK shape: bare @observe with stable agent_id, 3 runs → 1 card, tasks=3', () => {
+  test('NEW-SDK shape: bare @observe with stable agent_id, 3 runs -> 1 card, tasks=3', () => {
     const stableAid = '8f395b07b234802b507e1929b733605ec945431a382394fed2cb53b30f54412c'
     const rows = [
       mkTrace({ id: 't1', agent_id: stableAid, agent_name: 'my_bot', kind: 'agent' }),
@@ -65,7 +53,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards[0].name, 'my_bot')
   })
 
-  test('OLD-SDK shape: id === agent_id (the pre-fix invariant) still works', () => {
+  test('OLD-SDK shape: id === agent_id still works', () => {
     const rows = [
       mkTrace({ id: 'a1', agent_id: 'a1', agent_name: 'old_bot', kind: 'agent' }),
       mkTrace({ id: 'a2', agent_id: 'a2', agent_name: 'old_bot', kind: 'agent' }),
@@ -93,7 +81,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(oldBot.tasks, 1, 'old SDK stays per-run')
   })
 
-  test('Phantom prevention: orphan tool call (kind=tool) → NO card', () => {
+  test('Phantom prevention: orphan tool call (kind=tool) -> NO card', () => {
     const rows = [
       mkTrace({ id: 'orphan1', agent_id: 'orphan1', agent_name: 'standalone_tool', kind: 'tool' }),
     ]
@@ -101,7 +89,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards.length, 0, 'orphan tool must not become a phantom card')
   })
 
-  test('Phantom prevention: orphan LLM call (kind=llm) → NO card', () => {
+  test('Phantom prevention: orphan LLM call (kind=llm) -> NO card', () => {
     const rows = [
       mkTrace({ id: 'orphan2', agent_id: 'orphan2', agent_name: 'raw_llm', kind: 'llm' }),
     ]
@@ -162,7 +150,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards[0].status, 'IDLE')
   })
 
-  test('Empty input → empty output', () => {
+  test('Empty input -> empty output', () => {
     assert.deepEqual(deriveAgentCards([], NOW), [])
   })
 
@@ -176,7 +164,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards[0].name, 'bot')
   })
 
-  test('REGRESSION GUARD: re-adding t.id === agent_id check would break this', () => {
+  test('regression: re-adding t.id === agent_id check would break this', () => {
     const stableAid = '8f395b07b234802b'
     const rows = [
       mkTrace({ id: 'fresh-uuid-1', agent_id: stableAid, agent_name: 'bot', kind: 'agent' }),
@@ -188,13 +176,10 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards[0].tasks, 2)
   })
 
-  // ── MCP integration tests ──────────────────────────────────────────────
-  // The MCP record_trace tool derives agent_id from `function` (SHA-256)
-  // when the caller doesn't pass an explicit agent_id. These tests verify
-  // that MCP traces aggregate the same way SDK traces do — using the REAL
-  // stableAgentId function imported from lib/stable-agent-id.ts.
+  // MCP: record_trace derives agent_id from `function` (SHA-256) when none
+  // is given, so MCP traces should aggregate like SDK ones.
 
-  test('MCP default: 3 calls with same function → 1 card, tasks=3', () => {
+  test('MCP default: 3 calls with same function -> 1 card, tasks=3', () => {
     const mcpAid = stableAgentId('my_bot')
     const rows = [
       mkTrace({ id: 'mcp-1', agent_id: mcpAid, agent_name: 'my_bot', kind: 'agent' }),
@@ -202,18 +187,18 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
       mkTrace({ id: 'mcp-3', agent_id: mcpAid, agent_name: 'my_bot', kind: 'agent' }),
     ]
     const cards = deriveAgentCards(rows, NOW)
-    assert.equal(cards.length, 1, '3 MCP calls with same function → 1 card')
+    assert.equal(cards.length, 1, '3 MCP calls with same function -> 1 card')
     assert.equal(cards[0].tasks, 3, 'tasks should aggregate')
     assert.equal(cards[0].name, 'my_bot')
   })
 
-  test('MCP default: different functions → different cards (no collision)', () => {
+  test('MCP default: different functions -> different cards (no collision)', () => {
     const rows = [
       mkTrace({ id: 'm1', agent_id: stableAgentId('researcher'), agent_name: 'researcher', kind: 'agent' }),
       mkTrace({ id: 'm2', agent_id: stableAgentId('summarizer'), agent_name: 'summarizer', kind: 'agent' }),
     ]
     const cards = deriveAgentCards(rows, NOW)
-    assert.equal(cards.length, 2, 'different functions → different cards')
+    assert.equal(cards.length, 2, 'different functions -> different cards')
     const names = cards.map((c) => c.name).sort()
     assert.deepEqual(names, ['researcher', 'summarizer'])
   })
@@ -224,7 +209,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
       mkTrace({ id: 'm2', agent_id: 'explicit-unique-2', agent_name: 'my_bot', kind: 'agent' }),
     ]
     const cards = deriveAgentCards(rows, NOW)
-    assert.equal(cards.length, 2, 'explicit unique agent_id per call → 2 cards')
+    assert.equal(cards.length, 2, 'explicit unique agent_id per call -> 2 cards')
     assert.equal(cards[0].tasks, 1)
     assert.equal(cards[1].tasks, 1)
   })
@@ -239,16 +224,15 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
       mkTrace({ id: 'm1', agent_id: mcpAid, agent_name: 'my_bot', kind: 'agent' }),
     ]
     const cards = deriveAgentCards(rows, NOW)
-    assert.equal(cards.length, 2, 'SDK + MCP agents with same name → 2 distinct cards')
+    assert.equal(cards.length, 2, 'SDK + MCP agents with same name -> 2 distinct cards')
     assert.equal(cards[0].name, 'my_bot')
     assert.equal(cards[1].name, 'my_bot')
     assert.notEqual(cards[0].id, cards[1].id)
   })
 
-  test('stableAgentId is deterministic (same input → same output)', () => {
-    // Direct test of the imported stableAgentId — guards against anyone
-    // changing the hash algorithm or input encoding without updating
-    // the SDK's _stable_agent_id to match.
+  test('stableAgentId is deterministic (same input -> same output)', () => {
+    // guards against changing the hash algorithm or input encoding without
+    // updating the SDK's _stable_agent_id
     assert.equal(stableAgentId('my_bot'), stableAgentId('my_bot'))
     assert.equal(
       stableAgentId('my_bot'),
@@ -257,17 +241,11 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.notEqual(stableAgentId('a'), stableAgentId('b'))
   })
 
-  // ── Time-range filter tests ────────────────────────────────────────────
-  // /api/agents filters traces by `timestamp >= since` BEFORE calling
-  // deriveAgentCards. These tests simulate that flow: build traces from
-  // multiple time periods, filter to "today", pass to deriveAgentCards,
-  // verify only today's agents appear.
-  //
-  // The filtering itself is a one-liner in the route (timestamp >= since),
-  // so we test the OUTCOME (deriveAgentCards output) rather than the filter
-  // in isolation.
+  // Time-range filter: /api/agents filters by timestamp >= since before
+  // calling deriveAgentCards, so these build traces from several periods,
+  // filter, and check which agents appear.
 
-  test('Time filter: agent with only old traces → does NOT appear', () => {
+  test('Time filter: agent with only old traces -> does NOT appear', () => {
     // Agent "old_bot" ran 2 days ago. "Today" view should not show it.
     const twoDaysAgo = new Date(NOW.getTime() - 2 * 24 * 60 * 60_000).toISOString()
     const sinceToday = new Date('2026-07-05T00:00:00Z').getTime() // start of today
@@ -281,7 +259,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards.length, 0, 'old agent should not appear in Today view')
   })
 
-  test('Time filter: agent with traces today AND old → appears, stats from today only', () => {
+  test('Time filter: agent with traces today AND old -> appears, stats from today only', () => {
     const twoDaysAgo = new Date(NOW.getTime() - 2 * 24 * 60 * 60_000).toISOString()
     const sinceToday = new Date('2026-07-05T00:00:00Z').getTime()
 
@@ -301,8 +279,8 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards[0].name, 'my_bot')
   })
 
-  test('Time filter: All Time (no since) → all agents appear with full history', () => {
-    // Simulates range='all' → no ?since param → no filter
+  test('Time filter: All Time (no since) -> all agents appear with full history', () => {
+    // Simulates range='all' -> no ?since param -> no filter
     const twoDaysAgo = new Date(NOW.getTime() - 2 * 24 * 60 * 60_000).toISOString()
 
     const allRows = [
@@ -330,18 +308,13 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards.length, 0, 'no cards when no traces in window')
   })
 
-  // ── Sort-order independence (audit finding #10) ──────────────────────────
-  // deriveAgentCards picks "latest" via runs[0] / traces[0] internally. The
-  // real caller (app/api/agents/route.ts) happens to pass rows already
-  // sorted most-recent-first, but that was only ever an implicit, untested
-  // cross-file assumption. These tests feed rows in NON-descending order to
-  // prove the function is correct on its own, not just lucky given its one
-  // current caller's query order.
+  // Sort-order independence: deriveAgentCards picks "latest" via runs[0] /
+  // traces[0], so these feed rows oldest-first and shuffled.
 
-  test('SORT GUARD: latest event picked correctly from ascending (oldest-first) input', () => {
+  test('sort: latest event picked correctly from ascending (oldest-first) input', () => {
     const aid = 'sort-agent-1'
     const rows = [
-      // Oldest first — the OPPOSITE of what the real caller sends.
+      // oldest first, the opposite of what the route sends
       mkTrace({ id: 'e1', agent_id: aid, agent_name: 'bot', kind: 'agent', timestamp: OLD, args: 'first call' }),
       mkTrace({ id: 'e2', agent_id: aid, agent_name: 'bot', kind: 'agent', timestamp: RECENT, args: 'latest call' }),
     ]
@@ -351,7 +324,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards[0].status, 'RUNNING', 'must use the RECENT trace to decide status, not the OLD one')
   })
 
-  test('SORT GUARD: latest run\'s agent_name wins even when it is not rows[0]', () => {
+  test('sort: latest run\'s agent_name wins even when it is not rows[0]', () => {
     const aid = 'sort-agent-2'
     const rows = [
       mkTrace({ id: 'r1', agent_id: aid, agent_name: 'stale_name', kind: 'agent', timestamp: OLD }),
@@ -361,7 +334,7 @@ describe('deriveAgentCards — contract with swarmtrace SDK', () => {
     assert.equal(cards[0].name, 'current_name', 'name must come from the most-recent run, not array position 0')
   })
 
-  test('SORT GUARD: shuffled (randomly-ordered) rows still pick the true latest event', () => {
+  test('sort: shuffled (randomly-ordered) rows still pick the true latest event', () => {
     const aid = 'sort-agent-3'
     const veryOld = new Date(NOW.getTime() - 3 * 60 * 60_000).toISOString()  // 3h ago
     const mid     = new Date(NOW.getTime() - 30 * 60_000).toISOString()     // 30m ago

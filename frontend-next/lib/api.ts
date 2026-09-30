@@ -1,20 +1,13 @@
-// Calls native Next.js API Routes (Route Handlers) deployed on Vercel.
-// Uses relative paths — no NEXT_PUBLIC_API_URL needed on the client.
-// NOTE: next: { revalidate } is only honoured in Server Components / Route
-// Handlers, not in 'use client' fetch calls. All fetches here are from
-// client components, so we omit it to avoid silent confusion.
+// Client-side helpers for the Next.js API routes, using relative paths.
+// next: { revalidate } is omitted because it only applies to server-side
+// fetches and everything here runs in client components.
 //
-// Every helper below still returns null/false on failure (unchanged
-// contract for existing callers) but now also surfaces the failure via
-// reportFetchError() so it isn't indistinguishable from "no data".
-//
-// All helpers accept an optional AbortSignal so callers can cancel stale
-// requests when the user navigates away or a newer request supersedes an
-// older one. Aborted requests are silently ignored (no error toast) —
-// the AbortError is caught and treated as a no-op rather than a failure.
+// Helpers return null/false on failure and also call reportFetchError() so
+// that isn't mistaken for "no data". They take an optional AbortSignal, and
+// aborted requests are ignored without an error toast.
 import { reportFetchError } from './report-fetch-error'
 
-/** Returns true if an error is an AbortError (request was cancelled). */
+/** True if the error is an AbortError (request cancelled). */
 function isAbortError(e: unknown): boolean {
   return e instanceof DOMException && e.name === 'AbortError'
 }
@@ -72,8 +65,8 @@ export async function fetchGraph(since?: number | null, signal?: AbortSignal) {
 
 export async function fetchMetrics(signal?: AbortSignal) {
   try {
-    // cache: 'no-store' — always fresh. Staleness is managed by the
-    // visibility-aware Realtime subscription in metrics/page.tsx.
+    // no-store: always fresh. Staleness is handled by the Realtime
+    // subscription in metrics/page.tsx.
     const res = await fetch('/api/metrics', { cache: 'no-store', signal })
     if (!res.ok) { reportFetchError('metrics', () => { fetchMetrics() }); return null }
     return res.json()
@@ -104,9 +97,8 @@ export async function createApiKey(name: string, signal?: AbortSignal) {
       body: JSON.stringify({ name }),
       signal,
     })
-    // Parse the body even on failure — the route returns a specific
-    // { error } message (plan limit / unauthorized / server error) that's
-    // far more useful than a generic "API unavailable" fallback.
+    // parse the body even on failure; the route's { error } message is more
+    // useful than a generic fallback
     const data = await res.json().catch(() => null)
     if (!res.ok) {
       reportFetchError('API keys')

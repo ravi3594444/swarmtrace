@@ -25,7 +25,7 @@ import {
 
 type ViewMode = 'tree' | 'architecture' | 'table' | 'waterfall'
 
-// ── Date helpers ────────────────────────────────────────────────────────────────
+// Date helpers
 
 // Local (not UTC) yyyy-mm-dd, matching what <input type="date"> expects and
 // what the fromMs/toMs parsing below assumes. Using toISOString() here would
@@ -56,13 +56,7 @@ const DATE_PRESETS: { key: DatePreset; label: string }[] = [
   { key: 'all', label: 'All time' },
 ]
 
-/**
- * Plain-English date filter. Most people don't think in "from/to" date
- * pickers — they think "today" or "last week" — so the two raw <input
- * type="date"> fields now live inside a labeled dropdown behind clear
- * preset buttons, with the custom range still available for anyone who
- * wants a specific past window.
- */
+// Preset date filter ("Today", "Last 7 days", ...) with a custom from/to range.
 function DateRangePicker({
   preset, fromDate, toDate, onPreset, onFromDate, onToDate,
 }: {
@@ -144,10 +138,10 @@ function DateRangePicker({
   )
 }
 
-// ── (export helpers + ExportMenu moved to components/swarm/ExportMenu.tsx) ──
+// (export helpers + ExportMenu moved to components/swarm/ExportMenu.tsx)
 
 
-// ── Tag filter bar ─────────────────────────────────────────────────────────────
+// Tag filter bar
 
 /**
  * Derives "tags" from trace fields: kind, agent_name, and any function prefix
@@ -428,7 +422,7 @@ const VIEW_BUTTONS: { mode: ViewMode; icon: typeof GitBranch; label: string }[] 
   { mode: 'waterfall',    icon: BarChart2, label: 'Waterfall' },
 ]
 
-// ── Integration Panels ────────────────────────────────────────────────────────
+// Integration Panels
 
 function ToolAttentionPanel({ traces }: { traces: Trace[] }) {
   const tools = useMemo(() => {
@@ -545,7 +539,7 @@ export default function TracesPage() {
     setToDate(v)
   }
 
-  // ── Tag-based filtering ──────────────────────────────────────────────────────
+  // Tag-based filtering
   const [activeTags, setActiveTags] = useState<Set<string>>(new Set())
 
   const toggleTag = (tag: string) => {
@@ -649,7 +643,7 @@ export default function TracesPage() {
 
       {truncated && <TruncationBanner />}
 
-      {/* Tag filter bar — always visible when tags exist */}
+      {/* Tag filter bar - always visible when tags exist */}
       <TagFilterBar
         traces={traces}
         activeTags={activeTags}
@@ -657,7 +651,7 @@ export default function TracesPage() {
         onClear={clearTags}
       />
 
-      {/* Integration Panels — table/waterfall only; tree view uses full viewport height */}
+      {/* Integration Panels - table/waterfall only; tree view uses full viewport height */}
       {view !== 'tree' && (isEnabled('tool-attention') || (isEnabled('scrapling') && scrapingCount > 0)) && (
         <div className="px-6 pt-6">
           {isEnabled('scrapling') && scrapingCount > 0 && <ScrapingBanner count={scrapingCount} />}
@@ -665,7 +659,7 @@ export default function TracesPage() {
         </div>
       )}
 
-      {/* Architecture — full width, selectable components */}
+      {/* Architecture - full width, selectable components */}
       {view === 'architecture' && (
         <div className="p-6">
           <ExecutionArchitecture traces={filtered} selected={selected} onSelect={setSelected} />
@@ -677,7 +671,7 @@ export default function TracesPage() {
         </div>
       )}
 
-      {/* Waterfall — full width, no side panel */}
+      {/* Waterfall - full width, no side panel */}
       {view === 'waterfall' && (
         <div className="p-6">
           <Waterfall traces={filtered} onSelect={setSelected} />
@@ -689,7 +683,7 @@ export default function TracesPage() {
         </div>
       )}
 
-      {/* Table — full width, no side panel */}
+      {/* Table - full width, no side panel */}
       {view === 'table' && (
         <div className="p-6">
           <TraceTable traces={filtered} onSelect={setSelected} selected={selected} />
@@ -701,7 +695,7 @@ export default function TracesPage() {
         </div>
       )}
 
-      {/* Tree — resizable split panel. Uses dynamic viewport height (dvh)
+      {/* Tree - resizable split panel. Uses dynamic viewport height (dvh)
           to fill the screen below the PageHeader. The calc accounts for:
           - 48px mobile top bar (pt-12) on small screens, 0 on lg+
           - ~64px PageHeader height (varies slightly with toolbar wrapping,

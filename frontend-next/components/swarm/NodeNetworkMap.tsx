@@ -29,16 +29,9 @@ import type {
 const WIDTH = 1280
 const HEIGHT = 760
 
-/* Charcoal & Ivory Monochrome — see
-   stitch_swarmtrace_developer_dashboard/charcoal_ivory_monochrome/DESIGN.md
-   Collaboration mode is communicated through *tonal layering* (brightness /
-   opacity), not hue — the design system is strictly achromatic. The only
-   hues on this screen are the pre-existing app-wide status colors (emerald
-   = live/running, amber = warning/partial, error-red = failed), kept
-   because they match how status is already color-coded everywhere else in
-   the dashboard. Everything else — nodes, edges, backgrounds, chrome — is
-   grayscale. */
-const ERROR_COLOR = '#ffb4ab' // DESIGN.md `error` token
+/* Grayscale palette: collaboration mode is shown by brightness, not hue.
+   Only the status colors (emerald running, amber partial, red failed) use color. */
+const ERROR_COLOR = '#ffb4ab'
 
 type DecoratedNode = AgentGraphNode & {
   r: number
@@ -58,15 +51,12 @@ type PositionedEdge = AgentGraphEdge & {
 
 type LayoutMode = 'force' | 'hierarchical'
 
-// Node fill colors use CSS variables so they invert correctly between light
-// and dark themes. Previously these were hardcoded hex (#ffffff, #e5e2e1,
-// etc.) which made nodes invisible on a light background. The CSS vars are
-// defined in globals.css :root and .dark, mapping to the same tonal ramp
-// (primary brightest → outline dimmest) in each theme.
+// Node colors come from CSS vars (globals.css) so they invert with the theme.
+// Ramp goes from primary (most emphasis) down to outline (least).
 const MODE_STYLE: Record<CollaborationMode, { label: string; color: string; glow: string; target: { x: number; y: number } }> = {
   orchestrator: {
     label: 'Orchestrator',
-    color: 'var(--network-node-primary, #ffffff)', // primary — brightest, most emphasis
+    color: 'var(--network-node-primary, #ffffff)', // primary
     glow: 'var(--network-node-primary-glow, rgba(255, 255, 255, 0.55))',
     target: { x: WIDTH * 0.48, y: HEIGHT * 0.44 },
   },
@@ -84,7 +74,7 @@ const MODE_STYLE: Record<CollaborationMode, { label: string; color: string; glow
   },
   solo: {
     label: 'Solo',
-    color: 'var(--network-node-outline, #8e9192)', // outline — dimmest, least emphasis
+    color: 'var(--network-node-outline, #8e9192)', // outline
     glow: 'var(--network-node-outline-glow, rgba(142, 145, 146, 0.32))',
     target: { x: WIDTH * 0.68, y: HEIGHT * 0.36 },
   },
@@ -127,9 +117,8 @@ function decorateNodes(graph: AgentNetworkGraph): DecoratedNode[] {
   })
 }
 
-// Force-directed layout — the original physics simulation. Good at showing
-// overall graph "shape" (clusters, density) but doesn't communicate call
-// order/direction on its own; that's what the arrowheads on edges are for.
+// Force-directed layout. Shows clusters and density; call direction comes
+// from the edge arrowheads.
 function forceLayout(decorated: DecoratedNode[], edgeList: AgentGraphEdge[]): PositionedNode[] {
   const nodes: PositionedNode[] = decorated.map((node, index) => {
     const seed = hashNumber(node.id)
@@ -146,13 +135,8 @@ function forceLayout(decorated: DecoratedNode[], edgeList: AgentGraphEdge[]): Po
   const indexById = new Map(nodes.map((node, index) => [node.id, index]))
   const velocities = nodes.map(() => ({ x: 0, y: 0 }))
 
-  // Iteration count scales down for large graphs to keep the layout
-  // responsive. 150 iterations of O(n²) repulsion is fine for ~30 nodes
-  // but janks at 100+. For larger graphs we reduce iterations — the
-  // layout is slightly less converged but still visually correct, and
-  // the main thread stays responsive. A web worker would be the ideal
-  // fix but requires bundler setup; this adaptive approach is a pragmatic
-  // middle ground that prevents the UI from freezing.
+  // O(n^2) repulsion janks past ~100 nodes at 150 iterations, so large
+  // graphs get fewer (a worker would be better, but needs bundler setup).
   const iterations = nodes.length > 80 ? 50 : nodes.length > 40 ? 100 : 150
 
   for (let iteration = 0; iteration < iterations; iteration += 1) {
@@ -209,12 +193,8 @@ function forceLayout(decorated: DecoratedNode[], edgeList: AgentGraphEdge[]): Po
   return nodes
 }
 
-// Hierarchical (tree) layout — depth is derived from "orchestrates" edges
-// via BFS from root orchestrators, so orchestrator → sub-agent call order
-// reads top-to-bottom, matching how LangSmith/Langfuse lay out agent
-// graphs. Nodes with no incoming "orchestrates" edge (orchestrators,
-// solo agents, peer-only agents) become roots at depth 0. Peer edges don't
-// affect depth — they're drawn wherever their endpoints land.
+// Tree layout. Depth is a BFS over "orchestrates" edges; nodes with no
+// incoming one are roots at depth 0. Peer edges don't affect depth.
 function hierarchicalLayout(decorated: DecoratedNode[], edgeList: AgentGraphEdge[]): PositionedNode[] {
   const byId = new Map(decorated.map((node) => [node.id, node]))
   const children = new Map<string, string[]>()
@@ -354,12 +334,8 @@ export function NodeNetworkMap({
   onToggleLive: () => void
   onRefresh: () => void
 }) {
-  // Layout is computed asynchronously via requestIdleCallback so the initial
-  // render (which includes the SVG container + controls) isn't blocked by
-  // the O(n²) force simulation. For large graphs this keeps the page
-  // responsive — the map shows a "Layouting…" state for a frame, then
-  // snaps to the laid-out nodes. For small graphs (<30 nodes) the layout
-  // is fast enough that the loading state is never visible.
+  // Layout runs in requestIdleCallback so the force simulation doesn't
+  // block the first render; the map shows "Layouting..." until it's done.
   const [layoutMode, setLayoutMode] = useState<LayoutMode>('force')
   const [layout, setLayout] = useState<{ nodes: PositionedNode[]; edges: PositionedEdge[] } | null>(null)
   useEffect(() => {
@@ -398,9 +374,7 @@ export function NodeNetworkMap({
   const [pan, setPan] = useState({ x: 0, y: 0 })
   const dragRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null)
 
-  // Search matches are computed against the current node set and drive a
-  // dim/highlight pass over the graph — the same visual language already
-  // used for hover/selection, just triggered by typing instead of pointing.
+  // Search matches dim everything else, same as hover/selection.
   const trimmedQuery = searchQuery.trim().toLowerCase()
   const searchMatchIds = useMemo(() => {
     if (!trimmedQuery) return null
@@ -411,12 +385,8 @@ export function NodeNetworkMap({
     )
   }, [nodes, trimmedQuery])
 
-  // Auto-select behavior: when the user hasn't selected a node, `selected`
-  // falls back to nodes[0] below — no effect needed. (Previously an effect
-  // called setSelectedId(nodes[0].id) synchronously once nodes arrived,
-  // which the React Compiler flagged as a cascading-render hazard; the
-  // fallback makes it redundant AND preserves the user's selection across
-  // graph refreshes, since an explicit selection always wins.)
+  // Falls back to nodes[0] when nothing is selected; an explicit selection
+  // always wins, including across refreshes.
   const selected = nodes.find((node) => node.id === selectedId) ?? nodes[0]
   const hovered = nodes.find((node) => node.id === hoveredId)
   const highlighted = hovered || selected
@@ -430,15 +400,11 @@ export function NodeNetworkMap({
     return ids
   }, [edges, highlighted])
 
-  // Distinguish "graph has no nodes" (real empty state) from "layout is
-  // still computing" (loading). The layout runs in requestIdleCallback so
-  // there's a brief window where `layout` is null even though the graph
-  // has nodes — showing EmptyNetwork during that window would flash the
-  // wrong message.
+  // `layout` is null briefly while it computes, so only show the empty
+  // state when the graph itself has no nodes.
   if (graph.nodes.length === 0) return <EmptyNetwork />
   if (nodes.length === 0) {
-    // Layout is computing — show the map container with a subtle
-    // "Layouting…" indicator instead of blocking the render.
+    // still laying out
     return (
       <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
         <div className="relative min-h-[720px] overflow-hidden rounded-[2rem] border border-border bg-background flex items-center justify-center">
@@ -453,10 +419,7 @@ export function NodeNetworkMap({
   return (
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
       <div className="relative min-h-[720px] overflow-hidden rounded-[2rem] border border-border bg-background shadow-[0_30px_100px_rgba(0,0,0,0.55)] dark:shadow-[0_30px_100px_rgba(0,0,0,0.55)]">
-        {/* Achromatic vignette + grid — no blue/violet/cyan, brightness only.
-            The gradient uses CSS variables so it adapts to light/dark theme.
-            Previously this hardcoded #0e0e0e/#0a0a0a/#000 which made the map
-            a dark island in light mode. */}
+        {/* Grayscale vignette + grid, themed via CSS variables */}
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_50%_45%,var(--network-vignette,rgba(255,255,255,0.06)),transparent_34%),radial-gradient(circle_at_78%_28%,var(--network-vignette,rgba(255,255,255,0.04)),transparent_24%),radial-gradient(circle_at_22%_72%,var(--network-vignette,rgba(255,255,255,0.05)),transparent_25%),linear-gradient(180deg,var(--network-bg-from,#0e0e0e),var(--network-bg-to,#0a0a0a)_52%,var(--network-bg-end,#000))]" />
         <div className="absolute inset-0 opacity-[0.14] [background-image:linear-gradient(var(--network-grid,rgba(142,145,146,0.14))_1px,transparent_1px),linear-gradient(90deg,var(--network-grid,rgba(142,145,146,0.14))_1px,transparent_1px)] [background-size:34px_34px]" />
         <div className="absolute inset-0 opacity-25 [background-image:radial-gradient(circle_at_center,var(--network-center-glow,rgba(255,255,255,0.10))_0,transparent_34%)]" />
@@ -656,14 +619,14 @@ export function NodeNetworkMap({
                 <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
-            {/* Heat encodes intensity via brightness, not a warm hue — stays achromatic */}
+            {/* Heat encodes intensity via brightness, not a warm hue - stays achromatic */}
             <radialGradient id="heatGradient">
               <stop offset="0%" stopColor="var(--network-node-primary, #ffffff)" stopOpacity="0.32" />
               <stop offset="48%" stopColor="var(--network-node-on-surface, #e5e2e1)" stopOpacity="0.11" />
               <stop offset="100%" stopColor="var(--network-node-on-surface, #e5e2e1)" stopOpacity="0" />
             </radialGradient>
             {/* Arrowheads communicate call direction (orchestrator → sub-agent,
-                earlier → later peer hand-off) — the one thing a pure
+                earlier → later peer hand-off) - the one thing a pure
                 force-directed "blob" layout can't show on its own. Separate
                 active/dim variants per relation since a shared <marker> can't
                 take per-line opacity, and opacity is how this achromatic
@@ -696,9 +659,9 @@ export function NodeNetworkMap({
 
             {showLines && edges.map((edge) => {
               const isActive = connectedIds.has(edge.source) && connectedIds.has(edge.target)
-              // orchestrates = brighter/solid (hierarchy), peer = dimmer/dashed (loose collaboration) — distinguished by tone + dash, not hue
+              // orchestrates = brighter/solid (hierarchy), peer = dimmer/dashed (loose collaboration) - distinguished by tone + dash, not hue
               const stroke = edge.relation === 'orchestrates' ? 'var(--network-node-on-surface, #e5e2e1)' : 'var(--network-node-outline, #8e9192)'
-              // Trim both ends so the line — and its arrowhead — stop at the
+              // Trim both ends so the line - and its arrowhead - stop at the
               // node's visual edge instead of running under the circle.
               const start = trimToward(edge.sourceNode, edge.targetNode, edge.sourceNode.r + 2)
               const end = trimToward(edge.targetNode, edge.sourceNode, edge.targetNode.r + 7)
@@ -732,11 +695,8 @@ export function NodeNetworkMap({
                 <g
                   key={node.id}
                   opacity={dimmed ? 0.32 : 1}
-                  // Keyboard accessibility: each node is a focusable button.
-                  // Tab moves between nodes in layout order; Enter/Space
-                  // selects; ArrowLeft/ArrowRight move to the previous/next
-                  // node. aria-label describes the agent so screen readers
-                  // can announce it. Previously this was mouse-only.
+                  // Keyboard: Tab between nodes, Enter/Space selects,
+                  // left/right arrows step to the previous/next node.
                   tabIndex={0}
                   role="button"
                   aria-label={`${node.label}, ${formatMode(node.collaborationMode)}${node.ragSpans > 0 ? ', RAG' : ''}${node.status === 'RUNNING' ? ', running' : node.status === 'ERROR' ? ', error' : ''}, ${node.spans} spans, ${formatCost(node.cost)}`}
@@ -746,11 +706,8 @@ export function NodeNetworkMap({
                       setSelectedId(node.id)
                     } else if (event.key === 'ArrowRight' || event.key === 'ArrowLeft') {
                       event.preventDefault()
-                      // Selection already wraps via modulo; focus must use the same
-                      // wrapped index. parentElement.children mixes heat/edge/node
-                      // siblings, so resolve focusable node elements by role instead
-                      // of raw child index — otherwise wrap hits undefined and the
-                      // focus ring sticks, trapping arrow nav at the boundary.
+                      // parentElement.children mixes heat/edge/node siblings, so
+                      // look up focusable nodes by role rather than child index.
                       const delta = event.key === 'ArrowRight' ? 1 : -1
                       const nextIndex = (nodeIndex + delta + nodes.length) % nodes.length
                       setSelectedId(nodes[nextIndex].id)
@@ -778,7 +735,7 @@ export function NodeNetworkMap({
                   {node.status === 'RUNNING' && (
                     <circle cx={node.x} cy={node.y} r={node.r + 9} fill="none" stroke="#34d399" strokeOpacity="0.5" strokeWidth="1.4" />
                   )}
-                  {/* RAG ring uses the primary accent — deliberately distinct from the
+                  {/* RAG ring uses the primary accent - deliberately distinct from the
                       status-green ring above, since an agent can be RUNNING and RAG-using at once */}
                   {node.ragSpans > 0 && (
                     <circle cx={node.x} cy={node.y} r={node.r + 5} fill="none" stroke="var(--network-node-primary, #ffffff)" strokeOpacity="0.85" strokeWidth="2" />
@@ -923,8 +880,7 @@ export function NodeNetworkMap({
               </div>
             </div>
 
-            {/* Solid white CTA — DESIGN.md: "Primary buttons are solid white with black
-                text... hover states reduce opacity to 90%" */}
+            {/* Solid primary CTA */}
             <Link
               href="/traces"
               className="block rounded-2xl bg-primary px-4 py-3 text-center text-sm font-semibold text-primary-foreground transition hover:opacity-90"

@@ -12,10 +12,8 @@ export async function GET() {
   if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
-    // One tiny table — one row per day per user. No scanning 5000 traces.
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT in the Authorization header). The user_id filter in the URL is
-    // now defence-in-depth, not the only guard.
+    // One row per day per user. RLS is enforced via the Clerk JWT; the
+    // user_id filter is a second guard.
     const rows = (await supaUserRequest(
       `daily_metrics?user_id=eq.${encodeURIComponent(userId)}&order=date.desc&limit=90`,
       userId
@@ -33,16 +31,9 @@ export async function GET() {
 
     const now       = new Date()
     const todayStr  = now.toISOString().slice(0, 10)
-    // Compute the 7-days-ago boundary as a calendar-date string, NOT a Date
-    // object. The old code did `new Date(r.date) >= day7Ago` where day7Ago
-    // retained the current hours/minutes — so at 00:00:01 UTC you'd see 8
-    // days of data, and later in the day you'd see 7. Comparing ISO date
-    // strings (YYYY-MM-DD) gives exactly 7 calendar days regardless of when
-    // the request fires.
-    //
-    // "Last 7 days" = today + the 6 previous days = 7 days total. So the
-    // boundary is 6 days ago (inclusive), not 7. Using >= 6-days-ago gives
-    // exactly 7 rows: [6ago, 5ago, 4ago, 3ago, 2ago, 1ago, today].
+    // Compare calendar-date strings (YYYY-MM-DD), not Dates, so the window
+    // doesn't shift with the time of day. "Last 7 days" is today plus the 6
+    // before it, so the inclusive boundary is 6 days ago.
     const day6AgoDate = new Date(now)
     day6AgoDate.setUTCDate(now.getUTCDate() - 6)
     const day6AgoStr = day6AgoDate.toISOString().slice(0, 10)
@@ -60,7 +51,7 @@ export async function GET() {
       last_7_days: agg(rows.filter((r) => r.date >= day6AgoStr)),
       this_month:  agg(rows.filter((r) => r.date >= monthStart)),
       all_time:    agg(rows),
-      // chart: one point per day — frontend picks the period to display
+      // chart: one point per day, the frontend picks the period to show
       chart: rows.map((r) => ({
         date:   r.date,
         cost:   r.cost_usd      || 0,

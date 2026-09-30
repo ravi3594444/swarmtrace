@@ -55,7 +55,7 @@ export function TokenChart({ traces, onSelect }: { traces: Trace[]; onSelect?: (
           </Empty>
         ) : (
           <>
-            {/* Scale ruler — gives every row a fixed reference, so a tiny bar still reads
+            {/* Scale ruler - gives every row a fixed reference, so a tiny bar still reads
                 against the same axis as the dominant one instead of looking like zero. */}
             <div className="flex pl-32 pr-16 mb-1.5">
               <div className="relative flex-1 h-3.5 text-[11px] font-mono text-muted-foreground/70">
@@ -85,10 +85,7 @@ export function TokenChart({ traces, onSelect }: { traces: Trace[]; onSelect?: (
                     // themselves are decorative (aria-hidden via the span).
                     role="img"
                     aria-label={`${d.function}: ${d.input.toLocaleString()} input, ${d.output.toLocaleString()} output, ${total.toLocaleString()} total tokens`}
-                    // Hover tooltip shows exact input/output/total — previously
-                    // you had to mentally split the bar widths. Click (when
-                    // onSelect is provided) filters the traces page to this
-                    // function so you can investigate a token hog.
+                    // Hover shows exact counts; click calls onSelect if given.
                     onMouseEnter={(e) => setHover({ fn: d.function, input: d.input, output: d.output, total, x: e.clientX, y: e.clientY })}
                     onMouseLeave={() => setHover(null)}
                     onClick={() => onSelect?.(d.function)}
@@ -114,7 +111,7 @@ export function TokenChart({ traces, onSelect }: { traces: Trace[]; onSelect?: (
               })}
             </div>
 
-            {/* "Show all" toggle — only appears when there are more rows
+            {/* "Show all" toggle - only appears when there are more rows
                 than the default cap. Avoids an endlessly tall chart for
                 swarms with many functions while keeping the data accessible. */}
             {hiddenCount > 0 && (

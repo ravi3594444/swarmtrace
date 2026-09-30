@@ -20,7 +20,7 @@ MAX_RESULTS = 200
 
 
 def _get_llm():
-    """Lazy-load LLM at call time — avoids import-time crash if key is missing."""
+    """Lazy-load LLM at call time, avoids import-time crash if key is missing."""
     try:
         from litai import LLM
     except ImportError as exc:
@@ -56,7 +56,7 @@ def score_similarity(output_a: str, output_b: str, llm=None) -> float:
 
     Never raises: a failure calling ``llm`` and a non-numeric/unparsable
     response are handled as two separate, independent failure modes, each
-    falling back to 0.5 (neutral) — so neither a flaky scorer nor a bad
+    falling back to 0.5 (neutral), so neither a flaky scorer nor a bad
     response can ever crash ``compare()``.
     """
     if llm is None:
@@ -71,7 +71,7 @@ Reply with just the number, nothing else."""
 
     # Isolated from the parsing step below: if the user-supplied llm callable
     # raises (network/SDK error, bad args, even a ValueError of its own),
-    # `score` is never assigned — so this except can't reference it and
+    # `score` is never assigned, so this except can't reference it and
     # can't crash with UnboundLocalError the way the parsing failure below
     # legitimately can reference a real (just non-numeric) value.
     try:
@@ -85,7 +85,7 @@ Reply with just the number, nothing else."""
     try:
         return min(1.0, max(0.0, float(raw.strip())))
     except Exception:  # noqa: BLE001 -- untrusted LLM output, see comment below
-        # Non-numeric (or non-string/None) output — warn and default to
+        # Non-numeric (or non-string/None) output, warn and default to
         # neutral 0.5 so neither a regression nor a false pass is silently
         # reported.
         _log.warning(
@@ -132,7 +132,7 @@ def report_run(
     ``results`` is a list of per-input dicts with keys: ``input``,
     ``output_a``, ``output_b``, ``latency_a_sec``, ``latency_b_sec``,
     ``similarity``. Text is truncated to 32 000 chars and PII-redacted
-    (emails, API keys, card numbers, JWTs) before transmission — the
+    (emails, API keys, card numbers, JWTs) before transmission, the
     dashboard redacts again at the ingest boundary.
     """
     from swarmtrace.config import resolve_remote_config
@@ -233,7 +233,7 @@ def compare(func, inputs: list, version_a_prompt: str, version_b_prompt: str,
              defaults to litai via LIGHTNING_API_KEY.
         report_to_dashboard: if True, upload the run (per-input scores and
              latencies) to the SwarmTrace dashboard Regression page via
-             POST /api/regression. Best-effort — a failure is logged and
+             POST /api/regression. Best-effort, a failure is logged and
              never raises. Requires SWARMTRACE_API_KEY and (optionally)
              SWARMTRACE_ENDPOINT to be configured.
         run_name: optional display name for the dashboard report.
@@ -241,11 +241,11 @@ def compare(func, inputs: list, version_a_prompt: str, version_b_prompt: str,
              SWARMTRACE_ENDPOINT (only used when report_to_dashboard=True).
 
     Returns:
-        int — number of inputs flagged as regressions (unchanged from
+        int, number of inputs flagged as regressions (unchanged from
         earlier versions; existing callers are unaffected).
     """
     if llm is None:
-        llm = _get_llm()  # resolve once up front — fail fast, not mid-run
+        llm = _get_llm()  # resolve once up front, fail fast, not mid-run
 
     _log.info("Comparing v1 vs v2 on %d inputs...", len(inputs))
     _log.info(

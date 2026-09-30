@@ -1,18 +1,4 @@
-"""Regression tests for the os.fork() FOV-worker survival bug.
-
-Same bug as audit finding #4 (tracer.py's `_worker_started`), applied to
-`swarmtrace/fov.py`'s `_fov_worker_started` flag: `os.fork()` clones
-process memory (including the flag) but not other threads -- only the
-calling thread survives into the child. Without an at-fork reset hook, a
-forked child inherits `_fov_worker_started = True` from a parent with a
-live FOV sender thread that does not exist in the child, so
-`_ensure_fov_worker()`'s fast-path check short-circuits forever there --
-no sender thread ever starts, and every FOV event enqueued in that
-process sits in `_FOV_QUEUE` with nothing draining it.
-
-Mirrors tests/test_fork_worker.py -- see that file for the fuller
-writeup of why these use a REAL os.fork() instead of mocking it.
-"""
+"""After os.fork() the FOV sender must be restartable in the child (see test_fork_worker.py)."""
 
 from __future__ import annotations
 
@@ -30,15 +16,10 @@ pytestmark = pytest.mark.skipif(
 
 
 def _run_in_child(fn) -> str:
-    """Fork, run ``fn()`` in the child, report PASS/FAIL back via a pipe.
-
-    Uses os._exit() in the child so the forked copy never runs pytest's
-    normal teardown machinery.
-    """
+    """Fork, run ``fn()`` in the child, report PASS/FAIL back via a pipe."""
     read_fd, write_fd = os.pipe()
     pid = os.fork()
     if pid == 0:
-        # ---- child ----
         os.close(read_fd)
         try:
             fn()
@@ -48,7 +29,6 @@ def _run_in_child(fn) -> str:
         os.write(write_fd, result)
         os.close(write_fd)
         os._exit(0)
-    # ---- parent ----
     os.close(write_fd)
     chunks = []
     while True:
@@ -67,8 +47,7 @@ def _run_in_child(fn) -> str:
 
 @pytest.fixture(autouse=True)
 def _restore_fov_worker_state():
-    """`_fov_worker_started` / `_FOV_QUEUE` are process-global module
-    state -- save and restore around each test."""
+    """Save and restore the process-global worker state around each test."""
     original_started = fov._fov_worker_started
     original_queue = fov._FOV_QUEUE
     yield
@@ -84,8 +63,7 @@ def test_at_fork_hook_is_registered():
 
 
 def test_fov_worker_started_flag_resets_in_child():
-    """Core regression guard. Without the at-fork hook, this is exactly
-    the stuck state a forked child inherits -- permanently."""
+    """A child must not inherit the stuck "worker already started" state."""
     fov._fov_worker_started = True  # simulate: parent already has a live worker
 
     def _child_check():
@@ -100,9 +78,7 @@ def test_fov_worker_started_flag_resets_in_child():
 
 
 def test_ensure_fov_worker_spawns_a_real_thread_in_child():
-    """End-to-end: after fork, _ensure_fov_worker() must actually start a
-    live 'swarmtrace-fov-sender' thread in the child -- not just flip a
-    flag."""
+    """After fork, _ensure_fov_worker() starts a live sender thread in the child."""
     fov._fov_worker_started = True  # simulate a parent with a live worker
 
     def _child_check():
@@ -119,8 +95,7 @@ def test_ensure_fov_worker_spawns_a_real_thread_in_child():
 
 
 def test_fov_inherited_queue_is_replaced_not_reused():
-    """The child gets a fresh `_FOV_QUEUE`, not the parent's inherited
-    one."""
+    """The child gets a fresh queue, not the parent's."""
     fov._fov_worker_started = True
     parent_queue_id = id(fov._FOV_QUEUE)
 
@@ -134,8 +109,7 @@ def test_fov_inherited_queue_is_replaced_not_reused():
 
 
 def test_fov_queue_maxsize_survives_reset():
-    """The fresh post-fork queue keeps the same maxsize as the original
-    (regression guard for the maxsize being hardcoded twice and drifting)."""
+    """The fresh queue keeps the original maxsize."""
     fov._fov_worker_started = True
 
     def _child_check():

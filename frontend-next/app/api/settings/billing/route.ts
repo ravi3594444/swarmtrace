@@ -5,14 +5,9 @@ import type { DailyMetricRow } from '../../../../lib/trace-types'
 import { createUserRateLimiter, rateLimitResponse } from '../../../../lib/api-auth'
 
 /**
- * Plan definitions. Until Stripe billing is wired up, every signed-in user
- * is on the Hobby plan. The Pro plan is advertised in the UI as "Coming
- * Soon" — when billing goes live, the plan field will be derived from the
- * user's subscription status instead of being hardcoded here.
- *
- * KEEP THESE LIMITS IN SYNC with the plan cards in
- * `app/settings/page.tsx` (BillingTab). The UI reads `plan` and
- * `traces_limit` from this endpoint so the two never drift.
+ * Plan definitions. Everyone is on Hobby until Stripe billing exists; Pro is
+ * shown as "Coming Soon". Keep the limits in sync with BillingTab in
+ * app/settings/page.tsx.
  */
 const PLANS = {
   Hobby: {
@@ -20,8 +15,7 @@ const PLANS = {
     traces_limit: 10_000,
     retention_days: 7,
   },
-  // Pro/Enterprise are defined here for forward-compatibility, but not yet
-  // returned — billing isn't live.
+  // Pro/Enterprise are defined but not returned yet.
   Pro: {
     name: 'Pro' as const,
     traces_limit: 1_000_000,
@@ -37,10 +31,8 @@ export async function GET() {
   if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
-    // Read from daily_metrics — pre-aggregated, tiny, never scans traces.
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT in the Authorization header). The user_id filter in the URL is
-    // now defence-in-depth, not the only guard.
+    // daily_metrics is pre-aggregated, so this never scans traces. RLS is
+    // enforced via the Clerk JWT; the user_id filter is a second guard.
     const rows = (await supaUserRequest(
       `daily_metrics?user_id=eq.${encodeURIComponent(userId)}&order=date.desc&limit=90`,
       userId
@@ -57,14 +49,12 @@ export async function GET() {
     )
     const traces_used = allTime.reduce((a, r) => a + (r.trace_count || 0), 0)
 
-    // Calculate next billing date safely (handles December → January wrap).
-    // For Hobby (free), this is just the start of next month — useful as a
-    // "limits reset" date in the UI.
+    // Next billing date (handles the December wrap). For Hobby this is just
+    // the limits-reset date.
     const nextMonth = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
     const next_billing = nextMonth.toISOString().slice(0, 10)
 
-    // Until Stripe is live, everyone is on Hobby. When billing ships, this
-    // becomes a lookup against the user's subscription record.
+    // Everyone is on Hobby until billing exists.
     const plan = PLANS.Hobby
 
     return NextResponse.json({

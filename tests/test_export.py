@@ -1,13 +1,4 @@
-"""Tests for swarmtrace/export.py.
-
-Audit finding #8: export.py had zero test coverage. replay.py already
-burned the project once (shipped with 196+ tests passing because nothing
-exercised its actual behavior) -- export.py deserves the same scrutiny
-before it does too.
-
-Covers: JSON/CSV export content and shape, the "no traces" empty case,
-and the CLI --format/--output arg parsing in main().
-"""
+"""Tests for swarmtrace/export.py: JSON/CSV content, the empty case, and main() arg parsing."""
 
 from __future__ import annotations
 
@@ -58,9 +49,7 @@ def test_export_json_writes_all_traces(export_mod, tmp_path):
 
 
 def test_export_json_includes_every_column_no_hardcoded_keys(export_mod, tmp_path):
-    """_traces_to_dicts uses dict(row) with no hardcoded key list, so
-    every column (including ones added by future migrations) should be
-    present automatically."""
+    """Every column, including future migrations, shows up without a hardcoded key list."""
     from swarmtrace import storage
     _save(storage, id_="a")
 
@@ -100,8 +89,7 @@ def test_export_csv_writes_header_and_rows(export_mod, tmp_path):
 
 
 def test_export_csv_empty_db_does_not_create_file(export_mod, tmp_path):
-    """export_csv bails out early (logs + returns) when there's nothing
-    to export, rather than writing a header-only file."""
+    """Nothing to export: log and return rather than write a header-only file."""
     out = tmp_path / "empty.csv"
     export_mod.export_csv(str(out))
     assert not out.exists()
@@ -177,19 +165,7 @@ def test_main_combines_format_and_output_flags(export_mod, tmp_path, monkeypatch
     assert len(rows) == 1
 
 
-# ---------------------------------------------------------------------------
-# CSV formula-injection regression tests
-#
-# Audit finding (medium): trace args/output/error/function are LLM-controlled
-# or tool-controlled strings. A malicious prompt or tool response can produce
-# a value starting with =, +, -, or @ — Excel/LibreOffice/Google Sheets will
-# parse the cell as a formula on open, enabling DDE command execution
-# (=cmd|'/c calc'!A1) and phishing (=HYPERLINK("http://evil","click")).
-#
-# The fix prefixes a single quote to such values — the spreadsheet-standard
-# "this cell is text" escape. Excel/Sheets display the value without the
-# quote but no longer parse it as a formula. OWASP-recommended mitigation.
-# ---------------------------------------------------------------------------
+# CSV formula injection: values starting with = + - @ get a leading quote
 
 def test_sanitize_csv_cell_neutralizes_equals_prefix(export_mod):
     """=cmd|'/c calc'!A1 (DDE command injection) must be prefixed with '."""
@@ -228,7 +204,7 @@ def test_sanitize_csv_cell_passes_through_safe_strings(export_mod):
 
 
 def test_sanitize_csv_cell_passes_through_non_strings(export_mod):
-    """Numbers/None/bools can't be formula-injected — pass through unchanged."""
+    """Numbers/None/bools can't be formula-injected, pass through unchanged."""
     assert export_mod._sanitize_csv_cell(42) == 42
     assert export_mod._sanitize_csv_cell(None) is None
     assert export_mod._sanitize_csv_cell(0.001) == 0.001
@@ -240,9 +216,7 @@ def test_sanitize_csv_cell_handles_empty_string(export_mod):
 
 
 def test_export_csv_neutralizes_formula_injection_in_output(export_mod, tmp_path):
-    """End-to-end: a trace whose output starts with '=' must be exported
-    with the leading-quote escape, so opening the CSV in Excel cannot
-    execute the formula."""
+    """A trace whose output starts with "=" is exported with the quote escape."""
     from swarmtrace import storage
     _save(storage, id_="evil", output="=cmd|'/c calc'!A1")
 
@@ -272,8 +246,7 @@ def test_export_csv_neutralizes_formula_injection_in_args(export_mod, tmp_path):
 
 
 def test_export_csv_preserves_safe_output(export_mod, tmp_path):
-    """Regression guard: don't over-sanitize. A normal output string
-    must pass through unchanged so the export stays useful for debugging."""
+    """Normal output strings pass through unchanged."""
     from swarmtrace import storage
     _save(storage, id_="safe", output="the answer is 42")
 
@@ -286,7 +259,7 @@ def test_export_csv_preserves_safe_output(export_mod, tmp_path):
 
 
 def test_export_json_does_not_apply_csv_sanitization(export_mod, tmp_path):
-    """JSON export must NOT be sanitized — JSON consumers don't interpret
+    """JSON export must NOT be sanitized, JSON consumers don't interpret
     =/+/-/@ as formulas. Sanitizing JSON would corrupt the data."""
     from swarmtrace import storage
     _save(storage, id_="raw", output="=cmd|'/c calc'!A1")
@@ -298,12 +271,8 @@ def test_export_json_does_not_apply_csv_sanitization(export_mod, tmp_path):
     assert data[0]["output"] == "=cmd|'/c calc'!A1", data[0]["output"]
 
 
-# ---------------------------------------------------------------------------
-# CLI error paths
-#
-# main() documents 0 = written, 1 = destination unwritable, 2 = bad arguments,
+# CLI error paths (exit codes 0/1/2 as documented in main())
 # and the README repeats those codes. Only the success path was covered.
-# ---------------------------------------------------------------------------
 
 def test_main_rejects_an_unknown_format_with_exit_2(export_mod, tmp_path, monkeypatch, capsys):
     """A typo'd format must not silently fall back to JSON."""

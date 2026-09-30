@@ -5,7 +5,7 @@ import { X } from "lucide-react";
 import { fetchMetrics } from "@/lib/api";
 import { useFocusTrap } from "@/lib/use-focus-trap";
 
-// ── Types (mirrors the /api/metrics response shape) ──────────────────────────
+// Types (mirrors the /api/metrics response shape)
 type MetricsTotals = { cost: number; tokens_in: number; tokens_out: number; traces: number }
 type MetricsData = {
   today: MetricsTotals
@@ -17,10 +17,8 @@ type MetricsData = {
 
 const EMPTY: MetricsTotals = { cost: 0, tokens_in: 0, tokens_out: 0, traces: 0 }
 
-// ── PeriodBlock — one row per time period ────────────────────────────────────
-// Headline = total tokens (in + out). Substats show the breakdown:
-// Input, Output, Cost, Traces — so the user sees the full picture per period
-// without having to navigate to the Metrics page.
+// One block per period: headline is total tokens, substats are input,
+// output, cost and traces.
 function PeriodBlock({
   label, data, highlight = false,
 }: {
@@ -64,7 +62,6 @@ function SubStat({ label, value }: { label: string; value: string }) {
   )
 }
 
-// ── Skeleton — shown while fetching ──────────────────────────────────────────
 function PeriodSkeleton() {
   return (
     <div className="rounded-xl border border-border bg-card p-4">
@@ -82,7 +79,7 @@ function PeriodSkeleton() {
   )
 }
 
-// ── Drawer ───────────────────────────────────────────────────────────────────
+// Drawer
 export function UsageBreakdownDrawer({ open, onClose }: {
   open: boolean
   onClose: () => void
@@ -92,13 +89,10 @@ export function UsageBreakdownDrawer({ open, onClose }: {
   const drawerRef = useRef<HTMLElement>(null)
   useFocusTrap(drawerRef, open)
 
-  // Fetch metrics when the drawer opens (not on every render). Cached in
-  // state so re-opening is instant unless the component unmounts.
-  // All setState calls are inside the async .then() callback — never
-  // synchronous in the effect body — to avoid cascading renders.
+  // Fetch when the drawer opens; cached in state so reopening is instant.
+  // setState only runs inside the .then() callback.
   useEffect(() => {
     if (!open) return
-    // If we already have data (or already failed), don't re-fetch.
     if (data || fetchFailed) return
     let cancelled = false
     fetchMetrics().then((d) => {
@@ -109,10 +103,9 @@ export function UsageBreakdownDrawer({ open, onClose }: {
     return () => { cancelled = true }
   }, [open, data, fetchFailed])
 
-  // Derived loading state — true while the first fetch is in flight.
   const loading = open && !data && !fetchFailed
 
-  // ESC to close (matches DetailDrawer pattern)
+  // ESC to close
   useEffect(() => {
     if (!open) return
     const h = (e: KeyboardEvent) => e.key === "Escape" && onClose()
@@ -120,9 +113,7 @@ export function UsageBreakdownDrawer({ open, onClose }: {
     return () => window.removeEventListener("keydown", h)
   }, [open, onClose])
 
-  // Lock body scroll while open — matches DetailDrawer. Previously this
-  // drawer was missing the scroll lock, so the background page could scroll
-  // behind it (inconsistent with DetailDrawer and jarring on long lists).
+  // Lock body scroll while open
   useEffect(() => {
     if (!open) return
     document.body.style.overflow = "hidden"

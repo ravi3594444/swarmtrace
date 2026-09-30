@@ -25,20 +25,14 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
     return () => window.removeEventListener("keydown", h);
   }, [onClose]);
 
-  // Lock body scroll while the drawer is open — matches UsageBreakdownDrawer
-  // and prevents the background page from scrolling behind the drawer.
+  // Lock body scroll while open
   useEffect(() => {
     if (!trace) return;
     document.body.style.overflow = "hidden";
     return () => { document.body.style.overflow = ""; };
   }, [trace]);
 
-  // Keyboard navigation: J/K or ArrowLeft/ArrowRight to move between traces
-  // sequentially — matches the pattern used in many dev tools (GitHub PR
-  // files, Sentry events). Lets you triage a list of traces without
-  // closing the drawer. We look up the current trace's index in allTraces
-  // and jump to the neighbour. The handler depends on `trace` so it always
-  // has the current position.
+  // J/K or the arrow keys step through allTraces without closing the drawer.
   useEffect(() => {
     if (!trace) return;
     const idx = allTraces.findIndex((t) => t.id === trace.id);
@@ -81,7 +75,7 @@ export function DetailDrawer({ trace, allTraces, onClose, onJump }: {
             <div className="text-base font-semibold truncate text-foreground">{trace.function}</div>
             <div className="mt-0.5 text-xs text-muted-foreground">{trace.id}</div>
           </div>
-          {/* Prev/next trace navigation — lets you triage a list of traces
+          {/* Prev/next trace navigation - lets you triage a list of traces
               without closing the drawer. J/K and ArrowLeft/ArrowRight also
               work (handler above). */}
           {currentIdx >= 0 && allTraces.length > 1 && (

@@ -1,33 +1,15 @@
 /**
- * PII redaction — TypeScript port of swarmtrace/redact.py.
+ * PII redaction, a TypeScript port of swarmtrace/redact.py. Scrubs
+ * args/output/error in /api/ingest and /api/events before the row reaches
+ * Supabase, since clients posting directly skip the SDK's own redaction.
  *
- * Used by the /api/ingest and /api/events edge routes to scrub PII from
- * args/output/error BEFORE the row hits Supabase. This is defense-in-depth:
- * the SDK already redacts (swarmtrace/redact.py) before sending, but any
- * client that posts directly (curl, MCP, a third-party SDK port) bypasses
- * the SDK. Redacting at the ingest boundary means PII never lands in the
- * DB regardless of which client sent it.
- *
- * Pure functions — no I/O, no global state, no exceptions. Safe to call
- * from the edge hot path.
- *
- * Categories scrubbed (identical to the Python implementation):
- *   1. Emails (RFC-ish local@domain.tld)
- *   2. API-key-shaped strings (sk-, sk-ant-, ghp_, github_pat_, xox[bpoa]-,
- *      AKIA, sk_live_/sk_test_, rk_live_, pypi-AgEI, AIza — with length gates)
- *   3. Credit card numbers (13–19 digit groups, Luhn-checked — NOT bare regex,
- *      so 16-digit trace IDs / UUID fragments pass through)
- *   4. JWTs (eyJ….….… three-segment base64url shape)
- *
- * The regexes and Luhn algorithm are line-for-line ports of redact.py.
- * The Python test suite (tests/test_redact.py, 48 tests) is the source of
- * truth for the contract; the TS test suite (scripts/test-redact.mjs)
- * mirrors the critical cases.
+ * Scrubs emails, API-key-shaped strings, Luhn-valid card numbers (so 16-digit
+ * trace IDs pass through) and JWTs. Pure functions, no I/O. The regexes
+ * mirror the Python ones; scripts/test-redact.mjs covers the main cases.
  */
 
 const REDACTED = '[REDACTED]'
 
-// ── Patterns (identical to redact.py) ────────────────────────────────────────
 
 const EMAIL_RE = /\b[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}\b/g
 
@@ -49,11 +31,10 @@ const API_KEY_RE = new RegExp(
 
 const JWT_RE = /\beyJ[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\.[A-Za-z0-9_\-]+\b/g
 
-// Candidate credit card numbers — runs of 13–19 digits with optional
-// single space or dash separators. Each candidate is Luhn-checked.
+// Candidate card numbers: 13-19 digits with optional single space/dash
+// separators, each Luhn-checked.
 const CC_CANDIDATE_RE = /\b(?:\d[ -]?){13,19}\b/g
 
-// ── Luhn check (port of luhn_ok) ────────────────────────────────────────────
 
 export function luhnOk(digits: string): boolean {
   if (!digits || !/^\d+$/.test(digits)) return false
@@ -71,7 +52,6 @@ export function luhnOk(digits: string): boolean {
   return total % 10 === 0
 }
 
-// ── Credit card redactor (Luhn-gated) ───────────────────────────────────────
 
 function redactCreditCards(text: string): string {
   return text.replace(CC_CANDIDATE_RE, (raw) => {
@@ -80,14 +60,12 @@ function redactCreditCards(text: string): string {
   })
 }
 
-// ── Public entry point ──────────────────────────────────────────────────────
 
 export function redact(text: string | null | undefined): string | null {
   if (text === null || text === undefined) return null
   if (typeof text !== 'string') text = String(text)
   if (text === '') return text
-  // Order matters slightly: emails first (so the @ doesn't become part of a
-  // JWT-like sequence), then API keys, then JWTs, then credit cards.
+  // emails first so the @ doesn't end up inside a JWT-like sequence
   text = text.replace(EMAIL_RE, REDACTED)
   text = text.replace(API_KEY_RE, REDACTED)
   text = text.replace(JWT_RE, REDACTED)
@@ -112,7 +90,7 @@ const SENSITIVE_KEY_WORDS = new Set([
 
 function isSensitiveKey(key: string): boolean {
   const words = keyWords(key)
-  // Length/count metadata is safe and useful even when it describes a secret.
+  // length/count metadata is safe even when it describes a secret
   if (['chars', 'length', 'count', 'size'].includes(words.at(-1) ?? '')) return false
   if (words.some(word => SENSITIVE_KEY_WORDS.has(word))) return true
   const joined = words.join('_')
@@ -138,12 +116,9 @@ export function redactUrl(url: string): string {
 }
 
 /**
- * Recursively redact strings in an object/array structure.
- *
- * In addition to pattern matching, values under credential-shaped keys are
- * removed contextually and URL-shaped fields lose their query/fragment.
- * Cycles and excessive nesting are replaced with [REDACTED] rather than
- * overflowing the server stack.
+ * Recursively redact strings in an object/array. Values under
+ * credential-shaped keys are removed, URL fields lose their query/fragment,
+ * and cycles or deep nesting become [REDACTED].
  */
 export function redactDeep<T>(value: T): T {
   const seen = new WeakSet<object>()
@@ -168,7 +143,7 @@ export function redactDeep<T>(value: T): T {
         const cleaned = isSensitiveKey(childKey)
           ? REDACTED
           : walk(childValue, depth + 1, childKey)
-        // Avoid __proto__ assignment changing the result object's prototype.
+        // don't let __proto__ assignment change the result's prototype
         Object.defineProperty(out, childKey, {
           value: cleaned,
           enumerable: true,
@@ -187,13 +162,7 @@ export function redactDeep<T>(value: T): T {
 
 const EVENT_VALUE_METHODS = new Set(['fill', 'type', 'press', 'select_option'])
 
-/**
- * Apply schema-aware event redaction after generic deep redaction.
- *
- * This protects direct /api/events clients that do not use the Python SDK:
- * browser value arguments are removed, browser/HTTP URLs are stripped, and
- * streamed token content is never retained chunk-by-chunk.
- */
+/** Schema-aware event redaction, run after the generic deep redaction: drops browser value args, strips URLs and never keeps streamed token content. */
 export function redactEventData(eventType: string, value: unknown): unknown {
   const cleaned = redactDeep(value)
   if (

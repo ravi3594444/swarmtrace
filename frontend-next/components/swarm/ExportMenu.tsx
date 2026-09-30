@@ -6,12 +6,7 @@ import type { Trace } from '@/lib/trace-types'
 import { tracesToCsv, downloadCsv, downloadJson } from '@/lib/csv-export'
 import { useDismissibleDropdown } from '@/hooks/use-dismissible-dropdown'
 
-/**
- * Export dropdown (JSON / CSV) for a trace list. Previously duplicated
- * verbatim in app/overview/page.tsx and app/traces/page.tsx (only the
- * exported filename prefix differed) — extracted here as one shared,
- * accessible implementation.
- */
+/** Export dropdown (JSON / CSV) for a trace list. */
 export function ExportMenu({
   traces,
   filenamePrefix = 'swarmtrace-export',
@@ -27,18 +22,14 @@ export function ExportMenu({
   useDismissibleDropdown(open, () => setOpen(false), wrapRef)
 
   const exportJSON = () => {
-    // Guard against empty data — without this, the user could download a
-    // file containing just "[]" (no traces). The menu button is also
-    // disabled when there's no data, but this is belt-and-suspenders.
+    // The button is disabled when empty too; this is a second guard.
     if (traces.length === 0) return
     downloadJson(JSON.stringify(traces, null, 2), `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.json`)
   }
 
   const exportCSV = () => {
     if (traces.length === 0) return
-    // tracesToCsv() in lib/csv-export.ts sanitizes every cell against
-    // formula injection (=, +, -, @, tab, CR prefixes) — see the audit
-    // finding documented there.
+    // tracesToCsv() escapes formula-injection prefixes in every cell
     const csv = tracesToCsv(traces)
     downloadCsv(csv, `${filenamePrefix}-${new Date().toISOString().slice(0, 10)}.csv`)
   }

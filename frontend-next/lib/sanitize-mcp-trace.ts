@@ -1,26 +1,10 @@
 /**
- * Sanitization for the MCP record_trace path (app/api/mcp/route.ts).
- *
- * Why this exists: /api/ingest and /api/events redact free text at the
- * boundary (lib/redact.ts) before it reaches Supabase, and cap attributes
- * at MAX_ATTRIBUTES_SIZE. The MCP route's whole purpose is to serve
- * NON-SDK clients (Hermes, Claude Desktop, Cursor, ...) — clients where
- * the Python SDK's client-side redaction never runs. Before this module,
- * record_trace passed `args` / `output` / `error` / `attributes` straight
- * into `upsert_trace_for_key`, so PII/API keys embedded in MCP tool call
- * arguments landed unredacted in the database, and `attributes` was
- * unbounded (ingest caps it at 64 KB JSON).
- *
- * Rules mirror the ingest boundary exactly:
- *   - args/output/error: truncate to MAX_TEXT_LEN first, then redact
- *     (same order as lib/validate-ingest.ts) so we never redact past the
- *     truncation boundary.
- *   - attributes: must be a plain JSON object, JSON-serialized size ≤
- *     MAX_ATTRIBUTES_SIZE (64 KB). Invalid attributes reject the tool
- *     call with isError (consistent with the identity validation), rather
- *     than silently dropping metadata the caller expects to be stored.
- *
- * Pure functions — no I/O, safe to unit-test without the edge runtime.
+ * Sanitization for the MCP record_trace path (app/api/mcp/route.ts). MCP
+ * clients never run the SDK's redaction, so this mirrors the ingest
+ * boundary: args/output/error are truncated to MAX_TEXT_LEN and then
+ * redacted, and attributes must be a plain JSON object of at most
+ * MAX_ATTRIBUTES_SIZE (64 KB). Invalid attributes reject the call instead of
+ * being dropped. Pure functions, no I/O.
  */
 import { redact } from './redact'
 import { MAX_TEXT_LEN, MAX_ATTRIBUTES_SIZE } from './validate-ingest'

@@ -6,24 +6,9 @@ import { Button } from '@/components/ui/button'
 import { useOnboardingTour } from '@/components/onboarding/OnboardingTour'
 
 /**
- * FirstRunEmptyState — shown on Overview and Home when the user has zero
- * traces AND has never had traces before (tracked via localStorage).
- *
- * Distinguishes "brand new user who needs onboarding" from "existing user
- * who filtered to an empty time range." The former gets a rich setup guide;
- * the latter gets the existing minimal empty state.
- *
- * The three steps are the whole path from nothing to a first trace on
- * screen, in the order the SDK expects them:
- *   1. Install the SDK (pip install swarmtrace)
- *   2. Point it at this dashboard (API key + endpoint env vars)
- *   3. Decorate a function and call it — that call IS the first trace
- *
- * localStorage key "swarmtrace:has_traces" is set to "1" the first time
- * the dashboard sees a non-zero trace count, and never reset — so this
- * empty state shows at most once per browser. If the user clears their
- * DB, they won't see it again (which is the right behavior — they already
- * know how to set up).
+ * Setup guide for brand-new users: zero traces now and none seen before.
+ * The "swarmtrace:has_traces" localStorage flag is set the first time any
+ * trace shows up and never cleared, so this shows at most once per browser.
  */
 const STORAGE_KEY = 'swarmtrace:has_traces'
 
@@ -37,20 +22,14 @@ export function markHasTraces() {
   try {
     localStorage.setItem(STORAGE_KEY, '1')
   } catch {
-    // localStorage may be unavailable (private mode) — non-fatal.
+    // localStorage may be unavailable (private mode) - non-fatal.
   }
 }
 
 /**
- * Opening the guide on demand.
- *
- * The guide auto-shows only for an account that has never had a trace, so
- * once traces arrive there was no way back to the install steps. The sidebar's
- * "Setup guide" button sets this flag and navigates to Overview; the event
- * covers the case where the user is already there and no navigation happens.
- *
- * sessionStorage rather than a query param: Overview is statically rendered,
- * and reading search params there would force a Suspense boundary for no gain.
+ * Lets the sidebar's "Setup guide" button reopen the guide. It sets a flag
+ * and navigates to Overview; the event covers already being on Overview.
+ * sessionStorage instead of a query param so Overview stays static.
  */
 const SHOW_SETUP_KEY = 'swarmtrace:show-setup'
 const SHOW_SETUP_EVENT = 'swarmtrace:show-setup'
@@ -131,7 +110,7 @@ function CopyButton({
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // clipboard may be blocked — non-fatal
+      // clipboard may be blocked - non-fatal
     }
   }
 
@@ -227,7 +206,7 @@ export function FirstRunEmptyState({ onDismiss }: { onDismiss?: () => void } = {
       {/* 3-step guide */}
       <div className="w-full max-w-lg space-y-4 text-left">
         {/* Step 1: Install SDK
-            No checkmark here — we can't reliably detect from the browser
+            No checkmark here - we can't reliably detect from the browser
             whether pip install actually ran, so showing a green check
             would be misleading. Only step 2 (API key) gets a checkmark
             because we can verify it via the /api/settings/api-keys call. */}

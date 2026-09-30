@@ -30,7 +30,7 @@ class ToolAttention:
     def _build_index(self):
         try:
             # Lazy-import all optional deps (numpy, sentence_transformers,
-            # faiss) inside the methods that use them — NOT at module top
+            # faiss) inside the methods that use them, NOT at module top
             # level. A top-level `import numpy` would crash `import
             # swarmtrace` for anyone who did `pip install swarmtrace`
             # (numpy is under the [tools] extra, not the base install).
@@ -41,7 +41,7 @@ class ToolAttention:
 
             self._model = SentenceTransformer("all-MiniLM-L6-v2")
 
-            # Phase 1 — embed tool summaries only (not full schemas)
+            # Phase 1, embed tool summaries only (not full schemas)
             summaries = [f"{t['name']}: {t['description']}" for t in self.tools]
             self._embeddings = self._model.encode(summaries, convert_to_numpy=True)
 
@@ -62,15 +62,15 @@ class ToolAttention:
             ) from e
 
     def add_tools(self, new_tools: list):
-        """Dynamically add tools to the index — incremental, not rebuild.
+        """Dynamically add tools to the index, incremental, not rebuild.
 
         Encodes only the new tools and adds them to the existing FAISS
         index. O(m) where m = len(new_tools). The previous implementation
-        called _build_index() which re-encoded every tool from scratch —
+        called _build_index() which re-encoded every tool from scratch -
         O(n+m) per call, which is O(n²) when add_tools() is called
         repeatedly as tools are discovered over the lifetime of an agent.
 
-        FAISS IndexFlatL2 supports incremental .add() natively — no need
+        FAISS IndexFlatL2 supports incremental .add() natively, no need
         to rebuild the index structure. We just encode the new summaries
         and append.
 
@@ -88,8 +88,7 @@ class ToolAttention:
 
         import numpy as np
 
-        # Encode ONLY the new tool summaries — not all tools from scratch.
-        # This is the fix: the old impl re-encoded every tool on every add.
+        # only encode the new tools
         new_summaries = [f"{t['name']}: {t['description']}" for t in new_tools]
         new_embeddings = self._model.encode(
             new_summaries, convert_to_numpy=True
@@ -99,7 +98,7 @@ class ToolAttention:
         self._index.add(new_embeddings)
 
         # Keep self._embeddings in sync with the index (used for debugging
-        # and inspection — not strictly required for search to work).
+        # and inspection, not strictly required for search to work).
         self._embeddings = np.vstack([self._embeddings, new_embeddings])
         self.tools.extend(new_tools)
 
@@ -114,7 +113,7 @@ class ToolAttention:
 
     def select(self, query: str, k: int = 3) -> list:
         """
-        ISO Scoring — select top-k tools by intent-schema overlap.
+        ISO Scoring, select top-k tools by intent-schema overlap.
         Returns only the relevant tools with full schemas.
         """
         if self._index is None:
@@ -125,7 +124,7 @@ class ToolAttention:
 
         start = time.time()
 
-        # Lazy-import numpy — see _build_index() for why this is here and
+        # Lazy-import numpy, see _build_index() for why this is here and
         # not at module top level.
         import numpy as np
 
@@ -151,13 +150,13 @@ class ToolAttention:
             for t in selected:
                 _log.info("  ✓ %s", t['name'])
 
-        # Save to swarmtrace — attribute to whichever @observe(kind="agent")
+        # Save to swarmtrace, attribute to whichever @observe(kind="agent")
         # call is currently in progress (if any), tagged as a tool call so
         # it rolls into that agent's stats instead of becoming its own
         # phantom "agent" on the dashboard.
         agent_id, agent_name = current_agent() or (None, None)
         span = SpanRecord(
-            span_id=str(uuid.uuid4().hex),  # full 32-char — short IDs collision-prone at scale
+            span_id=str(uuid.uuid4().hex),  # full 32-char, short IDs collision-prone at scale
             parent_span_id=None,
             name="tool_attention.select",
             kind="tool",
@@ -176,6 +175,6 @@ class ToolAttention:
         return selected
 
     def summary_pool(self) -> str:
-        """Phase 1 — compact tool list for context (cacheable)"""
+        """Phase 1, compact tool list for context (cacheable)"""
         lines = [f"- {t['name']}: {t['description']}" for t in self.tools]
         return "Available tools:\n" + "\n".join(lines)

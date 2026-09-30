@@ -83,12 +83,8 @@ class SpanRecord:
     def to_ingest_payload(self) -> dict[str, Any]:
         """Return this span in the ``/api/ingest`` wire shape.
 
-        This is the single definition of the SDK→dashboard wire contract.
-        It used to be copy-pasted into both ``runtime.py`` and
-        ``adapters/http_transport.py``; two copies of a wire format is two
-        chances for the live sender and the resync path to disagree about
-        what a trace looks like. Keep it here, next to ``to_storage_dict``,
-        so both mappings for a span live side by side.
+        Single definition of the wire format, used by both the live sender
+        and the resync path.
 
         ``session_id``, ``trace_id`` and ``attributes`` are omitted when
         empty (and ``trace_id`` also when it merely repeats ``span_id``) so

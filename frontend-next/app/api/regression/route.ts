@@ -1,37 +1,31 @@
-// /api/regression — dashboard exposure for prompt-regression runs.
+// /api/regression: prompt-regression runs for the dashboard.
 //
-// This is the route the PRD (§17) flagged as missing: swarmtrace.regression
-// (LLM-based prompt-regression scoring) is a public Python API but was never
-// reachable from the dashboard. This route closes that gap:
+// POST (X-API-Key, SDK 0.6.7+ compare(..., report_to_dashboard=True))
+//   validates, then calls insert_regression_run_for_key, which stamps the
+//   tenant in Postgres from the key hash (migrations 0010/0011).
+// GET (Clerk JWT) returns the user's own runs via supaUserRequest + RLS.
 //
-//   POST  (X-API-Key, SDK 0.6.7+ `compare(..., report_to_dashboard=True)`)
-//         → validates, then insert_regression_run_for_key (tenant stamped
-//           inside Postgres from the key hash — same pattern as ingest,
-//           migration 0010/0011).
-//   GET   (Clerk JWT) → the user's own runs via supaUserRequest + RLS.
-//
-// The write path deliberately does NOT run the LLM comparison server-side:
-// the dashboard never stores provider API keys (PRD non-goal), so scoring
-// happens in the SDK and only the results are reported here.
+// The LLM comparison itself runs in the SDK; the dashboard never stores
+// provider keys, so only results are reported here.
+
 import { auth } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { supaUserRequest, RlsEnforcementError } from '@/lib/supabase'
 import { sha256Hex, createRateLimiter, createIpRateLimiter, createUserRateLimiter, getClientIp } from '@/lib/api-auth'
 import { validateRegressionRun } from '@/lib/validate-regression'
-// Same classified-error pattern as /api/ingest: without migration 0011 the
-// RPC fails PGRST202 — say so (with the fix), not "Internal server error".
+// Insert failures are classified like /api/ingest (missing migration 0011
+// shows up as PGRST202).
 import { classifySupabaseError, ingestErrorBody } from '@/lib/ingest-errors'
 
 const MAX_BODY_BYTES = 1024 * 1024
 const SUPA_TIMEOUT_MS = 5000
 
-// Regression runs are rare (one per prompt comparison), so per-key 60/min
-// is generous for a legitimate SDK and tight for abuse. The per-IP limiter
-// runs first, same rationale as ingest (caps key-rotation attacks).
+// Runs are rare (one per prompt comparison), so 60/min per key is plenty.
+// The per-IP limiter runs first, as in ingest.
 const RATE_LIMIT = 60
 const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_rl_regression' })
 const ipRateLimiter = createIpRateLimiter({ prefix: 'st_ip_rl_regression' })
-// GET is a Clerk-authed dashboard read like /api/agents.
+// GET is a Clerk-authed dashboard read, like /api/agents.
 const userRateLimiter = createUserRateLimiter({ prefix: 'st_user_rl_regression' })
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
@@ -92,7 +86,7 @@ export async function POST(req: Request) {
   try {
     const keyHash = await sha256Hex(apiKey)
 
-    // ── Per-IP rate limit (BEFORE per-key — caps key-rotation attacks) ────
+    // Per-IP limit first, so rotating fake keys doesn't buy fresh buckets
     const clientIp = getClientIp(req)
     if (!await ipRateLimiter.check(clientIp)) {
       return new Response(null, {
@@ -101,7 +95,7 @@ export async function POST(req: Request) {
       })
     }
 
-    // ── Per-key rate limit (before DB lookup — cheap, fast) ───────────────
+    // Per-key rate limit, before the DB lookup
     if (!await rateLimiter.check(keyHash)) {
       return new Response(null, {
         status: 429,
@@ -113,11 +107,9 @@ export async function POST(req: Request) {
       })
     }
 
-    // Tenant isolation is enforced inside Postgres (migration 0011):
-    // insert_regression_run_for_key resolves key_hash → user_id via the
-    // SECURITY DEFINER helper and stamps user_id itself. The existence
-    // probe here is so revoked/unknown keys get a 401 (not a 500 from the
-    // RPC) before we parse the body.
+    // Tenant isolation is in Postgres (migration 0011):
+    // insert_regression_run_for_key resolves key_hash to user_id itself. The
+    // probe is so revoked/unknown keys get a 401 instead of an RPC 500.
     const keyRes = await supa(
       `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
       { headers: { Prefer: 'return=representation' } }
@@ -151,8 +143,8 @@ export async function POST(req: Request) {
       p_results:           JSON.stringify(run.results),
     })
 
-    // 204 on success — including a retried POST of an already-reported
-    // run_id, which is a no-op in the RPC (ON CONFLICT DO NOTHING).
+    // 204 on success, including a retried POST of an already-reported
+    // run_id (no-op in the RPC).
     return new Response(null, { status: 204 })
   } catch (err) {
     const classified = classifySupabaseError(err)
@@ -181,9 +173,8 @@ export async function GET(request: Request) {
   if (!await userRateLimiter.check(userId)) return jsonResponse(429, { error: 'Too many requests' })
 
   try {
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT). The user_id filter in the URL is defence-in-depth, not the
-    // only guard — same as /api/agents.
+    // RLS is enforced via the user's Clerk JWT; the user_id filter in the
+    // URL is a second guard, same as /api/agents.
     const url = new URL(request.url)
     const limitParam = url.searchParams.get('limit')
     const limit = Math.min(100, Math.max(1, Number(limitParam) || 50))
@@ -195,8 +186,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       runs: rows,
-      // True when we hit the row cap — the client can show a
-      // "showing most recent N runs" indicator.
+      // true when we hit the row cap, so the client can say "most recent N"
       truncated: rows.length >= limit,
     })
   } catch (error) {

@@ -1,9 +1,7 @@
 /**
- * Deterministic, dependency-free text similarity + diff used by the dashboard
- * Compare view. This mirrors the intent of the CLI `regression.compare()`
- * (spotting when a new prompt/version drifts from a baseline) but runs entirely
- * client-side so it needs no LLM key — the score is a Sørensen–Dice coefficient
- * over word bigrams, which is stable and explainable.
+ * Dependency-free text similarity and diff for the Compare view. Like the
+ * CLI regression.compare() it spots drift from a baseline, but client-side
+ * with no LLM key: a Sørensen-Dice score over word bigrams.
  */
 
 function wordBigrams(text: string): Map<string, number> {
@@ -26,11 +24,7 @@ function wordBigrams(text: string): Map<string, number> {
   return grams
 }
 
-/**
- * Sørensen–Dice similarity over word bigrams. Returns 0.0–1.0
- * (1.0 = identical text, 0.0 = no shared bigrams). Two empty strings are
- * treated as identical.
- */
+/** Sørensen-Dice similarity over word bigrams, 0.0 to 1.0. Two empty strings count as identical. */
 export function similarity(a: string, b: string): number {
   const ta = a.trim()
   const tb = b.trim()
@@ -54,16 +48,13 @@ export function similarity(a: string, b: string): number {
 
 export type DiffLine = { type: 'same' | 'added' | 'removed'; text: string }
 
-/**
- * Minimal line-level diff (LCS-based) for side-by-side output comparison.
- * Returns a flat list of lines tagged same/added/removed.
- */
+/** Minimal line-level LCS diff; returns lines tagged same/added/removed. */
 export function lineDiff(a: string, b: string): DiffLine[] {
   const la = a.split('\n')
   const lb = b.split('\n')
   const n = la.length
   const m = lb.length
-  // LCS length table.
+  // LCS length table
   const dp: number[][] = Array.from({ length: n + 1 }, () => new Array(m + 1).fill(0))
   for (let i = n - 1; i >= 0; i--) {
     for (let j = m - 1; j >= 0; j--) {

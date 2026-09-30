@@ -1,57 +1,32 @@
-// Runs on the Node.js runtime (Vercel's default) — see app/api/ingest/route.ts
-// for why this project doesn't use 'edge': Vercel deprecated standalone Edge
-// Functions in June 2025, and Node.js/Fluid compute has full API support
-// with none of the Edge runtime's Web-API gaps.
-
-// ── FOV event ingest ──────────────────────────────────────────────────────────
-// Receives live agent activity events from swarmtrace.fov and inserts them into
-// the agent_events Supabase table.  Supabase Realtime then pushes to the
-// browser via WebSocket — Vercel is completely out of the real-time path.
+// Node.js runtime, same reasoning as app/api/ingest/route.ts.
 //
-// Auth: same X-API-Key header as /api/ingest. Fresh Supabase lookup on
-// every request — no in-process cache (see lib/api-auth.ts for why:
-// Vercel's per-route serverless functions can't share memory, so a
-// per-isolate cache gave stale revoked keys for up to 5 min in production).
-// Rate limit: 500 events / 60s per API key.
-//   - Upstash Redis (distributed): enabled when UPSTASH_REDIS_REST_URL is set.
-//   - Per-isolate fallback: used otherwise. Note that Vercel can run many
-//     isolates simultaneously — the effective limit is 500 × n_isolates when
-//     Upstash is not configured.
+// Receives live agent activity events from swarmtrace.fov and inserts them
+// into agent_events; Supabase Realtime pushes them to the browser.
 //
-// Body encoding: Content-Encoding: gzip is supported (audit finding #6),
-// matching /api/ingest — see lib/decode-body.ts. No current SDK version
-// sends it for events (swarmtrace.fov posts one uncompressed event per
-// request), so this is dormant capability, not a live optimization yet.
+// Auth is the X-API-Key header, looked up fresh on every request (see
+// lib/api-auth.ts). Rate limit is 500 events/min per key, via Upstash when
+// configured, otherwise per isolate (so effectively 500 x isolates).
+//
+// Gzip bodies are supported like /api/ingest (lib/decode-body.ts), though no
+// SDK sends them for events yet.
 
 import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '@/lib/api-auth'
 import { decodeGzipBody } from '@/lib/decode-body'
 import { redactEventData } from '@/lib/redact'
-// Same classified-error pattern as /api/ingest: a deployment missing
-// migration 0010 fails insert_agent_event_for_key with PGRST202 — the
-// response should say so (with the fix), not "Internal server error".
+// Insert failures are classified like /api/ingest, so a missing migration
+// 0010 (PGRST202) says so instead of "Internal server error".
 import { classifySupabaseError, ingestErrorBody } from '@/lib/ingest-errors'
 
-const MAX_BODY_BYTES  = 32 * 1024   // 32 KB per event (screenshots compress well)
-// Decompressed-size bound (audit finding #6). No SDK version sends
-// Content-Encoding: gzip for events today — swarmtrace.fov posts one
-// event per request, uncompressed — so this is future-proofing, not a
-// live capability being exercised in production yet. Sized generously
-// relative to MAX_BODY_BYTES (not equal to it) so that if/when a future
-// SDK batches multiple screen_tick events into one gzip-compressed POST
-// (the same shape /api/ingest already supports), this route doesn't need
-// another round of changes. Mirrors the ingest route's reasoning in
-// lib/decode-body.ts; sized down from ingest's 1 MB since a single event
-// (even with a base64 screenshot) has a much smaller legitimate ceiling.
+const MAX_BODY_BYTES  = 32 * 1024   // 32 KB per event
+// Decompressed-size bound. No SDK sends gzipped events today; this is sized
+// above MAX_BODY_BYTES in case batched screen_ticks show up later.
 const MAX_DECOMPRESSED_BYTES = 256 * 1024
 const SUPA_TIMEOUT_MS = 3000
 const RATE_LIMIT      = 500
 
 const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_fov_rl' })
-// Per-IP limiter runs BEFORE the per-key limiter — caps attackers who
-// rotate fake API keys. See lib/api-auth.ts::createIpRateLimiter.
-// 600/60s is high enough that a single FOV-enabled agent (which posts
-// ~1 event per browser action + 1 screen_tick per SCREEN_INTERVAL=1s,
-// so ~60/min just from screenshots) never hits it under normal use.
+// Per-IP limiter runs before the per-key one. 600/min leaves room for one
+// FOV agent (about 60/min from screenshots alone).
 const ipRateLimiter = createIpRateLimiter({ prefix: 'st_ip_rl_events' })
 
 const SUPABASE_URL = process.env.SUPABASE_URL!
@@ -102,8 +77,7 @@ function json(status: number, body: unknown) {
   })
 }
 
-// 'screen_tick' = FOV daemon screenshot captures (swarmtrace.fov). Without
-// it in this set, screenshot events were silently flattened to 'browser'.
+// 'screen_tick' is the FOV daemon's screenshot event (swarmtrace.fov).
 const VALID_TYPES   = new Set(['browser', 'llm_token', 'http', 'file', 'screen_tick'])
 const VALID_STATUSES = new Set(['started', 'done', 'error', 'streaming', 'info'])
 
@@ -121,10 +95,9 @@ function validate(p: unknown): { row?: Record<string, unknown>; error?: string }
   const status = typeof v.status === 'string' && VALID_STATUSES.has(v.status)
     ? v.status : 'info'
 
-  // data can be anything serialisable; screenshots (base64) live here.
-  // Apply pattern-, field-, and event-aware redaction before persistence.
-  // This protects direct clients that bypass the Python SDK, including
-  // browser fill/type values, token stream chunks, and URL query secrets.
+  // data can be anything serialisable (screenshots are base64 in here).
+  // Redact before persisting, since direct clients skip the SDK: fill/type
+  // values, token chunks and URL query secrets.
   let data: unknown = v.data ?? {}
   if (typeof data !== 'object') data = { value: String(data) }
   data = redactEventData(event_type, data)
@@ -146,8 +119,7 @@ export async function POST(req: Request) {
   const apiKey = req.headers.get('X-API-Key')
   if (!apiKey) return json(401, { error: 'Missing X-API-Key' })
 
-  // Read the actual bytes — Content-Length is client-supplied and optional,
-  // so checking the header alone can be bypassed by omitting it entirely.
+  // Read the actual bytes, Content-Length is client-supplied and optional.
   let bodyBytes: ArrayBuffer
   try { bodyBytes = await req.arrayBuffer() }
   catch { return json(400, { error: 'Could not read request body' }) }
@@ -156,8 +128,7 @@ export async function POST(req: Request) {
   try {
     const keyHash = await sha256Hex(apiKey)
 
-    // Per-IP rate limit (BEFORE per-key — caps key-rotation attacks).
-    // See lib/api-auth.ts::createIpRateLimiter for the full reasoning.
+    // Per-IP limit first, so rotating fake keys doesn't buy fresh buckets.
     const clientIp = getClientIp(req)
     if (!await ipRateLimiter.check(clientIp)) {
       return new Response(null, {
@@ -170,8 +141,8 @@ export async function POST(req: Request) {
       return new Response(null, { status: 429, headers: { 'Retry-After': '60' } })
     }
 
-    // Existence probe for a clean 401; tenant is stamped inside Postgres
-    // by insert_agent_event_for_key (migration 0010) from the key hash.
+    // Existence probe for a clean 401; the tenant is stamped in Postgres by
+    // insert_agent_event_for_key (migration 0010).
     const res = await supa(
       `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`,
       { headers: { Prefer: 'return=representation' } }
@@ -187,8 +158,8 @@ export async function POST(req: Request) {
     const { row, error } = validate(payload)
     if (!row) return json(400, { error })
 
-    // Key-bound insert — user_id comes from the API key inside Postgres,
-    // never from the request body or an app-layer variable.
+    // Key-bound insert: user_id comes from the key inside Postgres, never
+    // from the request body.
     await supaRpc('insert_agent_event_for_key', {
       p_key_hash:   keyHash,
       p_id:         row.id,

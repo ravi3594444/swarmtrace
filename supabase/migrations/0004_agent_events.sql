@@ -3,7 +3,7 @@
 -- Realtime is enabled so the dashboard receives events via WebSocket
 -- without any polling or Vercel serverless involvement.
 
--- ── Table ────────────────────────────────────────────────────────────────────
+-- Table
 CREATE TABLE IF NOT EXISTS agent_events (
   id           TEXT        PRIMARY KEY,
   user_id      TEXT        NOT NULL,
@@ -15,14 +15,14 @@ CREATE TABLE IF NOT EXISTS agent_events (
   timestamp    TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
--- ── Indexes ───────────────────────────────────────────────────────────────────
+-- Indexes
 CREATE INDEX IF NOT EXISTS idx_agent_events_user_agent
   ON agent_events (user_id, agent_id, timestamp DESC);
 
 CREATE INDEX IF NOT EXISTS idx_agent_events_type
   ON agent_events (user_id, event_type, timestamp DESC);
 
--- ── Row-level security ────────────────────────────────────────────────────────
+-- Row-level security
 ALTER TABLE agent_events ENABLE ROW LEVEL SECURITY;
 
 -- Service role (used by the ingest API route) can insert/select freely.
@@ -41,7 +41,7 @@ CREATE POLICY "users_own_events" ON agent_events
   TO authenticated
   USING (user_id = (SELECT auth.uid()::text));
 
--- ── Realtime ─────────────────────────────────────────────────────────────────
+-- Realtime
 -- This is the key line: the browser subscribes directly to this publication
 -- via Supabase Realtime WebSocket.  Vercel is NOT in the real-time path.
 -- Guarded so re-running doesn't error with "relation is already member of
@@ -57,7 +57,7 @@ BEGIN
   END IF;
 END $$;
 
--- ── Auto-purge old events (keep last 7 days per user) ─────────────────────────
+-- Auto-purge old events (keep last 7 days per user)
 -- Run this as a cron job (Supabase pg_cron or external):
 --   SELECT cron.schedule('purge-fov-events', '0 * * * *',
 --     $$DELETE FROM agent_events WHERE timestamp < NOW() - INTERVAL '7 days'$$);

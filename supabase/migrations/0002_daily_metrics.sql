@@ -1,12 +1,10 @@
 -- 0002_daily_metrics.sql
 -- Pre-aggregated per-user daily metrics table.
 -- Run after 0001_rls_and_indexes.sql in the Supabase SQL editor.
---
--- WHY: /api/metrics must NOT scan the traces table on every page load.
--- Instead: ingest → atomically increments this table (one row per user per day).
---          /api/metrics reads max 90 rows. Fast, cheap, live-friendly.
+-- Keeps /api/metrics from scanning traces: ingest increments one row per user
+-- per day and the API reads at most 90 rows.
 
--- ── Table ────────────────────────────────────────────────────────────────────
+-- Table
 CREATE TABLE IF NOT EXISTS public.daily_metrics (
   user_id       TEXT    NOT NULL,
   date          DATE    NOT NULL DEFAULT CURRENT_DATE,
@@ -17,7 +15,7 @@ CREATE TABLE IF NOT EXISTS public.daily_metrics (
   PRIMARY KEY (user_id, date)
 );
 
--- ── Atomic upsert function (called from the ingest edge function) ─────────────
+-- Atomic upsert function (called from the ingest edge function)
 -- Uses ON CONFLICT to atomically increment without a read-modify-write race.
 CREATE OR REPLACE FUNCTION public.increment_daily_metrics(
   p_user_id       TEXT,
@@ -36,7 +34,7 @@ BEGIN
 END;
 $$;
 
--- ── RLS: same tenant-isolation pattern as traces / api_keys ──────────────────
+-- RLS: same tenant-isolation pattern as traces / api_keys
 ALTER TABLE public.daily_metrics ENABLE ROW LEVEL SECURITY;
 
 -- Idempotent re-runs: DROP IF EXISTS first (no CREATE POLICY IF NOT EXISTS).
@@ -46,11 +44,11 @@ CREATE POLICY "daily_metrics: owner only"
   USING  (user_id = auth.jwt() ->> 'sub')
   WITH CHECK (user_id = auth.jwt() ->> 'sub');
 
--- ── Performance index for the metrics API query (user_id + date DESC) ────────
+-- Performance index for the metrics API query (user_id + date DESC)
 CREATE INDEX IF NOT EXISTS idx_daily_metrics_user_date
   ON public.daily_metrics (user_id, date DESC);
 
--- ── Supabase Realtime: fire INSERT/UPDATE events to subscribed clients ────────
+-- Supabase Realtime: fire INSERT/UPDATE events to subscribed clients
 -- Required for the visibility-aware live dashboard.
 -- Guarded so re-running this file doesn't error with "relation is already
 -- member of publication".

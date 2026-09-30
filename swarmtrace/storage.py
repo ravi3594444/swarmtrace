@@ -41,15 +41,8 @@ CHECKPOINT_EVERY: int = 500
 BUSY_TIMEOUT_MS: int = 5_000
 
 
-# TraceRow used to be a raw sqlite tuple, positionally indexed. That shape
-# is why a single schema migration (adding session_id + synced) broke
-# replay.py, export.py, and every row[N] site in cli.py/alerts.py in one
-# shot -- every consumer had to be found and updated by hand. get_traces()/
-# get_all_traces()/get_by_id()/get_unsynced_traces() now return dicts (one
-# key per column, via sqlite3.Row) so consumers read row["agent_name"]
-# instead of row[13]. Any future ALTER TABLE ADD COLUMN in _ADDED_COLUMNS
-# is automatically available under its own name everywhere -- no consumer
-# needs to change.
+# rows come back as dicts keyed by column name (via sqlite3.Row), so new
+# columns in _ADDED_COLUMNS show up everywhere without touching consumers
 TraceRow = dict[str, Any]
 
 _ADDED_COLUMNS: list[tuple[str, str]] = [
@@ -74,9 +67,7 @@ _lock = threading.Lock()
 _conn: sqlite3.Connection | None = None
 _write_count: int = 0
 
-# ---------------------------------------------------------------------------
 # Internal helpers
-# ---------------------------------------------------------------------------
 
 def _secure_db_path(path: str) -> None:
     """Create/open a regular DB file without following symbolic links.
@@ -200,12 +191,12 @@ def _purge_old_rows(conn: sqlite3.Connection) -> None:
 
     Only purges rows that have already been synced to the remote endpoint
     (synced=1). Unsynced rows (synced=0) are preserved so the resync CLI
-    can still replay them — purging an unsynced row is silent data loss,
+    can still replay them, purging an unsynced row is silent data loss,
     because that trace was captured but never reached the dashboard and
     there's no other copy.
 
     If the DB fills with unsynced rows (sustained backend outage with no
-    recovery), this function will NOT evict them — the DB can grow beyond
+    recovery), this function will NOT evict them, the DB can grow beyond
     MAX_ROWS. That's deliberate: better to grow the local DB (bounded by
     disk) than to silently drop traces the user thinks are safe. The
     operator should see the growth via metrics/alerting (TODO: wire into
@@ -217,7 +208,7 @@ def _purge_old_rows(conn: sqlite3.Connection) -> None:
     excess = row_count - MAX_ROWS
     # Only evict synced rows. If there aren't enough synced rows to satisfy
     # `excess`, we evict what we can and leave the unsynced rows in place
-    # (the DB stays over MAX_ROWS — see docstring for why).
+    # (the DB stays over MAX_ROWS, see docstring for why).
     conn.execute(
         "DELETE FROM traces WHERE id IN "
         "(SELECT id FROM traces WHERE synced = 1 "
@@ -259,9 +250,7 @@ def purge_now() -> None:
     except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
         _log.warning("purge_now warning: %s", exc)
 
-# ---------------------------------------------------------------------------
 # Public API
-# ---------------------------------------------------------------------------
 
 def save_trace(
     *,
@@ -304,22 +293,8 @@ def save_trace(
             if _write_count % PURGE_EVERY == 0:
                 _purge(conn)
             conn.commit()
-            # Periodic WAL checkpoint.
-            #
-            # This MUST run after commit(). A checkpoint cannot execute inside
-            # an open write transaction, and the INSERT above opens one
-            # implicitly — so issuing it before the commit (as this used to)
-            # made SQLite refuse every single checkpoint with
-            # SQLITE_LOCKED, which the outer handler swallowed as a
-            # "storage warning: database table is locked" log line. The
-            # explicit checkpoint had therefore never once run, and every
-            # CHECKPOINT_EVERY writes a bogus warning reached the host's logs.
-            #
-            # Measured: the WAL stays ~3.9 MB at 1k/4k/12k writes either way —
-            # SQLite's own wal_autocheckpoint (1000 pages) already bounds it,
-            # so this is a correctness and log-noise fix, not a disk-growth
-            # one. Keeping the explicit checkpoint means the interval is ours
-            # to tune rather than SQLite's default.
+            # periodic WAL checkpoint. has to come after commit(), it can't
+            # run inside the open write transaction (SQLITE_LOCKED)
             if _write_count % CHECKPOINT_EVERY == 0:
                 conn.execute("PRAGMA wal_checkpoint(PASSIVE)")
     except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
@@ -372,7 +347,7 @@ def mark_synced(trace_id: str, synced: int = 1) -> None:
 
     Called by the tracer's background sender after a confirmed-successful
     remote POST (``synced=1``), and by the ``swarmtrace resync`` CLI when
-    re-sending a previously-failed row succeeds. Swallows exceptions so a
+    re-sending a failed row succeeds. Swallows exceptions so a
     storage hiccup never crashes the worker thread or the CLI.
     """
     try:
@@ -415,7 +390,7 @@ def close() -> None:
     with ``check_same_thread=False`` so the background sender thread can write
     to it, which makes ``_lock`` the *only* thing serializing access. Closing
     outside the lock frees the sqlite3 object while another thread may be
-    inside a query — a use-after-free that segfaults the interpreter, not a
+    inside a query, a use-after-free that segfaults the interpreter, not a
     Python-level exception you can catch. (Reproduced 3/3 before this
     function existed; the sender's ``mark_synced`` was the racing caller.)
 

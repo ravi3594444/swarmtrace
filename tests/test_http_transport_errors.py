@@ -1,19 +1,7 @@
-"""Tests for IngestHTTPError — the SDK side of the ingest-500 root cause.
+"""Tests for IngestHTTPError: the server body must show up in the error message.
 
-Root cause context: the dashboard's /api/ingest failed with HTTP 500 for
-the user whose Supabase migrations were never applied, but urllib's
-HTTPError stringifies to "HTTP Error 500: Internal Server Error" and drops
-the response body — so the classified {error, code, hint} body the server
-sends was invisible. HttpTransport now raises IngestHTTPError, which keeps
-the (bounded) server body in the message the sender/resync log lines print.
-
-Covers:
-  - body is surfaced for send_batch and send_single
-  - status/reason/body attributes
-  - oversized bodies are bounded (log-line safety)
-  - non-HTTP errors (URLError etc.) still propagate unchanged
-  - the sender's retry path treats IngestHTTPError as an ordinary failure
-    (rows stay unsynced; error text includes the server hint)
+Covers send_batch/send_single, the status/reason/body attributes, body size
+bounding, pass-through of non-HTTP errors, and the sender retry path.
 """
 
 from __future__ import annotations
@@ -75,7 +63,7 @@ class TestIngestHTTPError:
             HttpTransport().send_batch([{"id": "t1"}], "k", "https://dash.example")
         msg = str(excinfo.value)
         assert "HTTP Error 500" in msg
-        # The whole point: the operator now SEES what to do.
+        # operator sees the hint
         assert "SCHEMA_NOT_MIGRATED" in msg
         assert "npm run db:migrate" in msg
         assert excinfo.value.status == 500

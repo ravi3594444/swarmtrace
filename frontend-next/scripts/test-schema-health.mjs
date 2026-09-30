@@ -1,14 +1,7 @@
 /**
- * Test: schema health check (lib/schema-health.ts).
- *
- * Simulates PostgREST with an in-memory "database" (table → column set,
- * function → parameter list) so every deployment shape can be tested:
- * healthy, fresh-project (only 0000 applied), partially migrated, stale
- * RPC signatures, and unreachable DB.
- *
- * This is the regression test for the root cause of "valid API key, zero
- * traces": before /api/health/db existed, a missing migration surfaced only
- * as opaque 500s from /api/ingest.
+ * Tests for lib/schema-health.ts against an in-memory fake of PostgREST
+ * (table to columns, function to parameters): healthy, fresh project (only
+ * 0000 applied), partially migrated, stale RPC signatures and unreachable DB.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -24,15 +17,11 @@ import { MIGRATION_HINT } from '../lib/ingest-errors.ts'
 const SUPA_URL = 'https://proj.supabase.co'
 const KEY = 'service-role-key'
 
-// ── PostgREST simulator ───────────────────────────────────────────────────
-// Faithful to what PostgREST actually returns:
-//  - GET /<table>?select=a,b&limit=0 → 200 [] iff table AND all columns exist
-//  - missing table    → 404 {"code":"PGRST205", ... "Could not find the table"}
-//  - missing column   → 400 {"code":"42703", ... "column <t>.<c> does not exist"}
-//  - POST /rpc/<fn>   → parameter names must match the definition exactly,
-//                       else 404 PGRST202 "Could not find the function"
-//  - *_for_key functions reject the fake hash with 400 {"code":"28000",
-//    "message":"invalid_api_key"} (they resolve the key before writing)
+// Mimics PostgREST: GET /<table>?select=a,b&limit=0 gives 200 only if the
+// table and all columns exist (404 PGRST205 for a missing table, 400 42703
+// for a missing column). POST /rpc/<fn> needs exact parameter names, else 404
+// PGRST202, and *_for_key functions reject the fake hash with 400 28000
+// invalid_api_key.
 function resp(status, body) {
   return { ok: status >= 200 && status < 300, status, text: async () => body }
 }
@@ -98,11 +87,8 @@ function fresh0000Db() {
   })
 }
 
-// ═════════════════════════════════════════════════════════════════════════
-// The prod regression scenario: key creation worked (0000 exists) but the
-// rest of the migrations were never applied. THE root-cause regression test.
-// ═════════════════════════════════════════════════════════════════════════
-describe('checkSchemaHealth — fresh project (only 0000 applied): the production root cause', () => {
+// Key creation worked (0000 exists) but the other migrations were never applied.
+describe('checkSchemaHealth: fresh project (only 0000 applied)', () => {
   test('reports every pending migration in repo order, RPCs included', async () => {
     const result = await checkSchemaHealth({
       url: SUPA_URL, serviceKey: KEY, fetchImpl: fresh0000Db(),
@@ -120,12 +106,12 @@ describe('checkSchemaHealth — fresh project (only 0000 applied): the productio
     ])
     assert.equal(result.hint, MIGRATION_HINT)
 
-    // The checks that SHOULD pass on a 0000-only database do pass:
+    // checks that should pass on a 0000-only database do pass
     const byName = Object.fromEntries(result.checks.map((c) => [c.name, c]))
     assert.equal(byName['api_keys table'].ok, true)
     assert.equal(byName['traces base columns'].ok, true)
 
-    // …and the ingest-critical ones fail with the right fix pointers:
+    // and the ingest-critical ones fail with the right fix pointers
     assert.equal(byName['upsert_trace_for_key()'].ok, false)
     assert.equal(byName['upsert_trace_for_key()'].fix, '0010_tenant_isolation_ingest.sql')
     assert.equal(byName['upsert_trace_for_key()'].failure, 'missing')
@@ -133,7 +119,7 @@ describe('checkSchemaHealth — fresh project (only 0000 applied): the productio
   })
 })
 
-describe('checkSchemaHealth — healthy deployment', () => {
+describe('checkSchemaHealth: healthy deployment', () => {
   test('all checks pass, no hint, no missing migrations', async () => {
     const result = await checkSchemaHealth({ url: SUPA_URL, serviceKey: KEY, fetchImpl: fullDb() })
     assert.equal(result.ok, true)
@@ -156,7 +142,7 @@ describe('checkSchemaHealth — healthy deployment', () => {
   })
 })
 
-describe('checkSchemaHealth — partially migrated (the sneaky cases)', () => {
+describe('checkSchemaHealth: partially migrated ', () => {
   test('stale RPC signature (function exists but older param list) is reported missing', async () => {
     const tables = {}
     for (const tc of TABLE_CHECKS) {
@@ -193,7 +179,7 @@ describe('checkSchemaHealth — partially migrated (the sneaky cases)', () => {
   })
 })
 
-describe('checkSchemaHealth — database unreachable', () => {
+describe('checkSchemaHealth: database unreachable', () => {
   test('short-circuits with SUPABASE_URL hint, no crash', async () => {
     const fetchImpl = async () => {
       throw new TypeError('fetch failed')
@@ -207,7 +193,7 @@ describe('checkSchemaHealth — database unreachable', () => {
   })
 })
 
-describe('checkSchemaHealth — never throws on odd responses', () => {
+describe('checkSchemaHealth: never throws on odd responses', () => {
   test('a 500 from every request yields failed checks, still structured', async () => {
     const fetchImpl = async (url) => {
       if (/rest\/v1\/?$/.test(url)) return resp(200, '{}')

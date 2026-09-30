@@ -1,15 +1,4 @@
-"""Regression test for the fov.py screen-streamer thread-start race.
-
-Bug: _ensure_screen_streamer() checked-then-set _screen_streamer_started
-with no lock, so concurrent first calls (e.g. two agents opening Playwright
-pages at once — the exact "swarm" scenario this product is for) could each
-pass the check before either set the flag, spawning duplicate background
-screenshot threads forever. tracer._ensure_worker and fov._ensure_fov_worker
-already used correct double-checked locking; this call site didn't.
-
-Fix: _ensure_screen_streamer() now uses the same double-checked locking
-pattern with a dedicated _screen_streamer_lock.
-"""
+"""Concurrent first calls to _ensure_screen_streamer must start exactly one thread."""
 
 import threading
 
@@ -58,7 +47,7 @@ def test_concurrent_first_calls_start_exactly_one_streamer_thread(monkeypatch):
 
 
 def test_already_started_short_circuits_without_lock_contention():
-    """Once started, repeated calls are a no-op — just the fast-path check."""
+    """Once started, repeated calls are a no-op, just the fast-path check."""
     fov._screen_streamer_started = True
     fov._ensure_screen_streamer()  # must not raise or spawn anything
     assert fov._screen_streamer_started is True

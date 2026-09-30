@@ -14,10 +14,7 @@ export interface Breadcrumb {
   href?: string
 }
 
-/**
- * RelativeTime — ticks every second to show "3s ago", "45s ago", etc.
- * Kept inline (not a separate file) because it's only used here.
- */
+// Ticks every second: "3s ago", "45s ago", etc.
 function RelativeTime({ date }: { date: Date }) {
   const [now, setNow] = useState(() => Date.now())
   useEffect(() => {
@@ -58,8 +55,7 @@ export function PageHeader({
     if (refreshing || !onRefresh) return
     setRefreshing(true)
     onRefresh()
-    // Reset after 1s — the actual fetch may take longer, but the spinner
-    // gives visual feedback that the click was registered.
+    // Fixed 1s spin; the fetch itself may take longer.
     setTimeout(() => setRefreshing(false), 1000)
   }
 
@@ -107,7 +103,7 @@ export function PageHeader({
               {liveStatus === 'live' ? 'LIVE' : liveStatus === 'paused' ? 'PAUSED' : 'OFFLINE'}
             </div>
           )}
-          {/* Last-updated timestamp — ticks every second */}
+          {/* Last-updated timestamp */}
           {lastUpdated && (
             <span className="hidden sm:inline text-[11px] text-muted-foreground/70 font-mono">
               Updated <RelativeTime date={lastUpdated} />

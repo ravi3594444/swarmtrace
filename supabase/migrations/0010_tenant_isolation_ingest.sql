@@ -1,29 +1,15 @@
 -- 0010_tenant_isolation_ingest.sql
--- High: multi-tenant isolation must not depend only on app-layer filters when
--- the service-role key is used for ingest/events/mcp.
+-- Ties tenant identity to the API key inside Postgres instead of trusting an
+-- app-layer user_id passed with the service-role key, which bypasses RLS.
 --
--- Background
--- ----------
--- Dashboard reads already go through supaUserRequest() which passes the Clerk
--- JWT and lets Postgres RLS (user_id = auth.jwt()->>'sub') enforce isolation.
--- Ingest, FOV events, and MCP still authenticate with an API key and then
--- write via the service-role key, which BYPASSES RLS. Isolation on those
--- paths is currently "the app looked up key_hash → user_id and stuffed that
--- user_id into the RPC". A future route bug (or a compromised service key
--- used from a misconfigured client) can write under any user_id.
+--  1. resolve_api_key_user_id(p_key_hash): SECURITY DEFINER helper
+--  2. upsert_trace_for_key(...): like upsert_trace_with_metrics but takes
+--     p_key_hash and stamps user_id itself
+--  3. insert_agent_event_for_key(...): same for FOV events
+--  4. execute revoked from PUBLIC/anon/authenticated, granted to service_role
 --
--- Fix
--- ---
--- 1. resolve_api_key_user_id(p_key_hash) — SECURITY DEFINER helper.
--- 2. upsert_trace_for_key(...) — same as upsert_trace_with_metrics but takes
---    p_key_hash instead of p_user_id. The function stamps user_id itself.
--- 3. insert_agent_event_for_key(...) — same pattern for FOV events.
--- 4. REVOKE EXECUTE from PUBLIC/anon/authenticated; GRANT only to service_role.
---
--- The legacy upsert_trace_with_metrics(p_user_id, ...) signature is left in
--- place for integration tests and older deploy rollbacks, but application
--- code MUST call the *_for_key variants so tenant identity is bound to the
--- API key inside Postgres.
+-- The legacy upsert_trace_with_metrics(p_user_id, ...) stays for tests and
+-- rollbacks; application code should call the *_for_key functions.
 
 CREATE OR REPLACE FUNCTION public.resolve_api_key_user_id(p_key_hash TEXT)
 RETURNS TEXT
@@ -53,15 +39,13 @@ BEGIN
 END;
 $$;
 
--- anon/authenticated are revoked EXPLICITLY (not just PUBLIC): on Supabase
--- projects whose default privileges (ALTER DEFAULT PRIVILEGES ... GRANT
--- EXECUTE ON FUNCTIONS) hand them a DIRECT grant on newly created functions,
--- a PUBLIC revoke alone leaves that direct grant in place.
+-- Revoke anon/authenticated explicitly: Supabase default privileges grant them
+-- a direct EXECUTE on new functions, which a PUBLIC revoke does not remove.
 REVOKE ALL ON FUNCTION public.resolve_api_key_user_id(TEXT)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.resolve_api_key_user_id(TEXT) TO service_role;
 
--- ── Ingest: key-hash-scoped upsert ──────────────────────────────────────────
+-- Ingest: key-hash-scoped upsert
 CREATE OR REPLACE FUNCTION public.upsert_trace_for_key(
   p_key_hash      TEXT,
   p_id            TEXT,
@@ -156,7 +140,7 @@ GRANT EXECUTE ON FUNCTION public.upsert_trace_for_key(
   INTEGER, INTEGER, DOUBLE PRECISION, TEXT, TEXT, TEXT, TEXT, TEXT, JSONB
 ) TO service_role;
 
--- ── FOV events: key-hash-scoped insert ──────────────────────────────────────
+-- FOV events: key-hash-scoped insert
 CREATE OR REPLACE FUNCTION public.insert_agent_event_for_key(
   p_key_hash   TEXT,
   p_id         TEXT,

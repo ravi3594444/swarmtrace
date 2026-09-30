@@ -27,7 +27,7 @@ class IngestHTTPError(RuntimeError):
     """An /api/ingest HTTP failure that preserves the server's response body.
 
     Raised instead of ``urllib.error.HTTPError``. Callers (sender worker,
-    resync CLI) catch broad ``Exception`` and log ``%s`` — urllib's HTTPError
+    resync CLI) catch broad ``Exception`` and log ``%s``, urllib's HTTPError
     stringifies to just "HTTP Error 500: Internal Server Error", discarding
     the response body. The dashboard now returns classified bodies like
     ``{"error": "...", "code": "SCHEMA_NOT_MIGRATED", "hint": "...run the
@@ -76,14 +76,14 @@ class HttpTransport:
     def send_batch(self, payloads: list[dict], key: str, url: str) -> None:
         """Send a BATCH of traces as one gzip'd POST.
 
-        Body shape: ``{"traces": [...]}``. gzip-compressed — trace payloads
+        Body shape: ``{"traces": [...]}``. gzip-compressed, trace payloads
         are highly compressible (args/output are repetitive text), so this
         typically shrinks wire bytes 5-10x.
 
-        Raises on any HTTP error (the caller retries) — HTTP errors are
+        Raises on any HTTP error (the caller retries), HTTP errors are
         raised as IngestHTTPError, whose message includes the server's
         classified response body ({error, code, hint}). The endpoint returns
-        204 on success (no body) — we don't read it.
+        204 on success (no body), we don't read it.
         """
         body = json.dumps({"traces": payloads}).encode()
         compressed = gzip.compress(body)

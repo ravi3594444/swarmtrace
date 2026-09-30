@@ -7,15 +7,8 @@ import { AlertTriangle, RefreshCw } from 'lucide-react'
 interface State { hasError: boolean; message: string; eventId: string | null }
 
 /**
- * Optional error reporting hook. If `NEXT_PUBLIC_ERROR_REPORTING_ENDPOINT`
- * is set, errors are POSTed to it (e.g. a Sentry ingest URL, a custom
- * /api/errors route, or a Logflare endpoint). If not set, errors are only
- * logged to the console — matching the previous behavior so dev/preview
- * environments without a reporting endpoint aren't broken.
- *
- * The hook is called from componentDidCatch so the error + React component
- * stack are both captured. We generate a short `eventId` so the UI can
- * display a reference the user can quote when reporting an issue manually.
+ * POSTs the error to NEXT_PUBLIC_ERROR_REPORTING_ENDPOINT if set, and returns
+ * an event id the UI can show. Without an endpoint it does nothing.
  */
 async function reportError(error: Error, info: React.ErrorInfo): Promise<string | null> {
   const endpoint = process.env.NEXT_PUBLIC_ERROR_REPORTING_ENDPOINT
@@ -35,25 +28,15 @@ async function reportError(error: Error, info: React.ErrorInfo): Promise<string 
     const data = await res.json().catch(() => null)
     return data?.eventId ?? data?.id ?? crypto.randomUUID?.() ?? null
   } catch {
-    // Reporting failed — don't throw, the boundary should still render.
+    // Reporting failed; the boundary should still render.
     return null
   }
 }
 
 /**
- * DashboardErrorBoundary — catches render-time errors inside the dashboard
- * page content area so a single page crash doesn't take down the whole app
- * shell (sidebar, command palette, etc. remain usable).
- *
- * RESET ON ROUTE CHANGE:
- * Class components can't use hooks directly, so we split the boundary into
- * the class itself (which holds the error state) and a thin functional
- * wrapper that reads `usePathname()` and passes it as a `resetKey`. When the
- * path changes, `componentDidUpdate` sees a new `resetKey` and clears the
- * error state — so a transient error on /traces doesn't persist after the
- * user navigates to /overview. Without this, a one-off render error would
- * "stick" until a full page reload, even though the underlying route segment
- * is different.
+ * Catches render errors in the page content so the sidebar and palette stay
+ * usable. The class can't call hooks, so a thin wrapper passes usePathname()
+ * as `resetKey`, and the error clears when the route changes.
  */
 export class DashboardErrorBoundaryInner extends React.Component<
   { children: React.ReactNode; resetKey: string },
@@ -69,22 +52,15 @@ export class DashboardErrorBoundaryInner extends React.Component<
   }
 
   componentDidCatch(error: Error, info: React.ErrorInfo) {
-    // Always log to console — devs expect to see errors in DevTools even
-    // when a reporting endpoint is configured.
     console.error('[DashboardErrorBoundary]', error, info)
-    // Fire-and-forget the report; update state with the event id once it
-    // resolves so the UI can show a reference code.
+    // Fire and forget; the event id is shown once it resolves.
     reportError(error, info).then((eventId) => {
       if (eventId) this.setState({ eventId })
     })
   }
 
   componentDidUpdate(prevProps: { resetKey: string }) {
-    // Route changed while an error was showing — clear it so the new page
-    // gets a fresh chance to render. This is the fix for "transient error
-    // persists across navigation" — without it, the boundary stays in its
-    // error state until a full page reload, even though the user has moved
-    // to a completely different route segment.
+    // Route changed, give the new page a fresh render.
     if (this.state.hasError && prevProps.resetKey !== this.props.resetKey) {
       this.setState({ hasError: false, message: '' })
     }

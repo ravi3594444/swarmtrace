@@ -3,18 +3,9 @@
 import { useEffect, useRef } from 'react'
 
 /**
- * Runs `callback` on a `setInterval(ms)` cadence, but skips any tick that
- * fires while the tab is hidden (`document.visibilityState === 'hidden'`)
- * and fires one immediate catch-up call as soon as the tab becomes visible
- * again.
- *
- * Audit finding: none of the dashboard's data pollers (traces, agent
- * graph, overview, agents) paused on backgrounded tabs — an open-but-hidden
- * tab kept polling all night, at whatever cost the poll carries.
- *
- * `enabled=false` disables both the interval and the visibility listener
- * entirely (used for the isLive/pause toggle already present on these
- * hooks).
+ * setInterval that skips ticks while the tab is hidden and fires one
+ * catch-up call when it becomes visible again. `enabled=false` turns off the
+ * interval and the visibility listener.
  */
 export function useVisibleInterval(
   callback: () => void,

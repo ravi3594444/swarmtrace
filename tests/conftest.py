@@ -1,4 +1,4 @@
-"""Shared test fixtures for the Phase 1 runtime seam."""
+"""Shared fixtures."""
 
 from __future__ import annotations
 
@@ -11,13 +11,7 @@ from tests._fakes import FakeRepository, FakeTransport
 
 @pytest.fixture
 def fake_runtime(monkeypatch):
-    """Replace the process runtime with an in-memory fake repository + transport.
-
-    Patches the runtime module's ``_runtime`` singleton so every caller of
-    ``get_runtime()`` — whether it imported the function directly or via the
-    module — receives the fake. This is what lets tests drop the old pattern
-    of monkeypatching private ``tracer.py`` internals.
-    """
+    """Swap the process runtime for an in-memory repository + transport."""
     repository = FakeRepository()
     transport = FakeTransport()
     rt = Runtime(repository, transport, lambda: ("test-key", "https://example.test"))

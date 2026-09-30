@@ -5,19 +5,11 @@ import type { Trace } from '@/lib/trace-types'
 import { Activity, CheckCircle, Coins, Clock } from 'lucide-react'
 
 /**
- * SimpleStatCards — the four numbers a non-technical user actually cares
- * about, in plain English with a one-line helper under each. This is the
- * Home-page counterpart to the developer-oriented StatBar on Overview:
- * same underlying math (so the numbers never contradict each other), but
- * sentence-case labels, helper text, and no jargon ("traces" → "requests",
- * "latency" → "response time", tokens hidden entirely).
- *
- * Memoized for the same reason StatBar is: the page polls every 8s and we
- * don't want the slide-in animation replaying on every tick.
+ * Plain-English version of StatBar for the Home page. Same math, friendlier
+ * labels. Memoized like StatBar so the animation doesn't replay on each poll.
  */
 
-/** Top-level ("root") traces — a whole request, not a step inside one.
- *  Same filter as StatBar so the counts match the advanced pages. */
+/** Root traces only (a whole request, not a step inside one), same as StatBar. */
 export function rootTraces(traces: Trace[]): Trace[] {
   return traces.filter((t) => !t.parent_id || !traces.some((x) => x.id === t.parent_id))
 }

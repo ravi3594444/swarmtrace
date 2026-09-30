@@ -1,29 +1,9 @@
 /**
- * Ingest payload validation — shared between the /api/ingest edge route and
- * its tests.
+ * Validation for /api/ingest payloads, kept separate from the route so it
+ * can be unit tested.
  *
- * Extracted from app/api/ingest/route.ts so the validation contract is
- * unit-testable without standing up the full edge runtime. The route file
- * imports {@link validateIngest} and {@link normalizeIngestPayload} from
- * here; tests import the same functions directly.
- *
- * Two payload shapes are accepted (swarmtrace 0.6.0+):
- *
- *   1. Single object (the original shape, still sent by older SDK versions):
- *
- *        { id: "...", function: "...", timestamp: "...", ... }
- *
- *   2. Batch shape (new — sent by the SDK when batching is enabled):
- *
- *        { traces: [ {...}, {...}, ... ] }
- *
- * The backend accepts BOTH so that:
- *   - Old SDK versions keep working against a new backend (no forced upgrade).
- *   - A new SDK can send batches against a new backend (the throughput win).
- *
- * A new SDK is NOT released until the new backend is confirmed live — see
- * the task 4 rollout note in the commit message. Sending a batch against an
- * OLD backend (which only accepts single-object) would 400.
+ * Two shapes are accepted: a single trace object (older SDKs) or a batch,
+ * `{ traces: [...] }` (SDK 0.6.0+).
  */
 
 export const MAX_TEXT_LEN = 32000
@@ -31,10 +11,9 @@ export const MAX_TEXT_LEN = 32000
 import { redact } from './redact'
 import { decodeGzipBody } from './decode-body'
 
-// Bound on the DECOMPRESSED body size. The route already caps the wire
-// (compressed) bytes at 1 MB, but gzip can expand ~1000x, so a small
-// malicious payload could balloon after inflation. 1 MB comfortably fits
-// the largest legitimate batch (50 traces × ~64 KB of text fields).
+// Cap on the decompressed body. The wire size is already limited to 1 MB,
+// but gzip can expand ~1000x. 1 MB still fits the largest real batch
+// (50 traces of ~64 KB text).
 export const MAX_DECOMPRESSED_BYTES = 8 * 1024 * 1024
 
 export const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function', 'retrieval'])
@@ -42,14 +21,9 @@ export const VALID_KINDS = new Set(['agent', 'tool', 'llm', 'function', 'retriev
 export const MAX_ATTRIBUTES_SIZE = 64 * 1024
 
 /**
- * Decode the raw /api/ingest request body bytes into a JSON string,
- * inflating gzip when the client sent `Content-Encoding: gzip` (the SDK's
- * batch path).
- *
- * Thin wrapper around the generic {@link decodeGzipBody} (lib/decode-
- * body.ts), fixed to ingest's MAX_DECOMPRESSED_BYTES bound. Kept under
- * this name/signature for backward compatibility with existing callers
- * and tests — new code should call decodeGzipBody directly.
+ * Decode the raw request body to a JSON string, inflating gzip when the
+ * client sent Content-Encoding: gzip. Wraps decodeGzipBody with ingest's
+ * size limit.
  */
 export async function decodeIngestBody(
   bodyBytes: ArrayBuffer,
@@ -80,17 +54,11 @@ export interface TraceRow {
 
 export interface ValidationError {
   error: string
-  // Index into the batch (0 for single-object). Absent for whole-body errors.
+  // batch index (0 for single-object); absent for whole-body errors
   index?: number
 }
 
-/**
- * Validate ONE trace object and return the normalized row, or an error.
- *
- * This is the same logic that lived inline in route.ts before task 4 —
- * extracted here so it can be tested directly and called in a loop for
- * batch payloads.
- */
+/** Validate one trace object and return the normalized row or an error. */
 export function validateTrace(payload: unknown): { row?: TraceRow; error?: string } {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload))
     return { error: 'Body must be a JSON object' }
@@ -104,11 +72,9 @@ export function validateTrace(payload: unknown): { row?: TraceRow; error?: strin
   const text = (v: unknown) => (typeof v === 'string' ? v.slice(0, MAX_TEXT_LEN) : '')
   const num  = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : 0)
 
-  // kind/agent_id/agent_name were added in swarmtrace 0.3.0. Older SDK versions
-  // (or anything posting to /ingest directly) won't send them — default to
-  // kind='agent', agent_id=id, agent_name=function, which reproduces the
-  // pre-0.3.0 "every trace is its own agent" behavior exactly, so old
-  // clients keep working without becoming phantom sub-agents of anything.
+  // kind/agent_id/agent_name came in with SDK 0.3.0. Older clients omit them,
+  // so default to kind='agent', agent_id=id, agent_name=function, i.e. each
+  // trace is its own agent.
   const kind = typeof p.kind === 'string' && VALID_KINDS.has(p.kind) ? p.kind : 'agent'
   const agentId =
     typeof p.agent_id === 'string' && p.agent_id.length > 0 ? p.agent_id.slice(0, 64) : p.id
@@ -116,23 +82,20 @@ export function validateTrace(payload: unknown): { row?: TraceRow; error?: strin
     typeof p.agent_name === 'string' && p.agent_name.length > 0
       ? p.agent_name.slice(0, 256)
       : p.function
-  // session_id (swarmtrace 0.5.0) groups multi-turn runs into one conversation.
-  // Optional — older SDKs omit it, so it defaults to null.
+  // session_id groups multi-turn runs into one conversation; optional.
   const sessionId =
     typeof p.session_id === 'string' && p.session_id.length > 0
       ? p.session_id.slice(0, 64)
       : null
 
-  // trace_id (Phase 5) is the distributed root run id. Optional — older SDKs omit it,
-  // so it defaults to the span id.
+  // trace_id is the distributed root run id; defaults to the span id.
   const traceId =
     typeof p.trace_id === 'string' && p.trace_id.length > 0
       ? p.trace_id.slice(0, 64)
       : p.id
 
-  // attributes (Phase 5) is generic JSON metadata. Optional, bounded in size, and
-  // must be a plain object (not an array or primitive) to keep Supabase JSONB
-  // expectations predictable.
+  // attributes: generic JSON metadata. Optional, size-bounded, and must be a
+  // plain object (not an array or primitive).
   let attributes: Record<string, unknown> | null = null
   if (p.attributes !== undefined && p.attributes !== null) {
     if (typeof p.attributes !== 'object' || Array.isArray(p.attributes)) {
@@ -145,15 +108,10 @@ export function validateTrace(payload: unknown): { row?: TraceRow; error?: strin
     attributes = p.attributes as Record<string, unknown>
   }
 
-  // PII redaction — defense-in-depth at the ingest boundary. The SDK already
-  // redacts (swarmtrace/redact.py) before sending, but any client posting
-  // directly (curl, MCP, a third-party SDK port) bypasses the SDK. Redacting
-  // here means PII never lands in Supabase regardless of which client sent
-  // it. Applied to args/output/error (the three free-text fields that can
-  // carry user content). Slicing happens first (so we don't redact past the
-  // truncation boundary), then redaction runs on the sliced value.
-  // See lib/redact.ts for the categories scrubbed and the Luhn-gated
-  // credit-card logic (which avoids false-positiving on 16-digit trace IDs).
+  // PII redaction at the ingest boundary, since clients posting directly
+  // (curl, MCP, third-party SDKs) skip the SDK's own redaction. Applies to
+  // args/output/error, after slicing so we don't redact past the truncation
+  // point. See lib/redact.ts.
   const argsRaw = text(p.args)
   const outputRaw = text(p.output)
   const errorRaw = typeof p.error === 'string' ? p.error.slice(0, MAX_TEXT_LEN) : null
@@ -182,15 +140,9 @@ export function validateTrace(payload: unknown): { row?: TraceRow; error?: strin
 }
 
 /**
- * Detect the payload shape (single-object vs batch) and return a uniform
- * list of trace objects to validate.
- *
- * - `{ traces: [...] }` → the array (batch shape, SDK 0.6.0+).
- * - `{ id: ... }`       → a one-element array wrapping the object (legacy).
- * - Anything else       → null (caller returns 400).
- *
- * The batch shape must have a non-empty array; an empty array is rejected
- * so a misconfigured SDK doesn't spam the endpoint with no-op POSTs.
+ * Work out whether the payload is a single trace or a batch and return a
+ * uniform list. `{ traces: [...] }` gives the array, `{ id: ... }` wraps the
+ * object, anything else is null (400). Empty batches are rejected.
  */
 export function normalizeIngestPayload(payload: unknown): TraceRow[] | null {
   if (typeof payload !== 'object' || payload === null || Array.isArray(payload)) {
@@ -201,24 +153,14 @@ export function normalizeIngestPayload(payload: unknown): TraceRow[] | null {
     if (p.traces.length === 0) return null
     return p.traces as unknown as TraceRow[]
   }
-  // Single-object shape — wrap in a one-element array so the caller can
-  // treat both shapes uniformly.
+  // Single-object shape: wrap it so callers treat both shapes the same.
   return [p as unknown as TraceRow]
 }
 
 /**
- * Validate an entire ingest payload (single-object OR batch) and return
- * either the list of valid rows, or the first error encountered.
- *
- * On the first invalid trace in a batch, we reject the WHOLE batch with
- * a 400 — this matches the original single-object behavior (one bad trace
- * = one 400) and lets the SDK retry the whole batch. Partial-accept would
- * complicate the SDK's sync-flag bookkeeping (which rows to mark synced?)
- * and isn't worth the throughput gain.
- *
- * The returned `rows` array preserves batch order. The optional `index`
- * field on the error identifies which trace in the batch was bad (0-based),
- * so the SDK can log which item caused the rejection.
+ * Validate a whole ingest payload (single or batch). One bad trace rejects
+ * the entire batch with a 400 so the SDK can retry it as a unit. Rows keep
+ * batch order; the error's `index` (0-based) says which trace was bad.
  */
 export function validateIngest(payload: unknown): { rows?: TraceRow[]; error?: ValidationError } {
   const traces = normalizeIngestPayload(payload)

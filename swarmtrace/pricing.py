@@ -1,5 +1,5 @@
 """
-Live model pricing — fetched from LiteLLM's community-maintained registry.
+Live model pricing, fetched from LiteLLM's community-maintained registry.
 Falls back to cached data, then a bundled static snapshot, if the fetch fails
 or times out.
 
@@ -97,7 +97,7 @@ def _needs_refresh() -> bool:
 
 
 def _background_fetch() -> None:
-    """Runs on its own daemon thread — this is the ONLY place that does
+    """Runs on its own daemon thread, this is the ONLY place that does
     network I/O. Never called directly from the hot path.
     """
     global _cache, _cache_ts, _refresh_in_progress
@@ -113,7 +113,7 @@ def _background_fetch() -> None:
         # here, a fetch that fails *after* an earlier success would leave
         # _cache_ts at its old (now-stale) value, so _needs_refresh() stays
         # True and every subsequent hot-path call re-triggers a new
-        # background fetch attempt — hammering a dead network indefinitely
+        # background fetch attempt, hammering a dead network indefinitely
         # instead of waiting the hour.
         with _cache_lock:
             _cache_ts = time.time()
@@ -124,7 +124,7 @@ def _background_fetch() -> None:
 
 def _maybe_trigger_refresh() -> None:
     """Kick off a background refresh if the cache is empty/stale and no
-    refresh is already in flight. Returns immediately either way — this
+    refresh is already in flight. Returns immediately either way, this
     function never blocks on network I/O, only ever on a brief in-memory
     lock, so it's safe to call from the hot path on every traced call.
     """
@@ -145,7 +145,7 @@ def _fetch_live() -> dict:
 
     Never performs network I/O on the calling thread. If the cache is empty
     or stale, a background refresh is triggered (at most one in flight at a
-    time) and the current cache — possibly empty, possibly stale-but-usable —
+    time) and the current cache, possibly empty, possibly stale-but-usable -
     is returned right away.
     """
     _maybe_trigger_refresh()
@@ -157,7 +157,7 @@ def _lookup_pricing_entry(table: dict, model: str) -> dict | None:
     """Look up pricing by exact, raw, then normalized model name.
 
     Last resort: strip an undashed YYYYMMDD suffix (e.g. Anthropic's real
-    IDs like 'claude-3-5-sonnet-20241022' — `_normalize_model()` only
+    IDs like 'claude-3-5-sonnet-20241022', `_normalize_model()` only
     strips dashed 'YYYY-MM-DD' dates, by design, since some providers'
     dated snapshots are priced separately). This candidate is tried last
     so an exact dated entry in the live table always wins first.
@@ -199,10 +199,8 @@ def _normalize_model(name: str) -> str:
       - Date suffixes: '-2024-08-06', '-2025-01-01', etc. (dated snapshots
         are priced the same as the base model)
 
-    Does NOT do substring matching — that was the old behavior and it
-    mis-priced models ('gpt-4' substring-matched 'gpt-4o', 'gpt-4-turbo',
-    'gpt-4.1', etc., and which one won depended on dict iteration order).
-    For a cost-tracking product, a wrong number is worse than no number.
+    No substring matching: 'gpt-4' would otherwise hit 'gpt-4o' etc. and
+    a wrong price is worse than none.
     """
     s = name.lower().strip()
     # Strip provider prefix (everything before the first '/')
@@ -216,7 +214,7 @@ def _normalize_model(name: str) -> str:
 def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
     """Return cost in USD.  Returns 0.0 gracefully on any error.
 
-    Returns 0.0 for unknown models rather than guessing — a wrong cost
+    Returns 0.0 for unknown models rather than guessing, a wrong cost
     number is worse than no number for a cost-tracking product. Users
     who want a specific model tracked can call set_model_pricing().
     """
@@ -225,7 +223,7 @@ def calculate_cost(model: str, input_tokens: int, output_tokens: int) -> float:
 
     # Callers pass token counts straight from duck-typed third-party usage
     # objects (None, strings, custom numeric-ish types). Coerce defensively
-    # here rather than trusting the type hint — this is invoked from
+    # here rather than trusting the type hint, this is invoked from
     # ``finally`` blocks that must never raise, so a bad token value should
     # degrade to a 0.0 cost, not lose the whole trace.
     try:
@@ -265,12 +263,12 @@ def warm_cache() -> None:
     """Kick off a background fetch so the cache is warm before the first agent call.
 
     Called at module import time. If the fetch fails or the network is
-    unavailable, calculate_cost() falls back to the bundled snapshot — no
+    unavailable, calculate_cost() falls back to the bundled snapshot, no
     crash, no block.
     """
     _maybe_trigger_refresh()
 
 
-# Pre-warm on import — ensures the first calculate_cost() call hits the cache
+# Pre-warm on import, ensures the first calculate_cost() call hits the cache
 # instead of blocking the traced thread for up to _FETCH_TIMEOUT seconds.
 warm_cache()

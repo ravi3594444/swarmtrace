@@ -1,6 +1,4 @@
-/**
- * Test: per-agent network graph contract for the Node Network Map.
- */
+/** Tests for the per-agent network graph behind the Node Network Map. */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 

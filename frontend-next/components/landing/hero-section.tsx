@@ -13,10 +13,8 @@ export function HeroSection() {
   const [isVisible, setIsVisible] = useState(false);
   const [wordIndex, setWordIndex] = useState(0);
 
-  // Mount-triggered entrance animation. Use requestAnimationFrame to defer
-  // the setState to the next paint cycle — calling it synchronously in the
-  // effect body violates react-hooks/set-state-in-effect. The RAF callback
-  // runs after the effect's synchronous body, so the linter is satisfied.
+  // Entrance animation. setState goes through rAF to satisfy
+  // react-hooks/set-state-in-effect.
   useEffect(() => {
     const raf = requestAnimationFrame(() => setIsVisible(true))
     return () => cancelAnimationFrame(raf)
@@ -32,7 +30,7 @@ export function HeroSection() {
   return (
     <section className="relative min-h-screen flex flex-col overflow-hidden">
 
-      {/* Animated sphere — right side. Hidden on mobile/tablet because the
+      {/* Animated sphere - right side. Hidden on mobile/tablet because the
           600px-wide element overlaps the headline area on narrow viewports,
           and the sphere renders in foreground-ish colors at opacity-40,
           washing out the headline text against the background pattern.
@@ -41,7 +39,7 @@ export function HeroSection() {
         <AnimatedSphere />
       </div>
 
-      {/* Grid lines — reduced opacity on mobile (less visual noise behind
+      {/* Grid lines - reduced opacity on mobile (less visual noise behind
           the headline) and slightly stronger on lg+ where there's space. */}
       <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-15 lg:opacity-30">
         {[...Array(8)].map((_, i) => (
@@ -54,7 +52,7 @@ export function HeroSection() {
         ))}
       </div>
 
-      {/* Headline — top left */}
+      {/* Headline - top left */}
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12 pt-40 w-full">
 
         {/* Eyebrow */}
@@ -100,11 +98,7 @@ export function HeroSection() {
         </h1>
       </div>
 
-      {/* Buttons — on mobile they sit right after the headline (above the
-          fold); on lg+ they're bottom-right (the original designer layout).
-          Previously the CTAs were always at the bottom with mt-auto + pb-32,
-          which pushed them below the fold on phones — users had to scroll
-          past the whole headline to find the primary action. */}
+      {/* Buttons: right after the headline on mobile, bottom-right on lg+ */}
       <div className="relative z-10 max-w-[1400px] mx-auto px-6 lg:px-12 pb-32 w-full mt-auto lg:mt-auto">
         <div className={`flex flex-col sm:flex-row items-start sm:items-center justify-start lg:justify-end gap-4 transition-all duration-700 delay-300 ${
           isVisible ? "opacity-100 translate-y-0" : "opacity-0 translate-y-4"
@@ -135,7 +129,7 @@ export function HeroSection() {
         </div>
       </div>
 
-      {/* Stats marquee — very bottom */}
+      {/* Stats marquee - very bottom */}
       <div className={`absolute bottom-8 left-0 right-0 overflow-hidden transition-all duration-700 delay-500 ${
         isVisible ? "opacity-100" : "opacity-0"
       }`}>

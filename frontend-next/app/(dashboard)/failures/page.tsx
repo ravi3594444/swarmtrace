@@ -19,7 +19,7 @@ export default function FailuresPage() {
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
 
   // Filter traces to the selected time range before computing failure stats.
-  // Matches Overview's behavior — picking "Today" on the dashboard should
+  // Matches Overview's behavior - picking "Today" on the dashboard should
   // carry over to Failures so old errors don't dilute the "what's broken
   // RIGHT NOW" signal. Range defaults to "today" via useTimeRange.
   const filteredTraces = useMemo(

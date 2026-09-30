@@ -17,7 +17,7 @@ export function AnimatedWave() {
     const reducedMotion = typeof window !== "undefined"
       && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-    // Theme-aware color (same pattern as AnimatedSphere/Tetrahedron — the
+    // Theme-aware color (same pattern as AnimatedSphere/Tetrahedron - the
     // old rgba(0,0,0,...) was invisible in dark mode).
     const colorRef = { current: typeof document !== "undefined" && document.documentElement.classList.contains("dark") ? "255,255,255" : "0,0,0" };
     const observer = new MutationObserver(() => {

@@ -13,8 +13,7 @@ interface ApiKeyRow {
 }
 
 const listRateLimiter = createUserRateLimiter({ limit: 60, prefix: 'st_user_rl_apikeys_list' })
-// Tighter limit on key creation specifically — this is the sensitive
-// operation (also already guarded by the MAX_KEYS_HOBBY plan check below).
+// Tighter limit on key creation, the sensitive operation.
 const createRateLimiter = createUserRateLimiter({ limit: 10, prefix: 'st_user_rl_apikeys_create' })
 
 export async function GET() {
@@ -23,9 +22,8 @@ export async function GET() {
   if (!await listRateLimiter.check(userId)) return rateLimitResponse()
 
   try {
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT in the Authorization header). The user_id filter in the URL is
-    // now defence-in-depth, not the only guard.
+    // RLS is enforced via the user's Clerk JWT; the user_id filter is a
+    // second guard.
     const keys = (await supaUserRequest(
       `api_keys?user_id=eq.${encodeURIComponent(userId)}&revoked=eq.false&order=created_at.desc`,
       userId
@@ -36,7 +34,7 @@ export async function GET() {
         name: k.name,
         created: k.created_at,
         last_used: k.last_used,
-        // Show stored prefix — never reconstruct from the hash
+        // show the stored prefix, never reconstruct from the hash
         prefix: k.key_prefix + '...',
       }))
     })
@@ -55,12 +53,8 @@ export async function POST(req: Request) {
   if (!await createRateLimiter.check(userId)) return rateLimitResponse()
 
   try {
-    // Enforce plan limits before creating a new key. The Hobby plan
-    // (the only plan currently available — see /api/settings/billing)
-    // allows 1 API key. Pro/Enterprise will allow more once billing is
-    // live; for now everyone is on Hobby. Without this check, the UI
-    // says "1 API key" on the Hobby plan card but the API silently
-    // allowed unlimited keys.
+    // Enforce the plan limit (Hobby allows 1 key, and everyone is on Hobby
+    // for now, see /api/settings/billing)
     const MAX_KEYS_HOBBY = 1
     const existing = (await supaUserRequest(
       `api_keys?user_id=eq.${encodeURIComponent(userId)}&revoked=eq.false&select=id`,
@@ -69,7 +63,7 @@ export async function POST(req: Request) {
     if (existing.length >= MAX_KEYS_HOBBY) {
       return NextResponse.json(
         { error: `Your plan allows ${MAX_KEYS_HOBBY} API key${MAX_KEYS_HOBBY !== 1 ? 's' : ''}. Revoke an existing key or upgrade to create more.` },
-        { status: 402 }, // 402 Payment Required — signals a plan limit
+        { status: 402 }, // plan limit
       )
     }
 
@@ -78,8 +72,8 @@ export async function POST(req: Request) {
       ? body.name.trim().slice(0, 100)
       : 'New Key'
 
-    // id and key are separate: id is a UUID used for DB lookups/deletion,
-    // key is the secret shown once, stored only as a SHA-256 hash.
+    // id is a UUID for lookups/deletion; key is the secret, shown once and
+    // stored only as a SHA-256 hash
     const keyId = crypto.randomUUID()
     const rawKey = 'st_' + crypto.randomBytes(24).toString('hex')
     const keyHash = crypto.createHash('sha256').update(rawKey).digest('hex')
@@ -102,7 +96,7 @@ export async function POST(req: Request) {
       body: JSON.stringify(payload),
     })
 
-    // Return the raw key ONCE — it is never retrievable again
+    // raw key is returned once and can't be retrieved again
     return NextResponse.json({ key: rawKey })
   } catch (error) {
     if (error instanceof RlsEnforcementError) {

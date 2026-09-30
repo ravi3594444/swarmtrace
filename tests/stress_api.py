@@ -1,6 +1,6 @@
-"""Manual stress-test script for the local API's read path (GET /traces).
+"""Manual stress test for the local API read path (GET /traces).
 
-Not collected by pytest — run directly: python tests/stress_api.py
+Not collected by pytest; run it directly: python tests/stress_api.py
 """
 
 import statistics

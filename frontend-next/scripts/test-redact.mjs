@@ -1,15 +1,8 @@
 /**
- * Test: PII redaction (TS port of swarmtrace/redact.py).
- *
- * Mirrors the critical cases from the Python test suite
- * (tests/test_redact.py, 48 tests). The contract is identical: emails,
- * API keys (10 prefixes), Luhn-valid credit cards, and JWTs get scrubbed;
- * non-PII (16-digit trace IDs, UUID hex, SHA-256 hashes, phone numbers)
- * passes through unredacted.
- *
- * Also verifies that validateIngest (the ingest-boundary validator) applies
- * redaction to args/output/error — the defense-in-depth fix that closes the
- * "backend trusts the SDK" PII gap flagged in the production-readiness audit.
+ * Tests for lib/redact.ts (TS port of swarmtrace/redact.py). Emails, API
+ * keys, Luhn-valid cards and JWTs are scrubbed; trace IDs, UUIDs, hashes and
+ * phone numbers pass through. Also checks validateIngest applies redaction
+ * to args/output/error.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -51,8 +44,6 @@ function mkTrace(overrides = {}) {
   }
 }
 
-// ── Luhn check ──────────────────────────────────────────────────────────────
-
 describe('luhnOk', () => {
   test('known test PANs pass', () => {
     assert.equal(luhnOk(VISA_TEST_PAN), true)
@@ -70,8 +61,6 @@ describe('luhnOk', () => {
     assert.equal(luhnOk('41111111111111111111'), false) // 20 digits
   })
 })
-
-// ── Email redaction ─────────────────────────────────────────────────────────
 
 describe('email redaction', () => {
   test('plain email scrubbed', () => {
@@ -92,8 +81,6 @@ describe('email redaction', () => {
     assert.equal(out.match(/\[REDACTED\]/g).length, 2)
   })
 })
-
-// ── API key redaction ───────────────────────────────────────────────────────
 
 describe('API key redaction', () => {
   test('OpenAI sk- prefix', () => {
@@ -121,8 +108,6 @@ describe('API key redaction', () => {
   })
 })
 
-// ── JWT redaction ───────────────────────────────────────────────────────────
-
 describe('JWT redaction', () => {
   test('JWT in bearer header', () => {
     const out = redact(`Authorization: Bearer ${FAKE_JWT}`)
@@ -135,8 +120,6 @@ describe('JWT redaction', () => {
     assert.ok(out.includes('eyJfoo'))
   })
 })
-
-// ── Credit card redaction (Luhn-gated) ──────────────────────────────────────
 
 describe('credit card redaction', () => {
   test('Visa 16-digit', () => {
@@ -159,8 +142,6 @@ describe('credit card redaction', () => {
     assert.ok(!out.includes('4111'))
   })
 })
-
-// ── Non-PII pass-through (the false-positive guard) ─────────────────────────
 
 describe('non-PII pass-through', () => {
   test('16-digit trace ID passes through', () => {
@@ -193,8 +174,6 @@ describe('non-PII pass-through', () => {
   })
 })
 
-// ── Edge cases ──────────────────────────────────────────────────────────────
-
 describe('edge cases', () => {
   test('null passes through', () => {
     assert.equal(redact(null), null)
@@ -224,8 +203,6 @@ describe('edge cases', () => {
     assert.equal(out.match(/\[REDACTED\]/g).length, 4)
   })
 })
-
-// ── validateIngest applies redaction (defense-in-depth) ─────────────────────
 
 describe('validateIngest applies redaction at ingest boundary', () => {
   test('email in args is scrubbed before reaching the DB', () => {
@@ -287,14 +264,7 @@ describe('validateIngest applies redaction at ingest boundary', () => {
   })
 })
 
-
-// ── redactDeep — recursive server-side redaction for /api/events ──────────
-//
-// Reviewer P1 fix: the SDK redacts client-side, but any client that posts
-// directly to /api/events (curl, MCP, a third-party SDK port) bypasses the
-// SDK. redactDeep() is the server-side defense-in-depth that scrubs PII from
-// event data BEFORE it hits Supabase, regardless of which client sent it.
-
+// redactDeep: server-side scrub of /api/events data for clients that skip the SDK.
 describe('redactDeep', () => {
   test('redacts strings in a flat object', () => {
     const out = redactDeep({ email: 'alice@example.com', name: 'Alice' })
@@ -375,11 +345,8 @@ describe('redactDeep', () => {
     // method and selector pass through (not PII).
     assert.equal(out.method, 'fill')
     assert.equal(out.args[0], '#password')
-    // Value is not pattern-PII but the recursive redactor runs redact()
-    // on every string — 'secret-value' doesn't match any pattern so it
-    // passes through. (Server-side redactDeep catches pattern-PII; the
-    // client-side FOV redactor catches fill/type values by field-aware
-    // logic. Both layers are needed.)
+    // plain string values only go through pattern redaction, so
+    // 'secret-value' survives here; the FOV redactor handles fill/type values
     assert.equal(out.args[1], 'secret-value')
     // API key in nested object IS redacted.
     assert.equal(out.nested.token, '[REDACTED]')

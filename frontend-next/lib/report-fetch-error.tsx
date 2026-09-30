@@ -3,26 +3,19 @@
 import { toast } from '@/hooks/use-toast'
 import { ToastAction } from '@/components/ui/toast'
 
-// Every helper in lib/api.ts used to swallow fetch failures and return
-// `null`, which every hook then defaulted to an empty array/object. That
-// made a broken request (expired session, backend down, network drop)
-// render identically to "you genuinely have no data" — no error, no retry,
-// just a quietly empty dashboard. This surfaces those failures instead.
-//
-// Throttled to one toast per window: pages like /overview fire several
-// fetches in parallel, and if they fail together (e.g. session expired)
-// we don't want to fire a toast per request.
+// Surfaces fetch failures from lib/api.ts (expired session, backend down)
+// instead of letting them look like an empty dashboard. Throttled to one
+// toast per window since pages fire several fetches in parallel.
 const THROTTLE_MS = 8000
 let lastShownAt = 0
 
-// Registry of retry callbacks — when a fetch fails, the caller can register
-// a retry function. If the user clicks "Retry now" in the toast, we call
-// the most recently registered callback. This is a simple global registry
-// rather than per-toast because the throttle means only one toast shows.
+// Retry callbacks: the caller registers one on failure and "Retry now" in
+// the toast calls the latest. A global registry is enough since only one
+// toast shows at a time.
 let lastRetryFn: (() => void) | null = null
 
 export function reportFetchError(context: string, retryFn?: () => void) {
-  // Register the retry callback (replaces any previous one — last failure wins)
+  // last failure wins
   if (retryFn) lastRetryFn = retryFn
 
   const now = Date.now()
@@ -39,7 +32,7 @@ export function reportFetchError(context: string, retryFn?: () => void) {
         onClick={() => {
           const fn = lastRetryFn
           lastRetryFn = null
-          lastShownAt = 0  // reset throttle so a new toast can show if retry also fails
+          lastShownAt = 0  // reset the throttle so a repeat failure can toast again
           if (fn) fn()
         }}
       >

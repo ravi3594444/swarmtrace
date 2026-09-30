@@ -1,28 +1,4 @@
-"""Regression test for the fov.py agent_events-table creation race.
-
-Audit finding #11 ("fov.py TOCTOU race"). _ensure_events_table() used to
-be a naive check-then-act with no recheck inside the lock, and the ready
-flag was set AFTER releasing the lock:
-
-    if _events_table_ready: return
-    with _storage_lock:
-        conn.execute("CREATE TABLE IF NOT EXISTS ...")
-        ...
-    _events_table_ready = True   # set OUTSIDE the lock
-
-Concurrent first callers (a realistic case: several traced browser pages
-registering near-simultaneously at startup, each triggering a FOV event
-save) would each pass the unlocked check before any of them set the
-flag, then each redundantly re-run the CREATE TABLE/INDEX statements
-once they got the lock. This is exactly the same TOCTOU shape already
-fixed elsewhere in this file for _ensure_fov_worker (see
-test_fork_fov_worker.py) and _ensure_screen_streamer (see
-test_fov.py) — this call site was the one left behind.
-
-Fix: _ensure_events_table() now uses the same double-checked locking
-pattern with a dedicated _events_table_lock: recheck the flag after
-acquiring the lock, and set it while still holding that lock.
-"""
+"""Concurrent first calls to _ensure_events_table must create the table once."""
 
 from __future__ import annotations
 
@@ -42,19 +18,10 @@ def reset_events_table_state(monkeypatch):
 
 
 def test_concurrent_first_calls_create_the_table_exactly_once(monkeypatch):
-    """20 threads all calling _ensure_events_table() for the very first
-    time, simultaneously, must result in exactly ONE execution of the
-    CREATE TABLE / CREATE INDEX statements — not one per thread.
+    """20 threads racing the first _ensure_events_table() call run the DDL exactly once.
 
-    The fake conn's first CREATE TABLE call deliberately sleeps briefly
-    to hold the critical section open. Real SQLite calls do actual disk
-    I/O (which releases the GIL), giving other threads a natural chance
-    to interleave; an instant in-memory stand-in doesn't reproduce that
-    window on its own, so this sleep stands in for it — without it, this
-    test doesn't reliably catch the bug even when reverted (verified: 20
-    threads finished within a single GIL timeslice often enough that the
-    unfixed code still only paid the DDL cost once or twice per run,
-    making the test flaky-green on the very bug it's meant to catch).
+    The fake conn sleeps on the first CREATE TABLE to hold the critical section
+    open; an instant stand-in wouldn't reproduce the window.
     """
 
     ddl_calls = []
@@ -101,8 +68,7 @@ def test_concurrent_first_calls_create_the_table_exactly_once(monkeypatch):
 
 
 def test_already_ready_short_circuits_without_touching_storage(monkeypatch):
-    """Once the current DB is marked ready, repeated calls must not touch
-    storage at all — pure fast-path check."""
+    """Once ready, repeated calls don't touch storage."""
     monkeypatch.setattr(fov, "_events_table_ready_for", fov._storage.DB_PATH)
 
     def _boom():
@@ -114,14 +80,7 @@ def test_already_ready_short_circuits_without_touching_storage(monkeypatch):
 
 
 def test_rotating_the_database_recreates_the_table(tmp_path, monkeypatch):
-    """The cache must not survive a DB_PATH rotation.
-
-    storage.close() documents rotating the database as supported. While this
-    cache was a plain boolean it latched True forever, so agent_events was
-    never created in the second database and every insert failed with
-    "no such table: agent_events" — swallowed as a warning, events silently
-    lost.
-    """
+    """The ready cache must not survive a DB_PATH rotation, or the new DB never gets agent_events."""
     def _event(event_id: str) -> dict:
         return {
             "id": event_id, "agent_id": "a1", "agent_name": "AgentOne",

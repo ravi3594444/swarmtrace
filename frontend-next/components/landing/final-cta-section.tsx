@@ -3,16 +3,7 @@
 import Link from "next/link"
 import { Button } from "@/components/ui/button"
 
-/**
- * Final CTA — replaces the old pricing section on the landing page.
- *
- * The pricing/subscription section was removed because paid plans aren't
- * live yet (see the "Coming Soon" badge on the billing tab in settings).
- * Showing prices that users can't actually pay would be misleading. This
- * CTA keeps the conversion path (sign up + GitHub) without promising
- * paid tiers that don't exist yet. When Stripe billing ships, a pricing
- * section can return here.
- */
+// Closing CTA. No pricing section until paid plans are live.
 export function FinalCtaSection() {
   return (
     <section id="get-started" className="py-32 relative overflow-hidden">

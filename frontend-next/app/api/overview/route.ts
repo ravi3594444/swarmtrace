@@ -17,17 +17,9 @@ export async function GET() {
   if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT in the Authorization header). The user_id filter in the URL is
-    // now defence-in-depth, not the only guard.
-    //
-    // The overview only ever buckets the last 24 hours of activity, so we
-    // push `since = 24h ago` into the DB query. Previously the route
-    // fetched the 500 most-recent traces overall, then post-filtered to
-    // 24h — which meant a user with >500 traces in the last 24h would
-    // silently see only the 500 most-recent of them, and a user with
-    // >500 traces in the last week would see last-week's data
-    // mislabeled as "last 24h". Filtering at the DB level fixes both.
+    // RLS is enforced via the user's Clerk JWT; the user_id filter is a
+    // second guard. Overview only buckets the last 24h, so push since=24h ago
+    // into the query instead of post-filtering the 500 newest traces.
     const since = Date.now() - 24 * 60 * 60 * 1000
     const rows = (await supaUserRequest(
       buildTracesQuery(userId, { since }),
@@ -35,8 +27,7 @@ export async function GET() {
     )) as Trace[]
 
     if (!rows || rows.length === 0) {
-      // Return 24 zero buckets (same shape as the real path) so the chart
-      // renders an empty timeline instead of a 4-bucket stub.
+      // 24 empty buckets so the chart still renders a timeline
       const emptyActivity = Array.from({ length: 24 }, (_, i) => {
         const d = new Date(Date.now() - (23 - i) * 60 * 60 * 1000)
         return { time: `${String(d.getUTCHours()).padStart(2, '0')}:00`, requests: 0 }
@@ -65,7 +56,7 @@ export async function GET() {
       ? parseFloat((((rows.length - errorCount) / rows.length) * 100).toFixed(1))
       : 100
 
-    // ── Per-function stats ────────────────────────────────────────────────────
+    // Per-function stats
     const fiveMinutesAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString()
 
     const byFn: Record<string, { total: number; errors: number; lastSeen: string }> = {}
@@ -79,12 +70,7 @@ export async function GET() {
     // active_agents = agents with a trace in the last 5 minutes only
     const active_agents = Object.values(byFn).filter(s => s.lastSeen >= fiveMinutesAgo).length
 
-    // ── Real activity — last 24 hours, bucketed by actual hour ───────────────
-    // Previous code bucketed ALL 500 traces by getUTCHours() (hour-of-day
-    // 0-23), which made it a "typical hour of day" histogram across the
-    // whole window — not a timeline. The chart label says "last 24h ·
-    // hourly", so we bucket by actual date+hour, going back 24 hours from
-    // now. Traces older than 24h are excluded.
+    // Last 24 hours bucketed by actual date+hour, oldest first. Older traces are skipped.
     const now = new Date()
     const hourBuckets: { time: string; requests: number }[] = []
     for (let i = 23; i >= 0; i--) {
@@ -104,7 +90,7 @@ export async function GET() {
     })
     const activity = hourBuckets
 
-    // ── Top agents — sort by total calls before taking top 3 ─────────────────
+    // Top agents, sorted by total calls before taking the top 3
     const top_agents = Object.entries(byFn)
       .sort((a, b) => b[1].total - a[1].total)
       .slice(0, 3)
@@ -128,9 +114,7 @@ export async function GET() {
     return NextResponse.json({
       system_health, active_agents, total_throughput, avg_latency_ms,
       activity, top_agents, events,
-      // True when the DB returned exactly 500 rows — signals that the
-      // 24h window likely has more traces than the dashboard is showing.
-      // Audit finding #4: previously this was silent.
+      // true when the DB returned exactly 500 rows, so the 24h window may have more
       truncated: isTruncated(rows, DEFAULT_TRACE_LIMIT),
     })
   } catch (error) {

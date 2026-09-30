@@ -1,10 +1,6 @@
 /**
- * Test: error clustering contract.
- *
- * Uses Node's built-in node:test runner + tsx (to import .ts directly).
- * Guards that near-identical errors (differing only in ids/numbers/paths)
- * collapse into a single cluster, and that distinct exception types stay
- * separate.
+ * Tests for lib/error-clustering.ts: errors that differ only in ids, numbers
+ * or paths collapse into one cluster; distinct exception types stay separate.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'

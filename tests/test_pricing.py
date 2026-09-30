@@ -1,16 +1,6 @@
-"""Regression tests for the pricing.py hot-path-blocking bug.
+"""calculate_cost() must never block the caller on a network fetch.
 
-Bug: calculate_cost() (called inline from tracer._extract_token_info and
-auto_instrument._record_async, both on the calling/hot-path thread) used to
-call _fetch_live(), which could itself perform a synchronous, up-to-5s
-network fetch while holding _cache_lock. Any traced call racing the hourly
-TTL expiry — or the very first call right after import — would block the
-agent's thread on real network I/O, contradicting the documented
-"never on the agent's hot path" guarantee.
-
-Fix: the cache is only ever read inline; refreshes are dispatched to a
-dedicated background thread, deduplicated so at most one fetch is ever in
-flight at a time.
+The cache is read inline; refreshes run on one deduplicated background thread.
 """
 
 import threading
@@ -23,10 +13,7 @@ from swarmtrace import pricing
 
 @pytest.fixture(autouse=True)
 def reset_pricing_state(monkeypatch):
-    """Clean cache/refresh state per test, and wait out any leftover
-    warm_cache() thread from module import so it can't race a test's own
-    mocked fetch.
-    """
+    """Reset cache/refresh state and wait out any warm_cache() thread left from import."""
     for t in threading.enumerate():
         if t.name in ("swarmtrace-pricing-warm", "swarmtrace-pricing-refresh") and t.is_alive():
             t.join(timeout=5)
@@ -37,9 +24,7 @@ def reset_pricing_state(monkeypatch):
 
 
 def test_calculate_cost_never_blocks_on_slow_fetch(monkeypatch):
-    """The hot-path call must return almost instantly even with a cold
-    cache and a slow underlying fetch — it must never wait on the network.
-    """
+    """A cold cache and a slow fetch must not make calculate_cost() wait on the network."""
     def slow_urlopen(*args, **kwargs):
         time.sleep(2)
         raise TimeoutError("simulated slow network")
@@ -57,14 +42,7 @@ def test_calculate_cost_never_blocks_on_slow_fetch(monkeypatch):
 
 
 def test_failed_refresh_after_prior_success_backs_off_full_ttl(monkeypatch):
-    """A fetch failing *after* an earlier success must back off for the full
-    TTL, not retry on every subsequent hot-path call.
-
-    Regression test for a bug found during self-review: the except branch
-    only updated _cache_ts if it was still 0.0 (never-succeeded), so once a
-    real fetch had ever succeeded, later failures left _cache_ts stale and
-    every hot-path call re-triggered a new background fetch indefinitely.
-    """
+    """A failure after an earlier success backs off for the full TTL instead of refetching on every call."""
     monkeypatch.setattr(pricing, "_cache", {"gpt-4": {}})
     monkeypatch.setattr(pricing, "_cache_ts", time.time() - pricing._CACHE_TTL - 10)
 
@@ -94,9 +72,7 @@ def test_failed_refresh_after_prior_success_backs_off_full_ttl(monkeypatch):
 
 
 def test_only_one_background_fetch_runs_at_a_time(monkeypatch):
-    """20 concurrent hot-path calls against a cold cache must trigger
-    exactly one background fetch, not a thundering herd.
-    """
+    """20 concurrent calls on a cold cache trigger exactly one background fetch."""
     call_count = 0
     count_lock = threading.Lock()
     release = threading.Event()
@@ -136,9 +112,7 @@ def test_only_one_background_fetch_runs_at_a_time(monkeypatch):
 
 
 def test_warm_cache_does_not_block_import_thread(monkeypatch):
-    """warm_cache() (called at module import time) must trigger the refresh
-    without itself ever touching the network on the calling thread.
-    """
+    """warm_cache() kicks off the refresh without touching the network on the calling thread."""
     def slow_urlopen(*args, **kwargs):
         time.sleep(2)
         raise TimeoutError("simulated slow network")
@@ -163,7 +137,7 @@ def test_live_price_overrides_bundled(monkeypatch):
     monkeypatch.setattr(pricing, "_cache_ts", time.time())
 
     cost = pricing.calculate_cost("gpt-4o-mini", 1_000_000, 0)
-    # Live price ($1/M) — not the bundled snapshot price ($0.15/M).
+    # Live price ($1/M), not the bundled snapshot price ($0.15/M).
     assert cost == pytest.approx(1.0, abs=0.001)
 
 

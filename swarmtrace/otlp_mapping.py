@@ -26,7 +26,7 @@ from swarmtrace.span_model import SpanRecord
 OTLP_KIND_MAP = {
     0: "function",  # SPAN_KIND_UNSPECIFIED
     1: "function",  # SPAN_KIND_INTERNAL
-    2: "agent",     # SPAN_KIND_SERVER — treat as an agent root
+    2: "agent",     # SPAN_KIND_SERVER, treat as an agent root
     3: "tool",      # SPAN_KIND_CLIENT
     4: "function",  # SPAN_KIND_PRODUCER
     5: "function",  # SPAN_KIND_CONSUMER

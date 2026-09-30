@@ -95,7 +95,7 @@ def resolve_remote_config(
 def validate_endpoint_scheme(url: str) -> tuple[bool, str]:
     """Check whether *url* is safe to send the SwarmTrace API key to.
 
-    Returns ``(ok, reason)``. ``ok=True`` means safe (or empty — no endpoint
+    Returns ``(ok, reason)``. ``ok=True`` means safe (or empty, no endpoint
     configured). ``ok=False`` means the URL would leak the API key or is not an
     HTTP(S) endpoint; ``reason`` is human-readable and suitable for logs.
 

@@ -11,20 +11,15 @@ function isTimeRangeKey(v: string | null): v is TimeRangeKey {
   return v === 'today' || v === 'week' || v === 'month' || v === 'all'
 }
 
-// ── useSyncExternalStore plumbing ──────────────────────────────────────────
+// useSyncExternalStore plumbing
 //
-// We persist the user's time-range choice to localStorage so a page refresh
-// doesn't snap back to "Today". The React-blessed way to read from an
-// external store like localStorage is useSyncExternalStore: it returns the
-// server snapshot during SSR (the default "today") and the client snapshot
-// (the stored value) during hydration, with React reconciling the two —
-// no setState-in-effect, no hydration mismatch warning.
+// The range is kept in localStorage and read with useSyncExternalStore, so
+// SSR renders "today" and hydration picks up the stored value.
 
 function subscribe(callback: () => void): () => void {
   if (typeof window === 'undefined') return () => {}
   window.addEventListener('storage', callback)
-  // `storage` only fires for *other* tabs; dispatch a custom event on this
-  // tab so the hook re-reads after we write to localStorage here.
+  // `storage` only fires in other tabs, so we dispatch our own event too.
   window.addEventListener('swarmtrace:time-range-change', callback)
   return () => {
     window.removeEventListener('storage', callback)
@@ -41,33 +36,22 @@ function getServerSnapshot(): TimeRangeKey {
   return 'today'
 }
 
-/** Persist the user's time-range choice across page reloads. Defaults to
- *  "today" so the dashboard shows current activity on first visit — old
- *  data doesn't clutter the view. Users can switch to "All Time" and the
- *  choice persists. SSR-safe via useSyncExternalStore. */
+/** Time-range choice, persisted across reloads. Defaults to "today". */
 export function useTimeRange() {
   const range = useSyncExternalStore(subscribe, getClientSnapshot, getServerSnapshot)
 
   const setRange = (key: TimeRangeKey) => {
     if (typeof window === 'undefined') return
     window.localStorage.setItem(STORAGE_KEY, key)
-    // Notify this tab's subscribers — the native `storage` event only fires
-    // in OTHER tabs, so we dispatch a same-tab event ourselves.
     window.dispatchEvent(new Event('swarmtrace:time-range-change'))
   }
 
   return { range, setRange }
 }
 
-// ── Dropdown component ─────────────────────────────────────────────────────
-
 /**
- * Unified time-range picker. Used by most dashboard pages (Overview, Agents,
- * Network, Threads, Metrics) with just the 4 presets. The traces page passes
- * `enableCustomRange` to also show a custom from/to date picker — previously
- * the traces page had its own separate DateRangePicker component with a
- * different preset set and different styling. Now both use this one
- * component, so the preset list and visual treatment stay in sync.
+ * Time-range picker shared by the dashboard pages. Pass `enableCustomRange`
+ * to add a from/to date picker.
  */
 export function TimeRangeDropdown({
   value,
@@ -152,7 +136,7 @@ export function TimeRangeDropdown({
             )
           })}
 
-          {/* Custom range — only shown when enableCustomRange is true.
+          {/* Custom range - only shown when enableCustomRange is true.
               This is the feature the traces page needs that other pages
               don't. Keeping it in the same component means the preset
               list + styling stay consistent across the app. */}

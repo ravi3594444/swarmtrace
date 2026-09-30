@@ -2,14 +2,14 @@
 
 The actual :func:`replay` function lives in :mod:`swarmtrace.cli` and is
 re-exported here for backwards compatibility.  :func:`show_failures` is a
-convenience that prints a table of recent failed traces — its output is
+convenience that prints a table of recent failed traces, its output is
 now routed through the ``swarmtrace.replay`` logger so host applications
 can capture or silence it via standard logging configuration.
 """
 
 import logging
 
-# replay() lives in swarmtrace.cli — import from there to avoid duplication.
+# replay() lives in swarmtrace.cli, import from there to avoid duplication.
 from swarmtrace.cli import replay  # noqa: F401 -- intentional re-export, see docstring above
 from swarmtrace.storage import get_traces
 

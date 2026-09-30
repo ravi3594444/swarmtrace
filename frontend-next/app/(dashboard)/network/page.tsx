@@ -7,9 +7,7 @@ import { TruncationBanner } from '@/components/truncation-banner'
 import { useAgentGraph } from '@/lib/use-agent-graph'
 import { AlertTriangle, GitBranch, Radio, RefreshCw } from 'lucide-react'
 
-/* Charcoal & Ivory Monochrome — tonal emphasis instead of hue.
-   'strong' = the headline metric, 'neutral' = everything else,
-   'danger' = the one semantic exception, reserved for actual error counts. */
+/* 'strong' is the headline metric, 'danger' is only for error counts. */
 function NetworkStat({ label, value, accent = 'neutral' }: { label: string; value: string; accent?: 'neutral' | 'strong' | 'danger' }) {
   const color = {
     neutral: 'from-white/10 to-white/[0.02] text-on-surface-variant border-border',

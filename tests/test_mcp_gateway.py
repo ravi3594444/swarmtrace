@@ -1,8 +1,4 @@
-"""Tests for the generic MCP gateway.
-
-These tests require the optional ``mcp`` package. They are skipped when it is
-not installed so the base test suite can run without gateway dependencies.
-"""
+"""Tests for the generic MCP gateway (skipped when the optional ``mcp`` package is missing)."""
 
 from __future__ import annotations
 

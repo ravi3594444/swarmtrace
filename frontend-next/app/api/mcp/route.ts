@@ -1,22 +1,12 @@
 /**
- * SwarmTrace MCP Server
- * ─────────────────────
- * Implements the Model Context Protocol (Streamable HTTP transport) so any
- * MCP-compatible agent (Hermes, Claude Desktop, Cursor, etc.) can connect
- * and send traces without the Python SDK.
+ * MCP server (Streamable HTTP) so MCP-compatible agents like Claude Desktop
+ * or Cursor can send traces without the Python SDK.
  *
- * Hermes config.yaml example:
- *   mcp_servers:
- *     swarmtrace:
- *       url: "https://swarmtrace.vercel.app/api/mcp"
- *       transport: streamable-http
- *       headers:
- *         x-api-key: "your_swarmtrace_api_key"
+ * Example client config:
+ *   url: https://swarmtrace.vercel.app/api/mcp
+ *   headers: { x-api-key: <your key> }
  *
- * Exposes three tools:
- *   record_trace  — send one trace (mirrors POST /api/ingest)
- *   get_metrics   — fetch your current usage stats
- *   list_traces   — fetch recent traces
+ * Tools: record_trace, get_metrics, list_traces.
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -26,7 +16,6 @@ import { sha256Hex, createRateLimiter, createIpRateLimiter, getClientIp } from '
 import { resolveTraceIdentity } from '@/lib/resolve-trace-identity'
 import { sanitizeMcpTraceFields } from '@/lib/sanitize-mcp-trace'
 
-// ── Supabase helpers ──────────────────────────────────────────────────────────
 const SUPABASE_URL = process.env.SUPABASE_URL!
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_KEY!
 const SUPA_TIMEOUT = 5000
@@ -67,26 +56,16 @@ async function supaRpc(fn: string, params: Record<string, unknown>) {
   }
 }
 
-// ── Rate limiter (Upstash Redis with per-isolate fallback) ──────────────────
-// Same shared implementation as /api/ingest and /api/events (lib/api-auth.ts).
-// 120 requests / 60s per API key. Distinct prefix 'st_mcp_rl' so the bucket
-// doesn't collide with ingest's 'st_rl' or events' 'st_fov_rl'.
+// Rate limiter: 120 requests/min per API key, prefix 'st_mcp_rl' so it
+// doesn't share buckets with ingest or events.
 const RATE_LIMIT = 120
 const rateLimiter = createRateLimiter({ limit: RATE_LIMIT, prefix: 'st_mcp_rl' })
-// Per-IP limiter runs BEFORE the per-key limiter — caps attackers who
-// rotate fake API keys. See lib/api-auth.ts::createIpRateLimiter.
+// Per-IP limiter runs before the per-key one (lib/api-auth.ts).
 const ipRateLimiter = createIpRateLimiter({ prefix: 'st_ip_rl_mcp' })
 
-// ── API key → user_id resolution ─────────────────────────────────────────────
-// Fresh Supabase lookup on every call — no in-process cache. This was the
-// original pattern for /api/mcp, and /api/ingest + /api/events now match it
-// (see lib/api-auth.ts for why: Vercel's per-route serverless functions
-// can't share memory, so an in-process cache gave stale revoked keys for
-// up to 5 min in production). Revocation now takes effect in 0s on every
-// route, consistently.
+// Looks the key up in Supabase on every call, no caching (see lib/api-auth.ts).
 
-// Accepts a pre-computed keyHash (same one used for rate limiting) so we
-// don't hash the API key twice per request.
+// Takes the precomputed keyHash so we don't hash twice per request.
 async function resolveApiKeyByKeyHash(keyHash: string): Promise<string | null> {
   const rows: Array<{ user_id: string }> = await supa(
     `api_keys?key_hash=eq.${encodeURIComponent(keyHash)}&revoked=eq.false&select=user_id&limit=1`
@@ -94,15 +73,14 @@ async function resolveApiKeyByKeyHash(keyHash: string): Promise<string | null> {
   return rows?.[0]?.user_id ?? null
 }
 
-// ── MCP server factory ────────────────────────────────────────────────────────
-// Stateless — a new McpServer instance per request (perfect for serverless).
+// Stateless: a new McpServer per request.
 function buildMcpServer(userId: string, keyHash: string): McpServer {
   const server = new McpServer({
     name:    'swarmtrace',
     version: '1.0.0',
   })
 
-  // ── Tool: record_trace ───────────────────────────────────────────────────
+  // record_trace
   server.tool(
     'record_trace',
     'Record one agent trace into SwarmTrace. Call this after every observed function completes.',
@@ -139,17 +117,9 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
     },
     async (params) => {
       try {
-        // ── Atomic upsert + metrics (idempotent on retry) ─────────────────
-        // MCP clients (Claude Desktop, Cursor, etc.) retry on transient
-        // network errors. Single RPC that upserts the trace AND increments
-        // daily_metrics only if the trace was a fresh insert — so retries
-        // don't double-count costs. See supabase/migrations/0007_atomic_ingest.sql.
-        //
-        // Agent identity (mirrors swarmtrace/tracer.py::_stable_agent_id):
-        // see lib/resolve-trace-identity.ts for the full rationale — this
-        // is the fix for the "kind is hardcoded on the MCP path" audit
-        // finding. Extracted to its own module so it's unit-testable
-        // without a live Supabase connection (scripts/test-resolve-trace-identity.mjs).
+        // Single RPC that upserts the trace and bumps daily_metrics only on a
+        // fresh insert, so client retries don't double-count. See migration
+        // 0007. Agent identity resolution is in lib/resolve-trace-identity.ts.
         const identity = resolveTraceIdentity({
           kind: params.kind,
           agent_id: params.agent_id,
@@ -164,14 +134,9 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
         }
         const { kind, agentId, agentName } = identity
 
-        // Redaction at the MCP boundary (audit pass 2, finding 1): MCP
-        // clients bypass the Python SDK entirely, so the SDK's client-side
-        // redaction never runs here. args/output/error are truncated to
-        // MAX_TEXT_LEN then PII-redacted (emails, API keys, card numbers,
-        // JWTs) before persistence, and attributes is capped at 64 KB JSON
-        // — mirroring the /api/ingest boundary rules exactly. Invalid
-        // attributes reject the call (isError), consistent with identity
-        // validation.
+        // MCP clients skip the SDK's redaction, so truncate args/output/error
+        // to MAX_TEXT_LEN and redact PII here, and cap attributes at 64 KB
+        // JSON, same as /api/ingest. Invalid attributes reject the call.
         const sanitized = sanitizeMcpTraceFields({
           args: params.args,
           output: params.output,
@@ -185,7 +150,7 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
           }
         }
 
-        // Tenant stamped from API key inside Postgres (migration 0010).
+        // tenant stamped from the API key inside Postgres (migration 0010)
         await supaRpc('upsert_trace_for_key', {
           p_key_hash:      keyHash,
           p_id:            params.id,
@@ -219,7 +184,7 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
     },
   )
 
-  // ── Tool: get_metrics ────────────────────────────────────────────────────
+  // get_metrics
   server.tool(
     'get_metrics',
     'Get your SwarmTrace usage metrics — cost, token counts, and trace volume for today, 7 days, this month, and all time.',
@@ -282,7 +247,7 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
     },
   )
 
-  // ── Tool: list_traces ────────────────────────────────────────────────────
+  // list_traces
   server.tool(
     'list_traces',
     'List your most recent agent traces from SwarmTrace.',
@@ -342,9 +307,8 @@ function buildMcpServer(userId: string, keyHash: string): McpServer {
   return server
 }
 
-// ── Request handler ───────────────────────────────────────────────────────────
 async function handleMcp(req: Request): Promise<Response> {
-  // Auth — X-API-Key header (same as /api/ingest)
+  // Auth: X-API-Key header (same as /api/ingest)
   const apiKey = req.headers.get('x-api-key') ?? req.headers.get('X-API-Key')
   if (!apiKey) {
     return new Response(
@@ -355,9 +319,7 @@ async function handleMcp(req: Request): Promise<Response> {
 
   const keyHash = await sha256Hex(apiKey)
 
-  // ── Per-IP rate limit (BEFORE per-key — caps key-rotation attacks) ────
-  // An attacker rotating fake API keys gets a fresh per-key bucket for
-  // each key but shares one per-IP bucket. See lib/api-auth.ts.
+  // Per-IP limit first, so rotating fake keys doesn't buy fresh buckets
   const clientIp = getClientIp(req)
   if (!await ipRateLimiter.check(clientIp)) {
     return new Response(null, {
@@ -369,8 +331,7 @@ async function handleMcp(req: Request): Promise<Response> {
     })
   }
 
-  // ── Per-key rate limit check (before DB lookup — cheap, fast) ──────────
-  // Same shared rate limiter as /api/ingest. 120 requests / 60s per API key.
+  // Per-key rate limit (120/min), before the DB lookup
   if (!await rateLimiter.check(keyHash)) {
     return new Response(null, {
       status: 429,
@@ -399,7 +360,7 @@ async function handleMcp(req: Request): Promise<Response> {
     )
   }
 
-  // Stateless transport — one instance per request, no session needed
+  // Stateless transport: one instance per request
   const transport = new WebStandardStreamableHTTPServerTransport({
     sessionIdGenerator: undefined, // stateless mode
   })

@@ -1,34 +1,24 @@
 #!/usr/bin/env python3
-"""End-to-end validation of the Supabase migrations + npm db:migrate runner
-against a pristine, locally-hosted Postgres (via the `pgserver` pip package,
-which bundles the Postgres binaries — no Docker, no system Postgres needed).
+"""End-to-end check of the Supabase migrations and the npm db:migrate runner
+against a throwaway local Postgres (pgserver bundles the binaries, no Docker
+needed).
 
-What it proves (the exact things that were broken in the "valid API key,
-zero traces on dashboard" production incident):
-
-  1. all 13 files in supabase/migrations apply cleanly, in order, via
-     scripts/run-migrations.mjs (npm run db:migrate), each in one transaction
-     with a schema_migrations ledger entry;
-  2. re-running the runner is a strict no-op (idempotent);
-  3. --status reports "up to date";
-  4. re-applying every file RAW (the Supabase SQL-editor path) succeeds, so
-     the files are safe to paste into a partially-migrated project
-     (DROP POLICY IF EXISTS / publication DO-guards / IF NOT EXISTS);
-  5. the *_for_key RPCs reject an unknown key hash with invalid_api_key —
-     the signal GET /api/health/db uses to verify function signatures
-     without a real API key and without writing any rows;
-  6. upsert_trace_for_key, called BY NAME with the exact 18-parameter list
-     the /api/ingest route sends (mirroring PostgREST's named matching),
-     stamps user_id from the key, persists trace_id/kind/session_id/
-     attributes, increments daily_metrics, touches api_keys.last_used, and
-     is idempotent under the SDK's retry-the-whole-batch semantics.
+It checks that:
+  1. all files in supabase/migrations apply in order via
+     scripts/run-migrations.mjs, each in one transaction with a ledger entry;
+  2. re-running is a no-op and --status reports "up to date";
+  3. every file also re-applies raw (the SQL-editor path) without errors;
+  4. the *_for_key RPCs reject an unknown key hash with invalid_api_key,
+     which is what GET /api/health/db relies on;
+  5. upsert_trace_for_key, called by name with the 18 parameters /api/ingest
+     sends, stamps user_id from the key, persists the trace fields, bumps
+     daily_metrics and api_keys.last_used, and is idempotent on retry.
 
 Usage:
     pip install "pgserver" "psycopg[binary]"
     python3 frontend-next/scripts/e2e_migrations.py
 
-Exits 0 on success, non-zero on the first failed check. Safe to run
-anywhere — uses a temp dir for the cluster, never touches real data.
+Exits non-zero on the first failed check. Uses a temp dir for the cluster.
 """
 
 from __future__ import annotations
@@ -98,21 +88,18 @@ def main() -> None:
     srv.psql(SUPABASE_SHIMS)
     print("✓ supabase platform shims installed")
 
-    # ── 1. migrate the pristine DB via the runner ────────────────────────────
     r = runner()
     assert r.returncode == 0, f"first migration run failed:\n{r.stdout}{r.stderr}"
     n_files = len([f for f in os.listdir(MIGRATIONS_DIR) if f.endswith(".sql")])
     assert r.stdout.count("… ok") == n_files, r.stdout
     print(f"✓ npm db:migrate applied {n_files} migration files in order")
 
-    # ── 2. idempotent re-run + 3. status ─────────────────────────────────────
     r = runner()
     assert r.returncode == 0 and "already applied" in r.stdout, r.stdout
     r = runner("--status")
     assert r.returncode == 0 and "up to date" in r.stdout, r.stdout
     print("✓ runner re-run is a no-op; --status reports up to date")
 
-    # ── 4. raw re-apply of every file (the SQL-editor paste path) ────────────
     for f in sorted(os.listdir(MIGRATIONS_DIR)):
         if not f.endswith(".sql"):
             continue
@@ -121,11 +108,10 @@ def main() -> None:
         assert r.returncode == 0, f"raw re-apply of {f} failed:\n{r.stderr}"
     print("✓ every migration file re-applies raw with zero errors (paste-safe)")
 
-    # ── 4b. grant hardening: only service_role may execute the *_for_key RPCs ─
-    # Supabase projects can carry ALTER DEFAULT PRIVILEGES that hand anon /
-    # authenticated a DIRECT execute grant on newly created functions, which
-    # REVOKE ... FROM PUBLIC does not strip. Migrations 0010/0011 must revoke
-    # those roles explicitly so the API-key RPCs stay service_role-only.
+    # 4b. grant hardening. Supabase can carry ALTER DEFAULT PRIVILEGES that
+    # give anon/authenticated a direct execute grant, which REVOKE FROM PUBLIC
+    # doesn't strip, so 0010/0011 must revoke those roles explicitly to keep
+    # the *_for_key RPCs service_role-only.
     r = psql_cli(
         "-AtX", "-c",
         "with fns as ("
@@ -165,13 +151,11 @@ def main() -> None:
     print("✓ *_for_key RPCs are not executable by PUBLIC/anon/authenticated,"
           " and service_role keeps EXECUTE")
 
-    # ── 5. fake-key RPC probe semantics (what /api/health/db relies on) ──────
     bad = "f" * 64
     r = psql_cli("-AtX", "-c", f"select public.upsert_trace_for_key(p_key_hash := '{bad}', p_id := 'x1')")
     assert "invalid_api_key" in r.stderr, r.stderr
     print("✓ unknown key hash raises invalid_api_key before writing anything")
 
-    # ── 6. full ingest-path insert exactly as /api/ingest performs it ────────
     key = "st_" + "ab" * 24
     key_hash = hashlib.sha256(key.encode()).hexdigest()
     srv.psql(

@@ -8,10 +8,8 @@ const Card = React.forwardRef<
   <div
     ref={ref}
     className={cn(
-      // DESIGN.md specifies depth via tonal layering + 1px borders, NOT
-      // drop shadows. The shadow-sm/shadow-md on hover are removed to
-      // follow the spec; hover state is communicated via border color
-      // change instead.
+      // Depth comes from tonal layering and borders, not shadows; hover
+      // only changes the border color.
       "rounded-2xl border border-outline bg-surface-container text-on-surface transition-colors duration-200",
       interactive && "hover:border-on-surface-variant",
       className

@@ -1,19 +1,9 @@
 /**
- * Startup health check — validates that the environment is correctly
- * configured for RLS enforcement before the app starts serving traffic.
- *
- * In production, a missing Clerk↔Supabase integration prerequisite (no
- * NEXT_PUBLIC_SUPABASE_ANON_KEY, or Clerk not configured) means supaUserRequest
- * will throw RlsEnforcementError on every request — every dashboard page 401s.
- * This module surfaces that misconfiguration LOUDLY at startup instead of
- * letting the user discover it one 401 at a time.
- *
- * Usage: import once at the top of app/layout.tsx (or any server entry point)
- * so the check runs at module load. It logs warnings but never throws — a
- * misconfigured dev environment shouldn't block the build.
- *
- * The check is a no-op in test environments (NODE_ENV === 'test') so unit
- * tests don't need to stub env vars.
+ * Startup env check for RLS enforcement. In production a missing
+ * NEXT_PUBLIC_SUPABASE_ANON_KEY or Clerk setup makes every supaUserRequest
+ * throw, so every dashboard page 401s; this logs that at startup. Import once
+ * from app/layout.tsx. It warns but never throws, and does nothing when
+ * NODE_ENV is 'test'.
  */
 
 const REQUIRED_FOR_RLS = [
@@ -33,10 +23,7 @@ export interface HealthCheckResult {
   warnings: string[]
 }
 
-/**
- * Run the health check and return the result. Also logs warnings to console.
- * Safe to call multiple times — pure function over process.env.
- */
+/** Run the health check, log warnings and return the result. Safe to call repeatedly. */
 export function runHealthCheck(): HealthCheckResult {
   const missing: string[] = []
   const warnings: string[] = []
@@ -49,16 +36,15 @@ export function runHealthCheck(): HealthCheckResult {
     }
   }
 
-  // Check Clerk env vars (only warn — Clerk middleware will catch missing keys).
+  // Check Clerk env vars (warn only, Clerk middleware catches missing keys).
   for (const key of REQUIRED_FOR_CLERK) {
     if (!process.env[key]) {
       warnings.push(`${key} is not set — Clerk auth will not work.`)
     }
   }
 
-  // In production, a missing anon key means RLS can't be enforced and
-  // supaUserRequest will throw on every request. This is a BLOCKER for
-  // production — surface it as a loud error, not a warning.
+  // In production a missing anon key means RLS can't be enforced and
+  // supaUserRequest throws on every request, so log it as an error.
   if (nodeEnv === 'production' && !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
     warnings.push(
       '⚠️  NEXT_PUBLIC_SUPABASE_ANON_KEY is missing in production. ' +
@@ -68,7 +54,7 @@ export function runHealthCheck(): HealthCheckResult {
     )
   }
 
-  // Upstash is required for distributed rate limiting in production.
+  // Upstash is needed for distributed rate limiting in production.
   if (nodeEnv === 'production') {
     const hasUpstash = !!(process.env.UPSTASH_REDIS_REST_URL && process.env.UPSTASH_REDIS_REST_TOKEN)
     if (!hasUpstash && process.env.SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT !== '1') {
@@ -95,7 +81,7 @@ export function runHealthCheck(): HealthCheckResult {
     )
   }
 
-  // Log warnings (never throw — don't block the build).
+  // log warnings, never throw
   for (const w of warnings) {
     console.warn(`[health-check] ${w}`)
   }
@@ -113,7 +99,7 @@ export function runHealthCheck(): HealthCheckResult {
   }
 }
 
-// Run once at module load in non-test environments.
+// run once at module load outside tests
 if (process.env.NODE_ENV !== 'test') {
   runHealthCheck()
 }

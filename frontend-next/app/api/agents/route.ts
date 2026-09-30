@@ -19,26 +19,16 @@ export async function GET(request: Request) {
   if (!await rateLimiter.check(userId)) return rateLimitResponse()
 
   try {
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT in the Authorization header). The user_id filter in the URL is
-    // now defence-in-depth, not the only guard.
-    //
-    // The `since` (date-range) filter is now pushed into the Supabase query
-    // itself (&timestamp=gte.<iso>), not applied client-side after the
-    // fetch. This fixes audit finding #4: previously, the 500-row limit
-    // was applied at the DB BEFORE the since filter ran in JS, so a user
-    // with >500 traces total would see only their 500 most-recent traces
-    // regardless of which time range they selected — anything older than
-    // the 500th-most-recent was silently invisible.
+    // RLS is enforced via the user's Clerk JWT; the user_id filter is a
+    // second guard. `since` is pushed into the query so the 500-row limit
+    // applies to the selected window.
     const since = parseSinceParam(request.url)
     const rows = (await supaUserRequest(
       buildTracesQuery(userId, { since }),
       userId
     )) as Trace[]
 
-    // Defense-in-depth: also filter client-side, in case of clock skew
-    // between client and server or any timestamp format mismatch. The DB
-    // filter is the actual fix; this just catches the edge cases.
+    // also filter here in case of clock skew or timestamp format mismatch
     const filtered = since != null
       ? rows.filter((t) => {
           const ms = new Date(t.timestamp).getTime()
@@ -46,20 +36,14 @@ export async function GET(request: Request) {
         })
       : rows
 
-    // Agent derivation logic lives in lib/derive-agent-cards.ts so it can
-    // be unit-tested with node:test (see scripts/test-derive-agent-cards.mjs).
-    // The contract between this route and the SDK's agent_id assignment is
-    // locked by tests/test_tracer.py::test_api_agents_filter_contract.
+    // Agent derivation is in lib/derive-agent-cards.ts (tested separately).
     const agents = deriveAgentCards(filtered)
 
     return NextResponse.json({
       agents,
-      // Signals to the client that more rows likely exist beyond the 500-row
-      // cap. The dashboard can show a "showing most recent N agents — older
-      // data not included" indicator instead of silently truncating.
+      // true when the 500-row cap was hit, so the client can flag truncation
       truncated: isTruncated(rows, DEFAULT_TRACE_LIMIT),
-      // Echo the applied filter so the client can confirm what window it's
-      // actually seeing (vs. what it asked for).
+      // echo the applied filter so the client sees which window it got
       since_applied: since,
     })
   } catch (error) {

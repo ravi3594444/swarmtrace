@@ -3,15 +3,15 @@ Optional auto-instrumentation for popular LLM client libraries.
 
 ``swarmtrace.init()`` (default ``auto_instrument=True``) calls :func:`patch_all`,
 which patches whichever of OpenAI, Anthropic, Gemini, and LiteLLM are
-installed, so raw LLM calls are traced as ``kind="llm"`` — attributed to
+installed, so raw LLM calls are traced as ``kind="llm"``, attributed to
 whatever ``@observe``'d agent is currently running, or to themselves if
-none — with zero decorators at the call site.
+none, with zero decorators at the call site.
 
 Production guarantees
 ---------------------
 - **Non-blocking**: trace recording is enqueued onto the background sender
   thread, never on the calling thread. The LLM call's latency is unaffected.
-- **Idempotent**: each client method is only wrapped once — safe to call
+- **Idempotent**: each client method is only wrapped once, safe to call
   ``patch_all()`` (or ``swarmtrace.init()``) multiple times.
 - **Exception-transparent**: the original exception always propagates to the
   caller; the trace records the error string but never swallows or delays it.
@@ -36,9 +36,7 @@ from swarmtrace.trace_context import current_agent, current_parent, current_sess
 _log = logging.getLogger("swarmtrace")
 
 
-# ---------------------------------------------------------------------------
-# Stream wrappers — defer trace recording until the stream is exhausted
-# ---------------------------------------------------------------------------
+# Stream wrappers, defer trace recording until the stream is exhausted
 # When stream=True, the LLM client returns a generator/iterator, NOT a
 # response object. The old code read response.usage immediately (didn't
 # exist → 0 tokens) and recorded the trace in the finally block before any
@@ -53,7 +51,7 @@ class _StreamInstrumentWrapper:
     Implements __enter__/__exit__/__getattr__ so it works as a context
     manager (`with client.chat.completions.create(..., stream=True) as s:`)
     and so attribute access on the underlying stream (e.g. .response, .parse())
-    still works — OpenAI's stream objects support both patterns."""
+    still works, OpenAI's stream objects support both patterns."""
 
     def __init__(self, stream, func_name, model, start, agent, parent_id):
         self._stream = stream
@@ -84,7 +82,7 @@ class _StreamInstrumentWrapper:
             raise
 
     def __enter__(self):
-        # Support `with ... as stream:` — OpenAI streams are context managers.
+        # Support `with ... as stream:`, OpenAI streams are context managers.
         # Don't call __enter__ on the underlying stream; it may not have one.
         # The stream is already "entered" by the time we wrap it.
         return self
@@ -102,7 +100,7 @@ class _StreamInstrumentWrapper:
         # (e.g. stream.response, stream.parse(), stream.close()).
         # Only called when normal attribute lookup fails on self.
         # Guard against infinite recursion if _stream isn't set yet
-        # (e.g. during __init__ or unpickling) — raise AttributeError
+        # (e.g. during __init__ or unpickling), raise AttributeError
         # rather than recursing into __getattr__ for '_stream'.
         if name == "_stream":
             raise AttributeError(name)
@@ -207,7 +205,7 @@ class _AsyncStreamInstrumentWrapper:
         return getattr(self._stream, name)
 
     def _extract_usage(self, chunk):
-        """Same logic as the sync wrapper — see that class for details."""
+        """Same logic as the sync wrapper, see that class for details."""
         usage = getattr(chunk, "usage", None)
         if usage:
             self._in_tok = getattr(usage, "prompt_tokens", 0) or self._in_tok
@@ -257,7 +255,7 @@ def _record_async(
         agent_id, agent_name = agent or (trace_id, func_name)
         timestamp = datetime.now(timezone.utc)
         latency = round(time.perf_counter() - start, 3)
-        # Redact the error string — LLM auth errors (esp. older OpenAI
+        # Redact the error string, LLM auth errors (esp. older OpenAI
         # clients, some Anthropic error shapes) can echo the API key back
         # in the exception message. This is the exact PII leak that
         # swarmtrace/redact.py was built to catch.
@@ -296,9 +294,7 @@ def _mark_patched(wrapper):
     return wrapper
 
 
-# ---------------------------------------------------------------------------
 # OpenAI (and OpenAI-compatible: Mistral, DeepSeek, Groq, Together, …)
-# ---------------------------------------------------------------------------
 
 def patch_openai() -> bool:
     try:
@@ -320,7 +316,7 @@ def patch_openai() -> bool:
             is_stream = kwargs.get("stream", False)
             # stream_returned tracks whether original() successfully returned
             # a stream (vs raised). If it raised, we must record the error
-            # trace here in the finally block — there's no stream wrapper to
+            # trace here in the finally block, there's no stream wrapper to
             # defer to. If it returned a stream, the wrapper handles recording.
             stream_returned = False
             try:
@@ -388,9 +384,7 @@ def patch_openai() -> bool:
     return True
 
 
-# ---------------------------------------------------------------------------
 # Anthropic
-# ---------------------------------------------------------------------------
 
 def patch_anthropic() -> bool:
     try:
@@ -473,9 +467,7 @@ def patch_anthropic() -> bool:
     return True
 
 
-# ---------------------------------------------------------------------------
 # Google Gemini (google-generativeai)
-# ---------------------------------------------------------------------------
 
 def patch_gemini() -> bool:
     try:
@@ -560,9 +552,7 @@ def patch_gemini() -> bool:
     return True
 
 
-# ---------------------------------------------------------------------------
 # LiteLLM (covers Mistral, DeepSeek, Cohere, Bedrock, Azure, … via one SDK)
-# ---------------------------------------------------------------------------
 
 def patch_litellm() -> bool:
     try:
@@ -653,7 +643,7 @@ def patch_all() -> dict:
         {"openai": True, "anthropic": False, "gemini": False, "litellm": True}
 
     A client being ``False`` just means that SDK isn't installed in this
-    environment — everything else keeps tracing normally. Also printed to
+    environment, everything else keeps tracing normally. Also printed to
     stderr as one line, the same way ``fov.patch_all()`` reports its own
     active patches, so ``init()`` never leaves you guessing which LLM calls
     are actually being traced.

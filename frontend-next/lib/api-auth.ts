@@ -1,61 +1,17 @@
 /**
- * Shared API authentication primitives — sha256 + rate limiter
- * (Upstash Redis required in production; per-isolate fallback in dev/test).
+ * Shared auth primitives: sha256 and the rate limiter (Upstash Redis in
+ * production, per-isolate fallback in dev/test). Used by ingest, events and mcp.
  *
- * Used by /api/ingest, /api/events, and /api/mcp so they don't each
- * re-implement (and drift on) the same logic.
- *
- * NOTE: As of audit finding #1's second pass, this module no longer
- * exports a per-isolate key cache. The previous version did, and
- * DELETE /api/settings/api-keys/[id] called invalidateAllKeyCaches()
- * to clear it on revoke. That fix was correct in unit tests but a
- * no-op in production: Vercel compiles each /api route as a separate
- * serverless function with its own bundled copy of this module, so
- * the DELETE function's invalidateAllKeyCaches() call could not reach
- * the ingest/events function's in-memory Map — they were never the
- * same process. Revocation lag was unchanged from before.
- *
- * The real fix is to not cache at all: every keyed route now hits
- * Supabase fresh on every request, matching /api/mcp's existing
- * pattern (resolveApiKeyByKeyHash). The key_hash column has a unique
- * index (idx_api_keys_key_hash, see supabase/migrations/0001), so
- * the lookup is a sub-millisecond point-read — no cache needed at
- * the volumes this service sees. Revocation now takes effect in 0
- * seconds across all routes, with no shared-store dependency.
- *
- * If traffic ever justifies re-introducing a cache, use Upstash Redis
- * (already wired up for the rate limiter below) so the cache is shared
- * across all serverless function instances — not an in-process Map,
- * which gives per-instance stale reads under Vercel's deployment model.
- *
- * Trade-off note (ingest vs mcp call patterns): mcp is occasional
- * ad-hoc tool invocations; ingest is the SDK's background worker
- * flushing every _BATCH_FLUSH_TIMEOUT = 2.0s under continuous load,
- * so a single actively-traced process is up to ~30 ingest calls/min
- * on the same key. Removing the cache turns that path from 1 DB hit
- * per 5 min per active key into up to 30/min per active key — ~150x
- * more lookups on ingest specifically. At current scale this is
- * nothing (indexed point-lookups handle thousands/sec on Postgres;
- * 100 concurrent traced agents is only ~50 req/s). If it ever matters,
- * it'll surface as PostgREST connection pressure, not query latency.
- *
- * ── Per-IP rate limit (audit fix: rate-limit bypass) ─────────────────────
- *
- * The per-key limiter below is keyed by sha256(apiKey). An attacker can
- * rotate random fake API keys, receiving a fresh bucket for each one
- * while still forcing a Supabase key-validity lookup on every request.
- * At 1000 fake keys/sec that's 1000 DB round-trips/sec and an arbitrary
- * number of "legitimate-looking" 401s — a cheap DoS that bypasses the
- * per-key limiter entirely. The fix: a per-IP rate limit that runs
- * BEFORE the per-key limit, so key rotation doesn't help. See
- * createIpRateLimiter() + getClientIp() below.
+ * API keys are deliberately not cached. Each route is its own serverless
+ * function, so an in-process cache can't be invalidated on revoke. The
+ * key_hash lookup is an indexed point read, so hitting Supabase every time
+ * is cheap. If a cache is ever needed, put it in Redis.
  */
 
 import { isIP } from 'node:net'
 import { Redis } from '@upstash/redis'
 import { Ratelimit } from '@upstash/ratelimit'
 
-// ── sha256Hex ──────────────────────────────────────────────────────────────
 export async function sha256Hex(input: string): Promise<string> {
   const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input))
   return Array.from(new Uint8Array(digest))
@@ -63,39 +19,11 @@ export async function sha256Hex(input: string): Promise<string> {
     .join('')
 }
 
-// ── Client IP extraction ───────────────────────────────────────────────────
-//
-// Reviewer P2 fix: the first implementation trusted x-forwarded-for,
-// x-vercel-forwarded-for, and x-real-ip unconditionally. On Vercel,
-// x-forwarded-for is overwritten by the platform to prevent spoofing, so
-// the production deployment is safe. But a self-hosted `next start`
-// deployment or an incorrectly configured proxy lets an attacker rotate
-// X-Forwarded-For values and obtain a new rate-limit bucket for every
-// request.
-//
-// New behavior:
-//   - On Vercel (VERCEL=1 or VERCEL_ENV set): trust x-forwarded-for and
-//     x-vercel-forwarded-for (Vercel overwrites them to prevent spoofing).
-//   - Off Vercel (self-hosted): do NOT trust client-supplied forwarded-for
-//     headers. Use x-real-ip only if the operator explicitly sets
-//     SWARMTRACE_TRUST_PROXY=1 (signaling they've configured their reverse
-//     proxy to set x-real-ip correctly). Otherwise return 'unknown'.
-//   - All extracted values are validated as IPv4 or IPv6. Invalid values
-//     map to 'unknown' (shared bucket) so an attacker can't pollute the
-//     rate-map with arbitrary strings.
-//
-// Returns 'unknown' when no valid IP can be extracted. 'unknown' shares
-// one bucket — the safe default (no IP = one shared cap, not a fresh
-// bucket per request).
-//
-// SELF-HOSTING NOTE: if you run `next start` behind a reverse proxy,
-// set SWARMTRACE_TRUST_PROXY=1 and configure your proxy to overwrite
-// x-real-ip with the client IP. Without this, all requests share one
-// 'unknown' IP bucket, which is safe but coarse. For production-grade
-// per-IP limiting on self-hosted deployments, enforce the limit at the
-// reverse proxy / WAF (nginx limit_req, Cloudflare rate limiting, etc.)
-// and also configure Upstash Redis for distributed limiting across
-// multiple Node.js instances.
+// Client IP extraction. On Vercel, x-forwarded-for is set by the platform so
+// it can be trusted. Self-hosted, client-supplied forwarded-for headers are
+// ignored; x-real-ip is used only when SWARMTRACE_TRUST_PROXY=1 (the proxy
+// must overwrite it). Anything that isn't a valid IP maps to 'unknown',
+// which is one shared bucket.
 
 const _IS_VERCEL = !!(process.env.VERCEL || process.env.VERCEL_ENV)
 
@@ -148,31 +76,20 @@ export function getClientIp(req: Request): string {
   })
 }
 
-/** Test-only: expose the Vercel detection flag for unit tests. */
+/** Test-only: expose the Vercel detection flag. */
 export function _isVercel(): boolean {
   return _IS_VERCEL
 }
 
-// ── Rate limiter factory ───────────────────────────────────────────────────
-// Distributed (Upstash Redis) when env configured; per-isolate fallback
-// otherwise. Each route creates its own instance with its own prefix
-// (so buckets don't collide) and its own limit (ingest/mcp: 120, events: 500).
-//
-// NOTE: the per-isolate fallback for rate limiting is fine even though it
-// means "effective limit = RATE_LIMIT × n_isolates" — rate limiting is
-// about abuse prevention, not exact quotas, and being permissive under
-// fallback is safer than blocking legitimate traffic. The key-cache case
-// was different: per-isolate caching created a security gap (stale revoked
-// keys), which is why the cache was removed entirely rather than kept as
-// a per-isolate fallback.
+// Rate limiter factory. Uses Upstash Redis when configured, otherwise a
+// per-isolate map. Each route creates its own instance with its own prefix
+// and limit. The fallback is permissive (limit x isolates), which is fine
+// for abuse prevention.
 
 export interface RateLimiter {
   /** Returns true if the request is allowed, false if rate-limited. */
   check(keyHash: string): Promise<boolean>
-  /** Test-only: number of distinct keys currently held in the per-isolate
-   * fallback map (always 0 when Upstash is configured, since that path
-   * never touches the map). Exists so the bounded-memory fix for audit
-   * finding #7 can be regression-tested from outside the closure. */
+  /** Test-only: size of the per-isolate fallback map. */
   _debugMapSize?(): number
 }
 
@@ -180,9 +97,7 @@ export function createRateLimiter(opts: {
   limit: number
   prefix: string
   windowMs?: number
-  /** Test-only: how many check() calls between expired-entry sweeps of
-   * the fallback map. Defaults to 500; tests can lower this to force a
-   * sweep deterministically without 500 calls. */
+  /** Test-only: calls between expired-entry sweeps (default 500). */
   sweepEvery?: number
 }): RateLimiter {
   const { limit, prefix } = opts
@@ -204,16 +119,8 @@ export function createRateLimiter(opts: {
     return upstash
   }
 
-  // Per-isolate fallback (used when Upstash env vars are absent).
-  // FIX #7: the map used to grow unbounded -- an entry was created for
-  // every distinct keyHash ever seen and nothing ever deleted it, even
-  // after its window expired. On a long-lived isolate (or in dev, where
-  // Upstash env vars are typically absent) this is a slow memory leak
-  // that scales with the number of distinct API keys seen over the
-  // isolate's lifetime. Sweep expired entries periodically (every
-  // SWEEP_EVERY calls, not every call, so the hot path stays O(1)) so
-  // the map stays bounded by "keys active in the last windowMs", not
-  // "keys ever seen".
+  // Per-isolate fallback when Upstash env vars are absent. Expired entries
+  // are swept every SWEEP_EVERY calls so the map stays bounded.
   interface RateEntry { count: number; windowStart: number }
   const rateMap = new Map<string, RateEntry>()
   const SWEEP_EVERY = opts.sweepEvery ?? 500
@@ -242,13 +149,9 @@ export function createRateLimiter(opts: {
     return true
   }
 
-  // Production without Upstash is a misconfiguration: per-isolate fallback
-  // multiplies the effective limit by the number of warm isolates, which is
-  // exactly the "rate limits weak without Upstash" audit finding. Fail closed
-  // on the first check() so a missing UPSTASH_* pair surfaces as 503s rather
-  // than silently under-protecting the fleet. Dev/test keep the local map.
-  // Operators can opt back into the weak fallback with
-  // SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT=1 (emergency only).
+  // In production a missing Upstash config fails closed on the first check(),
+  // so it shows up as 429s instead of silently weakening the limit. Set
+  // SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT=1 to opt into the local map anyway.
   let missingUpstashLogged = false
 
   return {
@@ -270,8 +173,7 @@ export function createRateLimiter(opts: {
             'set SWARMTRACE_ALLOW_LOCAL_RATE_LIMIT=1 to permit the weak per-isolate fallback.'
           )
         }
-        // Fail closed: treat as rate-limited rather than allowing unbounded traffic.
-        // Routes map false → 429. Prefer 429 over 503 so clients back off.
+        // Fail closed; routes map false to 429.
         return false
       }
       return checkLocal(keyHash)
@@ -282,22 +184,10 @@ export function createRateLimiter(opts: {
   }
 }
 
-// ── Per-IP rate limiter (audit fix: rate-limit bypass) ─────────────────────
-//
-// Same factory shape as createRateLimiter but with a distinct prefix so
-// IP buckets never collide with per-key buckets. Limits are deliberately
-// generous — high enough that no legitimate single-source workload (the
-// SDK's ~30 ingest/min per active traced process, or one developer
-// running tests) would ever hit them, low enough that an attacker
-// rotating 1000 fake keys/sec from one IP gets capped at the IP level
-// before the per-key limiter ever sees a bucket refill.
-//
-// Defaults: 600 req / 60s per IP. That's 10x the per-key ingest limit
-// (120) and ~17x a single active traced process's natural rate (~30/min).
-// A legitimate multi-tenant NAT (office network, CI runner pool) could
-// plausibly hit this if many traced agents share one egress IP — if that
-// becomes a real problem, raise the limit or add a per-IP+per-route
-// override. The number is a starting point, not a hard contract.
+// Per-IP limiter. Distinct prefix so IP buckets never collide with per-key
+// ones. 600/min is well above any single-source workload (the SDK sends
+// roughly 30 ingest calls/min per traced process); raise it if a shared
+// NAT starts tripping it.
 export function createIpRateLimiter(opts?: Partial<{
   limit: number
   prefix: string
@@ -312,20 +202,9 @@ export function createIpRateLimiter(opts?: Partial<{
   })
 }
 
-// ── Per-user rate limiter (audit fix: 9 of 12 API routes had none) ─────────
-//
-// The ingest/events/mcp routes (API-key auth) already rate-limit by
-// sha256(apiKey). Every Clerk-authed route (agents, graph, traces, metrics,
-// overview, settings/*) had none at all — backwards, since these are the
-// routes a signed-in user's own browser hits on every poll tick, and the
-// cheapest ones to hammer (no payload validation, just a DB read) if a
-// session token or tab leaks. Keyed by Clerk `userId` (not IP, since a
-// legitimate multi-tab user shares one userId but many IPs behind NAT are
-// still a red flag at the IP layer for the write endpoints above).
-//
-// Limit is generous — 120/min comfortably covers every current poller
-// (traces @8s, agents/overview @30s, graph @20s) across several open tabs
-// for one user, while still capping a runaway client or scripted abuse.
+// Per-user limiter for Clerk-authed routes, keyed by userId.
+// 120/min covers the pollers (traces 8s, agents/overview 30s, graph 20s)
+// across several open tabs.
 export function createUserRateLimiter(opts?: Partial<{
   limit: number
   prefix: string

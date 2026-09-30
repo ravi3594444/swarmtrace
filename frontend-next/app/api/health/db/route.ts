@@ -1,30 +1,21 @@
-// GET /api/health/db — self-diagnostic for the dashboard's database setup.
+// GET /api/health/db: self-check for the database setup, answering "traces
+// aren't showing up, where do I look?".
 //
-// Public (no auth): it exposes only which of this open-source project's own
-// schema objects exist — no user data, no key material. Per-IP rate limited
-// (30/min) and cached briefly per isolate so monitors can poll it without
-// hammering PostgREST.
+// Public, since it only reveals which of the project's own schema objects
+// exist (no user data or keys). Per-IP rate limited (30/min) and cached
+// briefly per isolate.
 //
-//   200 { ok: true,  checks: [...] }                                  — healthy
-//   503 { ok: false, checks: [...], missingMigrations: [...], hint }  — degraded
-//   503 { ok: false, error: 'not_configured' }                        — env missing
-//
-// Root-cause context: before this endpoint existed, a deployment whose
-// Supabase migrations were never applied failed /api/ingest with an opaque
-// 500, and the only way to find out was reading Vercel logs. This endpoint
-// is the answer to "traces aren't showing up — where do I even look?"
+//   200 { ok: true, checks: [...] }
+//   503 { ok: false, checks: [...], missingMigrations: [...], hint }
+//   503 { ok: false, error: 'not_configured' }   (env missing)
 
 import { checkSchemaHealth } from '@/lib/schema-health'
 import { createIpRateLimiter, getClientIp } from '@/lib/api-auth'
 
-// 30/min/IP is plenty for a human + an uptime monitor; the work below costs
-// ~14 trivial PostgREST calls per uncached hit.
+// 30/min/IP is plenty; each uncached hit makes about 14 PostgREST calls.
 const ipRateLimiter = createIpRateLimiter({ limit: 30, prefix: 'st_ip_rl_health' })
 
-// Per-isolate cache. Health flips rarely (someone ran migrations or the DB
-// went down); 30 s staleness is fine for a diagnostic endpoint and keeps
-// polling clients cheap. Vercel note: each isolate caches independently —
-// harmless here (no correctness requirement, just load shaping).
+// Per-isolate cache; 30 s staleness is fine for a diagnostic endpoint.
 const CACHE_TTL_MS = 30_000
 let cache: { at: number; status: number; body: unknown } | null = null
 
@@ -33,8 +24,7 @@ function jsonResponse(status: number, body: unknown, extraHeaders: Record<string
     status,
     headers: {
       'Content-Type': 'application/json',
-      // Never let a CDN serve someone else's (or yesterday's) health state
-      // from the edge cache.
+      // keep CDNs from serving stale health state
       'Cache-Control': 'no-store',
       ...extraHeaders,
     },
@@ -62,8 +52,7 @@ export async function GET(req: Request) {
         'production, .env.local for dev), redeploy, then re-check. ' +
         'See docs/SUPABASE_SETUP.md.',
     }
-    // Not cached: env changes flip isolates anyway, and a deployment with
-    // missing env should see the miss every time in its logs.
+    // not cached: a deployment with missing env should see it every time
     return jsonResponse(503, body)
   }
 

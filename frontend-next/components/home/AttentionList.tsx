@@ -7,17 +7,8 @@ import { formatRelativeTime } from '@/lib/api'
 import { AlertTriangle, CheckCircle, ArrowRight } from 'lucide-react'
 
 /**
- * AttentionList — "What needs attention", the Home-page counterpart to the
- * developer Failures page. Reuses the same error clustering so the groups
- * shown here match what /failures shows, but each row is phrased for a
- * non-technical reader: the error type as a name, a plain count ("happened
- * 4 times"), and how long ago it last occurred — no stack traces, no raw
- * messages, no span terminology.
- *
- * When nothing is wrong, the section stays visible with a calm all-clear
- * row instead of disappearing — a section that vanishes teaches users the
- * layout is unstable; a persistent "nothing to do" row teaches them this
- * is where problems will show up.
+ * "What needs attention" on Home. Uses the same error clusters as /failures,
+ * phrased plainly. Shows an all-clear row when empty rather than hiding.
  */
 export function AttentionList({ traces }: { traces: Trace[] }) {
   const clusters = clusterErrors(traces).slice(0, 3)
