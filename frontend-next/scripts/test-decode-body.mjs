@@ -1,12 +1,6 @@
 /**
- * Test: lib/decode-body.ts — the generic gzip request-body decoder shared
- * by /api/ingest and /api/events (audit finding #6).
- *
- * lib/validate-ingest.ts's own decodeIngestBody/MAX_DECOMPRESSED_BYTES
- * tests (scripts/test-ingest-batch.mjs) already cover the ingest-bound
- * wrapper end-to-end; these tests exercise the underlying generic helper
- * directly, including a second, differently-sized bound (as /api/events
- * now uses) to prove the bound is actually per-call, not hardcoded.
+ * Tests for lib/decode-body.ts, the gzip request-body decoder shared by
+ * /api/ingest and /api/events, including that the size bound is per call.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -58,8 +52,7 @@ describe('decodeGzipBody', () => {
   })
 
   test('accepts a decompressed payload within a SMALL caller-supplied bound (events-sized)', async () => {
-    // Proves the bound is genuinely per-call — /api/events passes 256 KB,
-    // not ingest's 1 MB. A 500-byte payload must pass under a 1 KB bound.
+    // the bound is per-call: events passes 256 KB, not ingest's 1 MB
     const text = JSON.stringify({ id: 'evt1', agent_id: 'a1', timestamp: new Date().toISOString() })
     const wire = toArrayBuffer(gzipSync(Buffer.from(text, 'utf8')))
     const decoded = await decodeGzipBody(wire, 'gzip', 1024)

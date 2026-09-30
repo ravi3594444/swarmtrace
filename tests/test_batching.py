@@ -1,19 +1,4 @@
-"""Tests for SDK-side batching + gzip (task 4) and the extracted Sender (1.B).
-
-Covers:
-  - drain_batch: 20 items or 2s, whichever first; blocks for the first
-    item then drains non-blocking.
-  - HttpTransport.send_batch: gzip + ``{"traces": [...]}`` body + headers.
-  - Sender._send_with_retries: on success marks every row synced=1; on
-    failure (3 retries exhausted) leaves every row synced=0.
-  - session_id survives the batch round-trip.
-  - resync still uses the single-object path (not the batch path).
-
-Phase 1.B: drain/worker logic moved to ``swarmtrace.delivery.sender.Sender``;
-these tests now drive a ``Sender`` with a fake transport + fake/no-op sleep
-instead of patching ``tracer._send_queue`` / ``tracer._send_batch_remote`` /
-``tracer._worker_started``.
-"""
+"""Tests for SDK-side batching + gzip and the Sender."""
 
 from __future__ import annotations
 
@@ -30,9 +15,7 @@ import pytest
 from swarmtrace import storage, tracer
 from swarmtrace.delivery.sender import Sender
 
-# --------------------------------------------------------------------------
 # Fakes
-# --------------------------------------------------------------------------
 
 class FakeTransport:
     """Records every batch send; optionally raises to simulate failure."""
@@ -62,9 +45,7 @@ def _sender(transport, repository, *, sleep=lambda s: None, **kw):
     return Sender(transport, repository, _config, sleep=sleep, **kw)
 
 
-# --------------------------------------------------------------------------
 # Fixtures
-# --------------------------------------------------------------------------
 
 @pytest.fixture()
 def fresh_storage(tmp_path, monkeypatch):
@@ -88,9 +69,7 @@ def fresh_storage(tmp_path, monkeypatch):
         storage.close()
 
 
-# --------------------------------------------------------------------------
-# Sender.drain_batch — the "20 items or 2s, whichever first" logic
-# --------------------------------------------------------------------------
+# Sender.drain_batch, the "20 items or 2s, whichever first" logic
 
 class TestDrainBatch:
     def test_blocks_then_returns_first_item(self):
@@ -127,10 +106,8 @@ class TestDrainBatch:
         assert len(batch) == 3  # all 3 were immediately available
 
 
-# --------------------------------------------------------------------------
-# HttpTransport.send_batch — gzip + body shape + headers
-# (patched at the adapter, not tracer — Phase 1.A)
-# --------------------------------------------------------------------------
+# HttpTransport.send_batch, gzip + body shape + headers
+# (patched at the adapter, not tracer)
 
 class TestSendBatchRemote:
     def test_body_is_traces_array_shape(self):
@@ -199,9 +176,7 @@ class TestSendBatchRemote:
         assert len(compressed) < len(raw_bytes) / 3
 
 
-# --------------------------------------------------------------------------
-# Sender — end-to-end batch flush + sync flag
-# --------------------------------------------------------------------------
+# Sender, end-to-end batch flush + sync flag
 
 class TestWorkerBatchFlush:
     def test_batch_size_triggers_flush(self, fresh_storage):
@@ -307,13 +282,10 @@ class TestWorkerBatchFlush:
         assert body["traces"][2].get("session_id") is None
 
 
-# --------------------------------------------------------------------------
 # resync still uses single-object path (not batch)
-# --------------------------------------------------------------------------
 
 class TestResyncStillSingleObject:
-    """resync sends one row at a time via the transport's send_single, NOT via
-    the batch send_batch path. Phase 1 routes resync through the Runtime seam."""
+    """resync goes through send_single, not send_batch."""
 
     def test_resync_uses_send_single_not_batch(self, fake_runtime):
         from datetime import datetime, timezone
@@ -336,14 +308,8 @@ class TestResyncStillSingleObject:
         assert fake_runtime.transport.batches == []
 
 
-# --------------------------------------------------------------------------
-# Sender.stop — deterministic worker shutdown
-#
-# The worker used to loop forever with no exit path. Anything that tears down
-# process state underneath it (a test rotating the SQLite DB, an embedder
-# swapping runtimes) left a live thread writing through a connection the
-# caller was about to close — a use-after-free that segfaults the interpreter.
-# --------------------------------------------------------------------------
+# Sender.stop: the worker has to shut down deterministically. A live thread
+# writing through a connection the caller is closing can segfault the interpreter.
 
 class TestSenderStop:
     def test_stop_joins_the_worker_thread(self):
@@ -373,14 +339,7 @@ class TestSenderStop:
         assert [p["id"] for batch in transport.batches for p in batch] == ["a"]
 
     def test_restart_works_after_a_stop_that_timed_out(self):
-        """A stop() whose join times out must not wedge the sender forever.
-
-        The worker can still be inside a transport call when the timeout
-        expires; it exits later, once it sees the stop flag. stop() can only
-        tidy up state when its own join succeeded, so without authoritative
-        worker-exit cleanup `_started` stayed True, `start()` short-circuited,
-        and every subsequent payload was queued and silently never delivered.
-        """
+        """A stop() whose join times out must not wedge the sender forever."""
         release = threading.Event()
 
         class SlowTransport:
@@ -417,15 +376,7 @@ class TestSenderStop:
         assert [p["id"] for b in fresh.batches for p in b] == ["after-timeout-stop"]
 
     def test_stop_racing_start_never_leaves_a_workerless_started_sender(self, monkeypatch):
-        """`_started=True` must always imply a live worker.
-
-        start() used to publish `_started` AFTER launching the thread while
-        stop() took no lock at all, so a stop landing in that window cleared
-        the state and start() then re-set `_started=True` with `_thread=None`
-        — a sender that accepts payloads forever and delivers none. The window
-        is two bytecodes wide, so it is never hit by chance; widening thread
-        startup makes the interleaving deterministic.
-        """
+        """`_started=True` must always imply a live worker."""
         real_start = threading.Thread.start
 
         def slow_start(self):

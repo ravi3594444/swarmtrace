@@ -1,30 +1,17 @@
 #!/usr/bin/env node
 /**
- * run-migrations.mjs — apply supabase/migrations/*.sql to the project's
- * database, in order, with a schema_migrations ledger so re-runs are no-ops.
+ * Applies supabase/migrations/*.sql in order, recording each in a
+ * schema_migrations ledger so re-runs are no-ops.
  *
- * WHY: the #1 production failure mode is "dashboard deployed, migrations
- * never applied" → every POST to /api/ingest 500s and no traces appear on
- * the dashboard. Applying twelve SQL files by hand in the Supabase SQL
- * editor (in the right order!) is exactly the kind of step people miss.
- * This makes it one command.
+ *   npm run db:migrate                   apply pending migrations via psql
+ *   npm run db:migrate -- --status       show applied vs pending
+ *   npm run db:migrate -- --print        print pending SQL for the Supabase SQL editor
+ *   npm run db:migrate -- --print --all  print every file (fresh project)
  *
- * Usage (from frontend-next/):
- *
- *   npm run db:migrate                 # apply pending migrations via psql
- *   npm run db:migrate -- --status     # show applied vs pending, apply nothing
- *   npm run db:migrate -- --print      # print pending SQL for the Supabase SQL editor
- *   npm run db:migrate -- --print --all  # print ALL files (fresh project bootstrap)
- *
- * Connection: reads SUPABASE_DB_URL (fallback DATABASE_URL) from the
- * environment or frontend-next/.env.local — the Postgres connection string
- * from Supabase Dashboard → Project Settings → Database → Connection string
- * (URI). It's never logged. Requires `psql` on PATH for the apply/status
- * modes; --print works without psql and without a connection string.
- *
- * Dependencies: none beyond Node >= 18 and psql. Deliberately does NOT add
- * a pg driver to package.json — this runs on the operator's machine, not
- * in Vercel.
+ * Reads SUPABASE_DB_URL (or DATABASE_URL) from the environment or
+ * frontend-next/.env.local and never logs it. Apply/status need `psql` on
+ * PATH; --print needs neither psql nor a connection string. No pg driver
+ * dependency since this runs on the operator's machine.
  */
 
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -42,7 +29,6 @@ const BOOTSTRAP_SQL =
   ' version text PRIMARY KEY,' +
   ' applied_at timestamptz NOT NULL DEFAULT now());'
 
-// ── args ──────────────────────────────────────────────────────────────────
 const args = process.argv.slice(2)
 const MODE = {
   status: args.includes('--status') || args.includes('--check'),
@@ -56,9 +42,8 @@ if (MODE.help) {
   process.exit(0)
 }
 
-// ── env loading (.env.local, then process env) ────────────────────────────
-// Minimal .env parser — no dotenv dependency. Handles KEY=value, quotes,
-// comments, and `export ` prefixes. Existing process env wins.
+// Minimal .env parser (KEY=value, quotes, comments, `export `); existing
+// process env wins.
 function loadEnvLocal(path) {
   if (!existsSync(path)) return {}
   const out = {}
@@ -83,10 +68,8 @@ function env(name) {
 
 const DB_URL = env('SUPABASE_DB_URL') || env('DATABASE_URL')
 
-// ── migration files ───────────────────────────────────────────────────────
 function migrationFiles() {
-  // Strict pattern: the filename is also interpolated into the ledger INSERT
-  // (quoted), so keep it free of anything unusual beyond word characters.
+  // strict pattern: the filename is interpolated into the ledger INSERT
   return readdirSync(MIGRATIONS_DIR)
     .filter((f) => /^\d{4}_[A-Za-z0-9_]+\.sql$/.test(f))
     .sort()
@@ -98,7 +81,6 @@ function fail(msg, extra) {
   process.exit(1)
 }
 
-// ── psql helpers ──────────────────────────────────────────────────────────
 function psqlExists() {
   const r = spawnSync('psql', ['--version'], { encoding: 'utf8' })
   return r.status === 0
@@ -121,12 +103,11 @@ function appliedVersions() {
   return new Set(out.split(/\r?\n/).map((s) => s.trim()).filter(Boolean))
 }
 
-// ── modes ─────────────────────────────────────────────────────────────────
 function main() {
   const files = migrationFiles()
   if (files.length === 0) fail(`no migration files found in ${MIGRATIONS_DIR}`)
 
-  // --print never needs psql or a DB connection.
+  // --print needs neither psql nor a DB connection
   if (MODE.print) {
     let pending = files
     if (!MODE.all) {
@@ -158,7 +139,7 @@ function main() {
     return
   }
 
-  // apply / --status need psql + DB URL.
+  // apply / --status need psql and a DB URL
   if (!psqlExists()) {
     fail(
       '`psql` not found on PATH.',
@@ -202,12 +183,10 @@ function main() {
     for (const f of pending) {
       process.stdout.write(`  → ${f} … `)
       try {
-        // Migration file + ledger insert in ONE transaction: either both
-        // happen or neither does. NOTE: psql does NOT perform :variable
-        // substitution inside -c strings, so the ledger insert can't be a
-        // separate -c; instead concatenate the file + insert into a temp
-        // file and run it under --single-transaction. The filename regex in
-        // migrationFiles() already forbids quotes; escape defensively anyway.
+        // Migration and ledger insert run in one transaction. psql doesn't
+        // substitute :variables inside -c strings, so append the insert to a
+        // temp copy of the file and run it with --single-transaction. The
+        // filename regex already forbids quotes; escape anyway.
         const combined =
           readFileSync(join(MIGRATIONS_DIR, f), 'utf8') +
           `\n-- ledger (appended by run-migrations.mjs)\n` +
@@ -218,7 +197,7 @@ function main() {
         process.stdout.write('ok\n')
       } catch {
         process.stdout.write('FAILED\n')
-        // psql's own stderr was already printed (stdio: inherit).
+        // psql already printed its own stderr (stdio: inherit)
         fail(
           `migration ${f} failed; nothing from it was recorded (single transaction — rolled back). ` +
           `Fix the error above, then re-run. Completed migrations were recorded in public.schema_migrations.`,

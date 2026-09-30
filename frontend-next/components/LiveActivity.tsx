@@ -5,7 +5,7 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAgentEvents, AgentEvent, EventData } from '@/contexts/RealtimeContext'
 import { Globe, Sparkles, Link as LinkIcon, FileText, Camera } from 'lucide-react'
 
-// ── Per-event data shapes ────────────────────────────────────────────────────
+// Per-event data shapes
 interface BrowserData  { method?: string; url?: string; args?: string[]; screenshot?: string; error?: string }
 interface LlmTokenData { token?: string; accumulated?: string }
 interface HttpData     { method?: string; url?: string; status_code?: number; error?: string }
@@ -17,10 +17,7 @@ interface Props {
   maxEvents?: number
 }
 
-// ── Icons ───────────────────────────────────────────────────────────────────
-// Lucide icons (aria-hidden) replace the old emoji set — emoji are read
-// verbatim by screen readers and don't match the rest of the app's icon
-// system. Each entry is a component so we can size + color it consistently.
+// Each entry is a component so we can size and color it consistently.
 const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   browser:     Globe,
   llm_token:   Sparkles,
@@ -29,12 +26,8 @@ const ICONS: Record<string, React.ComponentType<{ className?: string }>> = {
   screen_tick: Camera,
 }
 
-// Status colors stay strictly within the app's tonal system — no purple
-// (which was outside the Charcoal & Ivory monochrome palette). `streaming`
-// now uses the same muted accent as `info` so the palette stays achromatic;
-// the motion of accumulating tokens is enough to signal "streaming" without
-// a distinct hue. Error/started/done keep their semantic colors because
-// they match how status is coded everywhere else in the dashboard.
+// Only error/started/done get a hue; streaming stays muted since the
+// accumulating tokens already show motion.
 const STATUS_COLOR: Record<string, string> = {
   started:   'text-blue-500 dark:text-blue-400',
   done:      'text-green-600 dark:text-green-400',
@@ -43,7 +36,7 @@ const STATUS_COLOR: Record<string, string> = {
   info:      'text-muted-foreground',
 }
 
-// ── Full-size screenshot lightbox ───────────────────────────────────────────
+// Full-size screenshot lightbox
 function ScreenshotLightbox({ src, url, onClose }: { src: string; url?: string; onClose: () => void }) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => e.key === 'Escape' && onClose()
@@ -82,7 +75,7 @@ function ScreenshotLightbox({ src, url, onClose }: { src: string; url?: string; 
   )
 }
 
-// ── Event row ───────────────────────────────────────────────────────────────
+// Event row
 function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick: (src: string, url?: string) => void }) {
   const [expanded, setExpanded] = useState(false)
   const d = ev.data as EventData
@@ -134,7 +127,7 @@ function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick
       aria-label={hasExpandable ? `${ev.event_type} event — ${ev.status}. ${label}` : undefined}
     >
       <div className="flex items-center gap-2 text-sm">
-        {/* Thumbnail for screen_tick events — visible even when collapsed */}
+        {/* Thumbnail for screen_tick events - visible even when collapsed */}
         {ev.event_type === 'screen_tick' && hasScreenshot ? (
           <button
             onClick={(e) => { e.stopPropagation(); onScreenshotClick(screenshot!, (d as BrowserData).url) }}
@@ -206,7 +199,7 @@ function EventRow({ ev, onScreenshotClick }: { ev: AgentEvent; onScreenshotClick
   )
 }
 
-// ── Virtualized event list ───────────────────────────────────────────────────
+// Virtualized event list
 // Renders only the visible window of events + overscan when the list is
 // large (>50 items). Uses @tanstack/react-virtual with dynamic measuring
 // so expanded rows (screenshots, token streams) are measured correctly.
@@ -220,7 +213,7 @@ function VirtualizedEventList({ filtered, listRef, onScreenshotClick }: {
   const virtualizer = useVirtualizer({
     count: filtered.length,
     getScrollElement: () => listRef.current,
-    estimateSize: () => 44, // collapsed row height — expanded rows are measured
+    estimateSize: () => 44, // collapsed row height - expanded rows are measured
     overscan: 8,
   })
   return (
@@ -239,7 +232,7 @@ function VirtualizedEventList({ filtered, listRef, onScreenshotClick }: {
   )
 }
 
-// ── Main component ───────────────────────────────────────────────────────────
+// Main component
 export default function LiveActivity({ agentId, agentName }: Props) {
   const { events, connected, error } = useAgentEvents(agentId)
 

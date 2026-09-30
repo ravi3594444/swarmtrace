@@ -5,11 +5,7 @@ import type { Trace } from "@/lib/trace-types";
 import { Activity, Clock, Coins, Hash } from "lucide-react";
 import { UsageBreakdownDrawer } from "./UsageBreakdownDrawer";
 
-// Memoized so the slide-in-up animation doesn't replay when the parent
-// re-renders (e.g. on every poll cycle). The animation only plays on mount;
-// memo prevents the component from being re-created when the props are
-// unchanged. Previously every re-render of StatBar re-ran the animation,
-// causing a distracting flash every 8s (the poll interval).
+// Memoized so the slide-in animation doesn't replay on every poll.
 const StatCard = memo(function StatCard({ label, value, unit, icon: Icon, trend, onMenuClick, menuLabel }: {
   label: string;
   value: string;
@@ -19,10 +15,7 @@ const StatCard = memo(function StatCard({ label, value, unit, icon: Icon, trend,
   onMenuClick?: () => void;
   menuLabel?: string;
 }) {
-  // When a breakdown drawer is available, the whole card is clickable (not
-  // just the icon badge) and a "View breakdown →" hint appears on hover so
-  // the affordance is discoverable. Previously only the small icon badge
-  // was clickable, which users didn't realize was interactive.
+  // With a breakdown drawer the whole card is clickable, with a hover hint.
   const badgeClass = `w-10 h-10 rounded-lg border border-border bg-muted/60 flex items-center justify-center shrink-0 transition-colors`;
   const iconEl = <Icon className="w-[18px] h-[18px] text-muted-foreground" />;
   const Wrapper = onMenuClick ? "button" : "div";

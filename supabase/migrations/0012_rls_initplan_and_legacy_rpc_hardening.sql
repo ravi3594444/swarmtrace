@@ -1,33 +1,14 @@
 -- 0012_rls_initplan_and_legacy_rpc_hardening.sql
--- Two independent hardening fixes surfaced by Supabase's advisor lints.
---
--- 1. RLS initplan performance (WARN, category PERFORMANCE)
---    -------------------------------------------------------
---    Every "owner only" RLS policy compared user_id against a bare
---    auth.jwt() call, which Postgres re-evaluates once per row scanned
---    instead of once per query. Wrapping the call in a scalar subquery
---    (SELECT auth.jwt() ->> 'sub') lets the planner treat it as an
---    InitPlan — evaluated once — which is the standard fix documented at
---    https://supabase.com/docs/guides/database/postgres/row-level-security#call-functions-with-select
---    Same predicate, same semantics, no application-visible change.
---
--- 2. Legacy RPC grants + mutable search_path (WARN, category SECURITY)
---    -------------------------------------------------------------------
---    This is the exact hardening docs/SUPABASE_SETUP.md's "Hardening:
---    legacy ingest RPCs (older projects)" section has instructed operators
---    to paste into the SQL editor since migration 0010 shipped, formalized
---    here so a fresh `db:migrate` run closes the gap automatically instead
---    of depending on a manual step. upsert_trace / upsert_trace_with_metrics
---    / increment_daily_metrics pre-date the *_for_key RPCs, accept a
---    caller-chosen user_id, and are superseded — no app code calls them.
---    Confirmed via query: nothing else in this codebase references them
---    outside supabase/migrations/ and this doc.
---
--- Idempotent: DROP POLICY IF EXISTS guards + a signature-agnostic DO block
--- for the REVOKE/GRANT/search_path pass (matches the pattern already used
--- for 0010/0011's tenant-isolation RPCs). Safe to re-run.
+-- 1. Wrap auth.jwt() in (SELECT ...) in every owner-only RLS policy so Postgres
+--    evaluates it once per query instead of once per row (an InitPlan).
+--    Same predicate and semantics.
+-- 2. Revoke the legacy upsert_trace, upsert_trace_with_metrics and
+--    increment_daily_metrics RPCs from PUBLIC/anon/authenticated and pin
+--    search_path. They accept a caller-chosen user_id and no app code calls
+--    them. This is the script docs/SUPABASE_SETUP.md describes.
+-- Idempotent: DROP POLICY IF EXISTS plus a signature-agnostic DO block.
 
--- ── Legacy RPC grants + search_path ─────────────────────────────────────
+-- Legacy RPC grants + search_path
 DO $$
 DECLARE f RECORD;
 BEGIN
@@ -44,8 +25,8 @@ BEGIN
   END LOOP;
 END $$;
 
--- ── RLS initplan fix: api_keys, traces, daily_metrics, agent_events, ───
--- ── user_integrations, regression_runs ──────────────────────────────────
+-- RLS initplan fix: api_keys, traces, daily_metrics, agent_events,
+-- user_integrations, regression_runs
 DROP POLICY IF EXISTS "api_keys: owner only" ON public.api_keys;
 CREATE POLICY "api_keys: owner only" ON public.api_keys
     FOR ALL

@@ -1,15 +1,4 @@
-"""Tests for the synced flag + resync CLI (task 3: spillover via sync flag).
-
-Covers the three "done when" criteria from the spec:
-  1. Simulated failed send leaves row unsynced (synced=0).
-  2. Simulated success marks it synced (synced=1).
-  3. resync only touches unsynced rows (already-synced rows are not re-sent).
-
-Also covers:
-  - Schema migration: the synced column is added to existing DBs.
-  - resync returns (0,0,0) when remote isn't configured.
-  - resync marks rows synced=1 on success and leaves them synced=0 on failure.
-"""
+"""Tests for the synced flag and the resync CLI."""
 
 from __future__ import annotations
 
@@ -25,17 +14,11 @@ from swarmtrace.adapters.sqlite_repository import SqliteRepository
 from swarmtrace.runtime import Runtime
 from tests._fakes import FakeTransport
 
-# --------------------------------------------------------------------------
 # Fixtures
-# --------------------------------------------------------------------------
 
 @pytest.fixture()
 def fresh_storage(tmp_path, monkeypatch):
-    """Reload storage against a temp DB so tests start with a clean table.
-
-    Also rebinds the names tracer imported from storage so they point at the
-    reloaded module's functions (which use the temp DB).
-    """
+    """Reload storage against a temp DB and rebind the names tracer imported from it."""
     monkeypatch.setenv("SWARMTRACE_DB_PATH", str(tmp_path / "traces.db"))
     importlib.reload(storage)
     tracer.save_trace = storage.save_trace
@@ -50,20 +33,14 @@ def remote_config(monkeypatch):
     """Configure a fake remote endpoint so _remote_config() returns non-empty."""
     monkeypatch.setenv("SWARMTRACE_API_KEY", "test-key")
     monkeypatch.setenv("SWARMTRACE_ENDPOINT", "https://example.test")
-    # Also set on the module-level globals, since _remote_config checks
-    # those first (set via init()) — env vars are the fallback.
+    # _remote_config checks the module-level globals (set via init()) before env vars
     monkeypatch.setattr(tracer, "_api_key", None, raising=False)
     monkeypatch.setattr(tracer, "_endpoint", None, raising=False)
 
 
 @pytest.fixture()
 def resync_runtime(monkeypatch, fresh_storage, remote_config):
-    """A runtime wired to the temp-DB SqliteRepository + a FakeTransport.
-
-    Lets resync tests drive success/failure through the transport without
-    patching private tracer internals, while still reading the synced flag
-    back from the real SQLite outbox.
-    """
+    """Runtime wired to the temp-DB SqliteRepository and a FakeTransport."""
     repo = SqliteRepository()
     transport = FakeTransport()
     rt = Runtime(repo, transport, tracer._remote_config)
@@ -80,15 +57,12 @@ def _save_trace(storage, trace_id="t1", synced=0):
         cost_usd=0.001,
         kind="agent", agent_id=trace_id, agent_name="fn",
     )
-    # save_trace leaves synced=0 by default; if the test wants synced=1,
-    # mark it explicitly.
+    # save_trace leaves synced=0; mark it explicitly if the test wants 1
     if synced:
         storage.mark_synced(trace_id, 1)
 
 
-# --------------------------------------------------------------------------
 # Schema / migration
-# --------------------------------------------------------------------------
 
 class TestSyncedColumn:
     def test_synced_column_exists_after_migration(self, fresh_storage):
@@ -98,12 +72,11 @@ class TestSyncedColumn:
         assert "synced" in cols
 
     def test_synced_column_added_to_existing_db(self, tmp_path, monkeypatch):
-        """The migration adds synced to a DB that was created before the column
-        existed (simulates an upgrade from a pre-task-3 install)."""
+        """The migration adds `synced` to a DB created before the column existed."""
         db_path = tmp_path / "old.db"
         monkeypatch.setenv("SWARMTRACE_DB_PATH", str(db_path))
 
-        # Create a DB WITHOUT the synced column — mimics the old schema.
+        # Create a DB WITHOUT the synced column, mimics the old schema.
         import sqlite3
         old_conn = sqlite3.connect(str(db_path))
         old_conn.execute("""
@@ -132,7 +105,7 @@ class TestSyncedColumn:
         old_conn.commit()
         old_conn.close()
 
-        # Now reload storage — _migrate_columns should add `synced`.
+        # Now reload storage, _migrate_columns should add `synced`.
         importlib.reload(storage)
         conn = storage._get_conn()
         cols = {row[1] for row in conn.execute("PRAGMA table_info(traces)").fetchall()}
@@ -149,18 +122,10 @@ class TestSyncedColumn:
         assert row["synced"] == 0  # synced=0
 
 
-# --------------------------------------------------------------------------
 # _worker mark-synced behavior
-# --------------------------------------------------------------------------
 
 class TestWorkerMarksSynced:
-    """The background sender marks a row synced=1 after a confirmed send,
-    and leaves it synced=0 when all retries fail.
-
-    Phase 1: the worker lives in ``swarmtrace.delivery.sender.Sender``; these
-    tests drive it through the runtime seam with a FakeTransport instead of
-    patching private tracer internals.
-    """
+    """The sender marks rows synced=1 after a confirmed send and leaves them at 0 when retries fail."""
 
     def test_successful_send_marks_synced(self, resync_runtime):
         _save_trace(storage, "t-success")
@@ -188,9 +153,7 @@ class TestWorkerMarksSynced:
         assert storage.get_by_id("t-fail")["synced"] == 0
 
 
-# --------------------------------------------------------------------------
 # resync function
-# --------------------------------------------------------------------------
 
 class TestResyncFunction:
     def test_resync_returns_zero_when_remote_not_configured(self, fresh_storage, monkeypatch):
@@ -230,14 +193,12 @@ class TestResyncFunction:
         assert attempted == 2
         assert succeeded == 0
         assert failed == 2
-        # Rows stay synced=0 — resync can retry them next run.
+        # Rows stay synced=0, resync can retry them next run.
         assert storage.get_by_id("t-fail-1")["synced"] == 0
         assert storage.get_by_id("t-fail-2")["synced"] == 0
 
     def test_resync_only_touches_unsynced_rows(self, resync_runtime):
-        """The critical spec requirement: resync only re-sends rows where
-        synced=0. Already-synced rows are NOT re-sent (no duplicate POSTs,
-        no double-counting on the dashboard's daily_metrics)."""
+        """resync only re-sends rows with synced=0."""
         # 2 unsynced + 2 already-synced.
         _save_trace(storage, "u1", synced=0)
         _save_trace(storage, "u2", synced=0)
@@ -264,22 +225,17 @@ class TestResyncFunction:
         assert attempted == 3
         assert succeeded == 3
         assert failed == 0
-        # The other 2 rows are still unsynced — a second resync run picks them up.
+        # The other 2 rows are still unsynced, a second resync run picks them up.
         unsynced = storage.get_unsynced_traces(limit=10)
         assert len(unsynced) == 2
 
 
-# --------------------------------------------------------------------------
 # CLI entry point
-# --------------------------------------------------------------------------
 
 class TestResyncCLI:
     """Drive the console-script entry point.
 
-    Each test sets ``sys.argv`` explicitly. Without it pytest's own argv
-    (``-q``, test paths, ...) leaks into the command under test — harmless
-    only while the parser silently ignored unrecognized arguments, which is
-    the very bug ``parse_limit`` now rejects.
+    Each test sets sys.argv explicitly so pytest's own argv doesn't leak in.
     """
 
     @pytest.fixture(autouse=True)
@@ -308,7 +264,7 @@ class TestResyncCLI:
         assert "failed" in out.lower()
 
     def test_cli_nothing_to_send(self, resync_runtime, capsys):
-        # No unsynced rows — should print "No unsynced traces found" and exit 0.
+        # No unsynced rows, should print "No unsynced traces found" and exit 0.
         from swarmtrace.cli import main_resync
         with contextlib.suppress(SystemExit):
             main_resync()

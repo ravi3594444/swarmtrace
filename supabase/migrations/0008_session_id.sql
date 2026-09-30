@@ -1,17 +1,7 @@
 -- 0008_session_id.sql
--- Feature: conversation / session grouping ("threads").
---
--- Multi-turn chat agents span many @observe calls (one per user turn). Until
--- now each call — or nested tree — stood alone, so there was no way to view
--- "this user's whole conversation across N messages" as one unit. This adds
--- an optional session_id that the SDK/ingest can set to stitch turns together
--- (the SwarmTrace analogue of LangSmith "threads").
---
--- Fully backward-compatible:
---   * session_id is nullable — older SDKs that never send it keep working and
---     simply show up as ungrouped, single-turn runs.
---   * The upsert RPC gains p_session_id with a DEFAULT so existing callers
---     (e.g. the MCP route) that don't pass it are unaffected.
+-- Adds an optional session_id to group multi-turn conversations into threads.
+-- session_id is nullable and the upsert RPC takes p_session_id with a DEFAULT,
+-- so older SDKs and the MCP route keep working.
 
 ALTER TABLE public.traces ADD COLUMN IF NOT EXISTS session_id TEXT;
 

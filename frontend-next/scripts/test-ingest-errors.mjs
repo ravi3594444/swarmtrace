@@ -1,10 +1,6 @@
 /**
- * Test: ingest error classification (lib/ingest-errors.ts).
- *
- * The classifier is the fix for the "valid API key, zero traces, opaque
- * 500" failure mode: PostgREST/Postgres/network failures must map to stable
- * codes + actionable hints, without ever copying raw DB error text into the
- * response body.
+ * Tests for lib/ingest-errors.ts: PostgREST/Postgres/network failures map to
+ * stable codes and hints, and raw DB error text never reaches the response.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -34,8 +30,8 @@ const PGRST205_TABLE =
   'Supabase 404: {"code":"PGRST205","details":null,"hint":null,' +
   '"message":"Could not find the table \'public.traces\' in the schema cache"}'
 
-describe('classifySupabaseError — schema drift (the production root cause)', () => {
-  test('PGRST202 function-not-found → SCHEMA_NOT_MIGRATED', () => {
+describe('classifySupabaseError: schema drift', () => {
+  test('PGRST202 function-not-found -> SCHEMA_NOT_MIGRATED', () => {
     const { code, hint } = classifySupabaseError(new Error(PGRST202_FN))
     assert.equal(code, 'SCHEMA_NOT_MIGRATED')
     assert.equal(hint, MIGRATION_HINT)
@@ -43,19 +39,19 @@ describe('classifySupabaseError — schema drift (the production root cause)', (
     assert.match(hint, /health\/db/)
   })
 
-  test('PGRST205 table-not-found → SCHEMA_NOT_MIGRATED', () => {
+  test('PGRST205 table-not-found -> SCHEMA_NOT_MIGRATED', () => {
     assert.equal(classifySupabaseError(new Error(PGRST205_TABLE)).code, 'SCHEMA_NOT_MIGRATED')
   })
 
-  test('undefined column (42703) → SCHEMA_NOT_MIGRATED', () => {
+  test('undefined column (42703) -> SCHEMA_NOT_MIGRATED', () => {
     assert.equal(classifySupabaseError(new Error(UNDEFINED_COLUMN)).code, 'SCHEMA_NOT_MIGRATED')
   })
 
-  test('undefined table (42P01) → SCHEMA_NOT_MIGRATED', () => {
+  test('undefined table (42P01) -> SCHEMA_NOT_MIGRATED', () => {
     assert.equal(classifySupabaseError(new Error(UNDEFINED_TABLE)).code, 'SCHEMA_NOT_MIGRATED')
   })
 
-  test('plain-English schema-cache miss → SCHEMA_NOT_MIGRATED', () => {
+  test('plain-English schema-cache miss -> SCHEMA_NOT_MIGRATED', () => {
     assert.equal(
       classifySupabaseError(
         new Error('Could not find the function public.upsert_trace_for_key in the schema cache'),
@@ -65,8 +61,8 @@ describe('classifySupabaseError — schema drift (the production root cause)', (
   })
 })
 
-describe('classifySupabaseError — availability + timeouts', () => {
-  test('Supabase 5xx → DB_UNAVAILABLE', () => {
+describe('classifySupabaseError: availability + timeouts', () => {
+  test('Supabase 5xx -> DB_UNAVAILABLE', () => {
     assert.equal(
       classifySupabaseError(new Error('Supabase 503: {"message":"upstream connect error"}')).code,
       'DB_UNAVAILABLE',
@@ -77,7 +73,7 @@ describe('classifySupabaseError — availability + timeouts', () => {
     )
   })
 
-  test('network failure (undici) → DB_UNAVAILABLE', () => {
+  test('network failure (undici) -> DB_UNAVAILABLE', () => {
     assert.equal(
       classifySupabaseError(new TypeError('fetch failed')).code,
       'DB_UNAVAILABLE',
@@ -88,7 +84,7 @@ describe('classifySupabaseError — availability + timeouts', () => {
     )
   })
 
-  test('timeouts → DB_TIMEOUT', () => {
+  test('timeouts -> DB_TIMEOUT', () => {
     const t = new Error('The operation timed out')
     t.name = 'TimeoutError'
     assert.equal(classifySupabaseError(t).code, 'DB_TIMEOUT')
@@ -98,8 +94,8 @@ describe('classifySupabaseError — availability + timeouts', () => {
   })
 })
 
-describe('classifySupabaseError — everything else stays generic', () => {
-  test('unique violation / random Postgres error → DB_ERROR', () => {
+describe('classifySupabaseError: everything else stays generic', () => {
+  test('unique violation / random Postgres error -> DB_ERROR', () => {
     assert.equal(
       classifySupabaseError(
         new Error('Supabase 400: {"code":"23505","message":"duplicate key value violates unique constraint"}'),
@@ -111,7 +107,7 @@ describe('classifySupabaseError — everything else stays generic', () => {
   })
 })
 
-describe('ingestErrorBody — public response shape', () => {
+describe('ingestErrorBody: public response shape', () => {
   test('never leaks raw database error text', () => {
     for (const raw of [PGRST202_FN, UNDEFINED_COLUMN, 'boom', new TypeError('fetch failed')]) {
       const err = raw instanceof Error ? raw : new Error(raw)

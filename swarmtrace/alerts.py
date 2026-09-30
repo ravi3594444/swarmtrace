@@ -6,7 +6,7 @@ rule conditions trip. Alerts are:
 
 1. Persisted to a local SQLite table (``swarmtrace_alerts``) so the dashboard
    can list them and you can query history from the CLI.
-2. Delivered to a webhook (``SWARMTRACE_ALERT_WEBHOOK``) — Slack-compatible
+2. Delivered to a webhook (``SWARMTRACE_ALERT_WEBHOOK``), Slack-compatible
    JSON, generic JSON, or email-stub. Retries 3× with exponential backoff.
 3. Optional: forwarded to the SwarmTrace dashboard via the same X-API-Key +
    /api/alerts/webhook route the dashboard exposes, so alerts show up in
@@ -14,13 +14,13 @@ rule conditions trip. Alerts are:
 
 The default rules (each one configurable / disable-able):
 
-* ``budget_breach``      — cumulative ``cost_usd`` for an agent exceeds
+* ``budget_breach``     , cumulative ``cost_usd`` for an agent exceeds
                            ``budget_usd`` (default $5) over the last
                            ``window_minutes`` (default 60).
-* ``error_spike``        — error rate over the last ``min_traces`` (default 25)
+* ``error_spike``       , error rate over the last ``min_traces`` (default 25)
                            traces for an agent exceeds ``error_rate_threshold``
                            (default 0.5 = 50%).
-* ``latency_regression`` — p95 latency over the last ``min_traces`` traces
+* ``latency_regression``, p95 latency over the last ``min_traces`` traces
                            exceeds ``latency_p95_sec`` (default 30s).
 
 A per-(rule, agent) cooldown (default 5 min) prevents alert spam.
@@ -62,10 +62,8 @@ from swarmtrace.storage import TraceRow, get_all_traces
 
 _log = logging.getLogger("swarmtrace.alerts")
 
-# ---------------------------------------------------------------------------
-# Schema — keep the alerts table in a SEPARATE SQLite file so the trace DB
+# Schema, keep the alerts table in a SEPARATE SQLite file so the trace DB
 # stays a pure append-only log and the alert DB can be rotated independently.
-# ---------------------------------------------------------------------------
 
 ALERT_DB_PATH = os.environ.get(
     "SWARMTRACE_ALERT_DB_PATH",
@@ -132,9 +130,7 @@ def _save(alert: Alert) -> None:
         _log.warning("save warning: %s", exc)
 
 
-# ---------------------------------------------------------------------------
 # Data model
-# ---------------------------------------------------------------------------
 
 VALID_SEVERITIES = ("info", "warning", "critical")
 
@@ -163,9 +159,7 @@ class Alert:
         return d
 
 
-# ---------------------------------------------------------------------------
 # Rule engine
-# ---------------------------------------------------------------------------
 
 @dataclass
 class RuleConfig:
@@ -194,7 +188,7 @@ class RuleEngine:
         # (rule, agent_id) -> last-fired timestamp
         self._cooldowns: dict[tuple, float] = {}
 
-    # ── helpers ──────────────────────────────────────────────────────────────
+    # helpers
 
     @staticmethod
     def _parse_ts(ts: str) -> datetime | None:
@@ -202,7 +196,7 @@ class RuleEngine:
             return None
         try:
             # ISO-8601 with trailing 'Z' is what datetime.fromisoformat chokes on
-            # in 3.10 and earlier — normalise.
+            # in 3.10 and earlier, normalise.
             if ts.endswith("Z"):
                 ts = ts[:-1] + "+00:00"
             dt = datetime.fromisoformat(ts)
@@ -222,7 +216,7 @@ class RuleEngine:
     def _mark_fired(self, rule: str, agent_id: str) -> None:
         self._cooldowns[(rule, agent_id)] = time.time()
 
-    # ── public entrypoint ────────────────────────────────────────────────────
+    # public entrypoint
 
     def evaluate(self, traces: list[TraceRow]) -> list[Alert]:
         """Run every enabled rule over ``traces`` and return the fired alerts."""
@@ -247,7 +241,7 @@ class RuleEngine:
             fired.extend(self._rule_latency_regression(by_agent))
         return fired
 
-    # ── rules ────────────────────────────────────────────────────────────────
+    # rules
 
     def _rule_budget_breach(
         self, traces: list[TraceRow], by_agent: dict[str, list[TraceRow]]
@@ -299,7 +293,7 @@ class RuleEngine:
         for agent_id, rows in by_agent.items():
             if self._in_cooldown("error_spike", agent_id):
                 continue
-            # Traces are ordered DESC by timestamp from storage — take the most recent N.
+            # Traces are ordered DESC by timestamp from storage, take the most recent N.
             recent = rows[: cfg.min_traces]
             if len(recent) < cfg.min_traces:
                 continue
@@ -371,9 +365,7 @@ class RuleEngine:
         return fired
 
 
-# ---------------------------------------------------------------------------
 # Webhook delivery
-# ---------------------------------------------------------------------------
 
 def _slack_payload(alert: Alert) -> dict[str, Any]:
     """Slack-compatible incoming-webhook payload."""
@@ -423,7 +415,7 @@ def deliver(alert: Alert, webhook: str, *, retries: int = 3) -> bool:
                 headers={"Content-Type": "application/json"},
                 method="POST",
             )
-            # NOTE: don't use ``with urlopen(...) as resp`` — some test fakes
+            # NOTE: don't use ``with urlopen(...) as resp``, some test fakes
             # don't implement the context-manager protocol.  Manual
             # try/finally keeps the production code path-clean and the test
             # seam simple.
@@ -444,9 +436,7 @@ def deliver(alert: Alert, webhook: str, *, retries: int = 3) -> bool:
     return False
 
 
-# ---------------------------------------------------------------------------
 # Forwarder to the SwarmTrace dashboard
-# ---------------------------------------------------------------------------
 
 def _forward_to_dashboard(alert: Alert, api_key: str, endpoint: str) -> bool:
     """Best-effort POST to /api/alerts/webhook on the dashboard."""
@@ -470,9 +460,7 @@ def _forward_to_dashboard(alert: Alert, api_key: str, endpoint: str) -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
 # Background evaluator
-# ---------------------------------------------------------------------------
 
 class AlertRunner:
     """Daemon thread that runs :class:`RuleEngine` on an interval."""
@@ -534,9 +522,7 @@ class AlertRunner:
                     _log.exception("on_alert callback raised")
 
 
-# ---------------------------------------------------------------------------
 # Global config + lifecycle
-# ---------------------------------------------------------------------------
 
 _engine:    RuleEngine | None   = None
 _runner:    AlertRunner | None   = None
@@ -558,7 +544,7 @@ def configure(
 ) -> RuleConfig:
     """
     Configure (or update) the global alert engine. Safe to call multiple
-    times — only the fields you pass are changed.
+    times, only the fields you pass are changed.
     """
     global _config, _webhook, _user_hook
     if _config is None:

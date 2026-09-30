@@ -1,10 +1,9 @@
 -- 0001_rls_and_indexes.sql
 -- Run against the Supabase project (SQL editor or `supabase db push`).
 
--- Tenant isolation: enable Row Level Security. The dashboard and ingest API
--- currently use the service-role key (which bypasses RLS), so these policies
--- are defense-in-depth today and become fully enforced once per-user JWTs
--- (Clerk <-> Supabase integration) replace the service key.
+-- Enable row level security. The dashboard and ingest API currently use the
+-- service-role key, which bypasses RLS, so these policies only take effect once
+-- per-user JWTs (Clerk and Supabase integration) are in use.
 alter table public.api_keys enable row level security;
 alter table public.traces enable row level security;
 

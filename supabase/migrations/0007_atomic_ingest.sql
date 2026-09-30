@@ -1,24 +1,8 @@
 -- 0007_atomic_ingest.sql
--- Fix: daily_metrics double-counting on SDK retries.
---
--- Bug: /api/ingest and /api/mcp call two separate RPCs — upsert_trace then
--- increment_daily_metrics. upsert_trace is idempotent (ON CONFLICT DO
--- UPDATE), but increment_daily_metrics unconditionally adds to the running
--- total. The SDK retries failed POSTs up to 3x with backoff. If the RPCs
--- succeed server-side but the HTTP response doesn't reach the client in
--- time (5s timeout stacked on two sequential REST calls from an edge
--- function — plausible under any Supabase cold start), the retry re-runs
--- both RPCs. upsert_trace no-ops, but increment_daily_metrics runs again
--- → cost/tokens double-counted on the dashboard.
---
--- Fix: fold both into ONE atomic function that only increments
--- daily_metrics when the trace was a FRESH INSERT (not a retry upsert).
--- Postgres idiom: after INSERT ... ON CONFLICT DO UPDATE, the system
--- column `xmax` is 0 for newly inserted rows and non-zero for rows that
--- were updated by the conflict clause. We RETURN (xmax = 0) to detect
--- this and gate the metrics increment on it.
---
--- This also cuts the ingest route from 2 round trips to 1.
+-- daily_metrics was double-counted on SDK retries: upsert_trace is idempotent but
+-- increment_daily_metrics always adds. This folds both into one function that
+-- increments only when the trace was a fresh insert (xmax = 0 after the
+-- upsert), and saves a round trip.
 
 CREATE OR REPLACE FUNCTION public.upsert_trace_with_metrics(
   p_id            TEXT,
@@ -66,7 +50,7 @@ BEGIN
     agent_name    = EXCLUDED.agent_name
   RETURNING (xmax = 0) INTO v_was_insert;
 
-  -- Only increment daily_metrics on a fresh insert — never on a retry
+  -- Only increment daily_metrics on a fresh insert, never on a retry
   -- upsert. This makes the whole operation idempotent: the SDK can retry
   -- safely and costs/tokens are counted exactly once.
   --

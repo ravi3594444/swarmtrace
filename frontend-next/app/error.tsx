@@ -30,7 +30,7 @@ export default function Error({
       setCopied(true)
       setTimeout(() => setCopied(false), 2000)
     } catch {
-      // clipboard may be blocked — non-fatal
+      // clipboard may be blocked - non-fatal
     }
   }
 

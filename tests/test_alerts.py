@@ -1,8 +1,4 @@
-"""
-Tests for the alert engine: rule evaluation, cooldown, persistence,
-and webhook delivery. All external I/O is mocked out so the suite is
-hermetic.
-"""
+"""Tests for the alert engine: rules, cooldown, persistence, webhook delivery."""
 
 import json
 from datetime import datetime, timezone
@@ -13,9 +9,7 @@ import pytest
 from swarmtrace import alerts
 from swarmtrace.alerts import Alert, RuleConfig, RuleEngine
 
-# ---------------------------------------------------------------------------
 # Fixtures
-# ---------------------------------------------------------------------------
 
 @pytest.fixture()
 def fresh_alert_db(monkeypatch, tmp_path):
@@ -38,13 +32,7 @@ def _trace(
     n: int = 1,
     within_window: bool = True,
 ) -> list:
-    """
-    Build synthetic TraceRow dicts matching swarmtrace.storage.TraceRow —
-    one dict per row, keyed by column name (id, parent_id, function, args,
-    output, latency_sec, error, timestamp, input_tokens, output_tokens,
-    cost_usd, kind, agent_id, agent_name, ...), same shape get_all_traces()
-    hands the rule engine in production.
-    """
+    """TraceRow-shaped dicts, same shape get_all_traces() gives the rule engine."""
     rows = []
     base = datetime.now(timezone.utc)
     for i in range(n):
@@ -68,9 +56,7 @@ def _trace(
     return rows
 
 
-# ---------------------------------------------------------------------------
 # RuleConfig defaults
-# ---------------------------------------------------------------------------
 
 def test_rule_config_defaults_are_safe():
     cfg = RuleConfig()
@@ -83,9 +69,7 @@ def test_rule_config_defaults_are_safe():
     assert "latency_regression" in cfg.enabled_rules
 
 
-# ---------------------------------------------------------------------------
 # budget_breach
-# ---------------------------------------------------------------------------
 
 def test_budget_breach_fires_when_spend_exceeds_threshold():
     cfg = RuleConfig(budget_usd=5.0, window_minutes=60, cooldown_seconds=0)
@@ -132,9 +116,7 @@ def test_budget_breach_uses_cooldown():
     assert len(second) == 0    # cooldown active
 
 
-# ---------------------------------------------------------------------------
 # error_spike
-# ---------------------------------------------------------------------------
 
 def test_error_spike_fires_when_rate_exceeds_threshold():
     cfg = RuleConfig(
@@ -173,9 +155,7 @@ def test_error_spike_below_min_traces_no_alert():
     assert engine.evaluate(traces) == []
 
 
-# ---------------------------------------------------------------------------
 # latency_regression
-# ---------------------------------------------------------------------------
 
 def test_latency_regression_fires_when_p95_exceeds_threshold():
     cfg = RuleConfig(latency_p95_sec=10.0, min_traces=20, cooldown_seconds=0)
@@ -197,9 +177,7 @@ def test_latency_regression_no_alert_when_fast():
     assert engine.evaluate(traces) == []
 
 
-# ---------------------------------------------------------------------------
 # Empty / disabled cases
-# ---------------------------------------------------------------------------
 
 def test_empty_traces_returns_no_alerts():
     engine = RuleEngine()
@@ -216,9 +194,7 @@ def test_disabling_a_rule_suppresses_its_alerts():
     assert engine.evaluate(traces) == []
 
 
-# ---------------------------------------------------------------------------
 # Persistence (SQLite alerts table)
-# ---------------------------------------------------------------------------
 
 def test_persistence_save_ack_and_list(fresh_alert_db):
     """Alerts round-trip through SQLite, and acknowledge() flips acked=True."""
@@ -274,9 +250,7 @@ def test_list_alerts_excludes_acked_by_default(fresh_alert_db):
     assert len(alerts.list_alerts(include_acked=False)) == 0
 
 
-# ---------------------------------------------------------------------------
 # configure() + state machine
-# ---------------------------------------------------------------------------
 
 def test_configure_returns_latest_rule_config():
     alerts._config = None
@@ -296,9 +270,7 @@ def test_configure_returns_latest_rule_config():
     assert alerts._config.latency_p95_sec == 99.0
 
 
-# ---------------------------------------------------------------------------
 # Webhook delivery
-# ---------------------------------------------------------------------------
 
 def test_deliver_slack_format_uses_attachments():
     alert = Alert(
@@ -392,9 +364,7 @@ def test_deliver_returns_false_after_all_retries():
     assert alert.delivered is False
 
 
-# ---------------------------------------------------------------------------
-# AlertRunner — background thread integration
-# ---------------------------------------------------------------------------
+# AlertRunner, background thread integration
 
 def test_alert_runner_invokes_on_alert_callback(fresh_alert_db, monkeypatch):
     """The runner must call on_alert and persist alerts on every tick."""

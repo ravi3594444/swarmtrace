@@ -5,14 +5,8 @@ import { chartTooltip } from '@/lib/chart-tooltip'
 
 export type ChartPoint = { date: string; cost: number; input: number; output: number; traces: number }
 
-/**
- * The three daily-metrics charts on the Metrics page, extracted from
- * app/metrics/page.tsx so they can be next/dynamic-imported — recharts is
- * ~492 KB across 3 chunks (bundle audit) and previously loaded synchronously
- * with the page's initial JS even before any chart data existed to show.
- * All three are always rendered together on this page, so one dynamic
- * chunk covering all three (rather than three separate ones) is simplest.
- */
+// The Metrics page charts, kept in one file so a single dynamic import
+// covers them.
 
 export function TokenUsageChart({ chart }: { chart: ChartPoint[] }) {
   return (

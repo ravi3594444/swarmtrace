@@ -1,21 +1,7 @@
 /**
- * Message bundle for SwarmTrace UI strings.
- *
- * Centralizes all user-facing copy so it can be translated without touching
- * component code. This is the first step toward full i18n — the `t()`
- * function is a simple key lookup today, but can be swapped for `next-intl`
- * or `react-i18next` later without changing call sites.
- *
- * Usage:
- *   import { t } from '@/lib/messages'
- *   <h1>{t('nav.overview')}</h1>
- *
- * Missing keys fall back to the key itself (so missing translations are
- * visible during development rather than silently empty).
- *
- * To add a language: add a `fr` (etc.) object alongside `en`, and update
- * `t()` to pick the bundle based on a locale prop (wired through context
- * or next-intl's locale negotiation).
+ * UI strings in one place so they can be translated later. `t()` is a plain
+ * key lookup for now and can be swapped for next-intl or similar. Missing
+ * keys fall back to the key itself so they're visible in dev.
  */
 
 const en = {
@@ -96,11 +82,8 @@ const en = {
 export type MessageKey = keyof typeof en
 
 /**
- * Translate a message key. Returns the English string for the key, or the
- * key itself if not found (so missing keys are visible during development).
- *
- * Placeholders: use {name} in the message string and pass a `params`
- * object — e.g. t('palette.noResults', { query: 'foo' }) → 'No results for "foo"'.
+ * Look up a message by key, falling back to the key itself. `{name}`
+ * placeholders are filled from `params`, e.g. t('palette.noResults', { query: 'foo' }).
  */
 export function t(key: MessageKey, params?: Record<string, string | number>): string {
   let msg: string = en[key] ?? key

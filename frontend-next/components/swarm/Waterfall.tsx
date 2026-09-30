@@ -29,24 +29,17 @@ export function Waterfall({ traces, onSelect }: { traces: Trace[]; onSelect: (t:
   const fnOrder: string[] = [];
   traces.forEach((t) => { if (!fnOrder.includes(t.function)) fnOrder.push(t.function); });
 
-  // Row height grows with the max number of overlapping traces per function
-  // so bars never fully overlap. Previously every function got a fixed 36px
-  // row and 50 overlapping bars stacked on the exact same line — now the
-  // row height scales (up to a cap) and bars are vertically distributed
-  // across the available space. The vertical offset per trace is computed
-  // from its index within the function's traces, so consecutive calls
-  // fan out instead of hiding each other.
+  // Row height grows with the number of overlapping traces per function,
+  // and each trace gets a vertical slot from its index so bars fan out.
   const barH = 8;       // individual bar height
   const barGap = 2;     // gap between stacked bars
   const labelW = 164;
   const ticks  = 5;
 
-  // Compute per-function trace counts to size rows.
   const fnCounts = new Map<string, number>();
   traces.forEach((t) => fnCounts.set(t.function, (fnCounts.get(t.function) ?? 0) + 1));
 
-  // Per-function running index — used to assign each trace a vertical slot
-  // within its row so overlapping calls fan out instead of stacking.
+  // Running index per function, used for the vertical slot.
   const fnIndex = new Map<string, number>();
 
   return (

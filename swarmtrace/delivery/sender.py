@@ -1,4 +1,4 @@
-"""Background sender — daemon worker draining a bounded queue into the transport.
+"""Background sender, daemon worker draining a bounded queue into the transport.
 
 Extracted from ``tracer.py`` (Phase 1.B). Behavior is intentionally
 identical to the previous module-level worker: batch up to 20 payloads or
@@ -52,7 +52,7 @@ class Sender:
         self._started = False
         # _lock guards the whole worker lifecycle: _started, _thread and
         # _stop_event always change together, under it. Never hold it across
-        # a join() — enqueue() takes it on the traced application's hot path.
+        # a join(), enqueue() takes it on the traced application's hot path.
         self._lock = threading.Lock()
         self._thread: threading.Thread | None = None
         # Each worker gets its OWN stop event rather than sharing one on the
@@ -61,14 +61,14 @@ class Sender:
         # leaving two workers draining one queue.
         self._stop_event: threading.Event | None = None
 
-    # ------------------------------------------------------------------ queue
+    # queue
 
     def enqueue(self, payload: dict) -> None:
         """Drop a payload onto the queue for the worker to send.
 
         No-op when the remote endpoint isn't configured. Starts the worker
         thread on first use. A full queue drops the payload (never blocks
-        the calling thread) — the row is already durable in SQLite.
+        the calling thread), the row is already durable in SQLite.
         """
         key, url = self._config()
         if not (key and url):
@@ -84,7 +84,7 @@ class Sender:
 
         Blocks until at least one item is available (so the worker doesn't
         spin), then drains any immediately-available items up to the cap.
-        The ``timeout`` only applies to the FIRST item — once we have one,
+        The ``timeout`` only applies to the FIRST item, once we have one,
         we drain non-blocking.
         """
         batch: list[dict] = []
@@ -100,7 +100,7 @@ class Sender:
                 break
         return batch
 
-    # ----------------------------------------------------------------- worker
+    # worker
 
     def start(self) -> None:
         """Start the daemon sender thread exactly once."""
@@ -113,11 +113,8 @@ class Sender:
             thread = threading.Thread(
                 target=self._run, args=(stop_event,), daemon=True, name=self._thread_name
             )
-            # Publish the state BEFORE starting the thread and while still
-            # holding the lock, so no concurrent stop() can observe a
-            # half-built lifecycle (a live thread with _started still False,
-            # which used to end as _started=True with _thread=None — a sender
-            # that accepts payloads forever and never delivers one).
+            # set state before starting the thread, under the lock, so a
+            # concurrent stop() never sees a half-built lifecycle
             self._thread = thread
             self._stop_event = stop_event
             self._started = True
@@ -128,18 +125,10 @@ class Sender:
 
         Returns ``True`` if the thread is gone by the time this returns.
 
-        The worker used to be unstoppable: a daemon thread looping forever
-        with no exit path. That is survivable in a long-lived app, but it
-        leaves anything that tears its process state down — tests rotating
-        the SQLite DB, an embedder swapping runtimes — with a live thread
-        still writing through a connection the caller is about to close.
-        That race segfaults the interpreter (see ``storage.close``), so the
-        worker needs a way to be shut down before the DB goes away.
-
-        The worker checks the stop flag once per loop, and its queue read
-        blocks for at most ``batch_flush_timeout``, so it exits within
-        roughly one flush interval. Anything still queued stays durable in
-        SQLite and is picked up by ``swarmtrace-resync``.
+        Call this before closing the DB, otherwise the worker can still be
+        writing through a closed connection (see ``storage.close``). It exits
+        within about one flush interval; anything still queued is already in
+        SQLite and gets picked up by ``swarmtrace-resync``.
         """
         with self._lock:
             thread = self._thread
@@ -166,10 +155,8 @@ class Sender:
     def _run(self, stop_event: threading.Event) -> None:
         """Run the send loop, then repair lifecycle state on the way out.
 
-        The loop survives any per-iteration error — the boundary inside
-        ``_drain_until`` logs and continues — and exits only when *stop_event*
-        is set. It used to have no exit path at all, which is why the old
-        docstring said "never dies"; that is no longer the contract.
+        Per-iteration errors are logged inside ``_drain_until``; the loop
+        only exits when *stop_event* is set.
         """
         try:
             self._drain_until(stop_event)
@@ -177,7 +164,7 @@ class Sender:
             # Worker-exit cleanup is AUTHORITATIVE. stop() can only tidy up
             # when its join() succeeds; if a send outlives the timeout the
             # worker exits later, and without this the sender was wedged
-            # forever — _started stayed True, so start() short-circuited and
+            # forever, _started stayed True, so start() short-circuited and
             # every subsequent span was queued and silently never delivered.
             with self._lock:
                 if self._thread is threading.current_thread():
@@ -224,14 +211,14 @@ class Sender:
                     _log.error("remote ingest failed after %d attempts: %s", self._retries, exc)
         return False
 
-    # ------------------------------------------------------------- fork safety
+    # fork safety
 
     def reset_after_fork(self) -> None:
-        """Reset worker state in a forked child (audit finding #4).
+        """Reset worker state in a forked child.
 
         fork() clones ``_started = True`` but not the sender thread. Without
         this, the child's ``start()`` fast-path short-circuits forever and
-        nothing ever drains. Also replace the queue — anything already queued
+        nothing ever drains. Also replace the queue, anything already queued
         belonged to a thread that only exists in the parent, and is already
         durable in SQLite.
         """

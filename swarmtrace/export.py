@@ -8,26 +8,10 @@ from swarmtrace.storage import get_all_traces
 _log = logging.getLogger("swarmtrace.export")
 
 
-# ---------------------------------------------------------------------------
-# CSV formula-injection sanitization
-#
-# Audit finding (medium): trace args/output/error/function are LLM-controlled
-# or tool-controlled strings. If a malicious prompt or tool response contains
-# a value starting with =, +, -, or @, Excel/LibreOffice/Google Sheets will
-# interpret the cell as a formula on open. Classic attacks:
-#
-#   =cmd|'/c calc'!A1        → Excel DDE command execution
-#   =HYPERLINK("http://evil","click")  → phishing link
-#   @SUM(1+1)*cmd|'/c calc'!A1         → variant
-#
-# We neutralize by prefixing a single quote (') to any cell value whose
-# string form starts with one of the dangerous characters. The quote is
-# the spreadsheet-standard "this cell is text, not a formula" escape —
-# Excel/Sheets display the value without the quote but no longer parse
-# it as a formula. This is the OWASP-recommended mitigation.
-#
-# We apply it in _sanitize_csv_cell so every CSV export path goes through
-# one chokepoint.
+# CSV formula injection: args/output/error are LLM or tool controlled, and a
+# cell starting with = + - @ gets run as a formula by Excel/Sheets. We prefix
+# a single quote (the usual "this is text" escape) in _sanitize_csv_cell,
+# which every CSV path goes through.
 _CSV_INJECTION_PREFIXES = ("=", "+", "-", "@", "\t", "\r")
 
 
@@ -87,9 +71,7 @@ def export_csv(path="swarmtrace_export.csv") -> int:
     return len(sanitized)
 
 
-# ---------------------------------------------------------------------------
 # CLI
-# ---------------------------------------------------------------------------
 
 _FORMATS = {
     "json": (export_json, "swarmtrace_export.json"),
@@ -118,8 +100,7 @@ def _parse_args(args: list[str]) -> tuple[str, str | None]:
 
     Returns ``(fmt, path_or_None)``. Unknown formats and flags missing
     their value raise rather than silently falling back to the JSON
-    default — a typo'd ``--format jsonl`` used to produce a .json file
-    with no warning.
+    default.
     """
     fmt = "json"
     path: str | None = None

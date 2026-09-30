@@ -1,24 +1,12 @@
 'use client'
 
 /**
- * RealtimeContext — persists Supabase Realtime channel subscriptions across
- * page navigations. Lives in DashboardLayout (above every dashboard page) so
- * channels survive route changes.
+ * Keeps Supabase Realtime subscriptions alive across page navigations.
+ * Mounted in DashboardLayout.
  *
- * Auth: uses Clerk's getToken() (no template) to get the standard Clerk
- * session token. Supabase validates it via Clerk's public JWKS endpoint —
- * no shared secrets, no JWT template, no downtime on secret rotation. This
- * is required for RLS policies (which check auth.jwt()->>'sub') to allow
- * the browser to receive Realtime events. Without this, all
- * postgres_changes subscriptions are silently empty.
- *
- * Setup required (one-time, in each dashboard — not in code):
- *   1. Clerk Dashboard → Integrations → Supabase → copy your Clerk Domain
- *   2. Supabase Dashboard → Authentication → Providers → Clerk → paste
- *      domain + enable
- * See supabase/migrations/0005_production_fixes.sql for the matching RLS
- * setup. Once done, every Realtime subscription here correctly filters to
- * the current user's data via RLS.
+ * Auth uses Clerk's getToken(); Supabase validates the token through Clerk's
+ * JWKS, which the RLS policies need (see supabase/migrations/0005). The Clerk
+ * domain must be enabled in Supabase under Authentication > Providers > Clerk.
  */
 
 import {
@@ -31,8 +19,6 @@ import {
 } from 'react'
 import { useAuth } from '@clerk/nextjs'
 import { createClient, RealtimeChannel, SupabaseClient } from '@supabase/supabase-js'
-
-// ── Types ────────────────────────────────────────────────────────────────────
 
 interface BrowserData  { method?: string; url?: string; args?: string[]; screenshot?: string; error?: string }
 interface LlmTokenData { token?: string; accumulated?: string }
@@ -54,9 +40,9 @@ interface AgentChannel {
   channel: RealtimeChannel
   events: AgentEvent[]
   connected: boolean
-  error: string | null    // non-null if the history fetch or subscription failed
-  subscribers: number   // ref-count so we know when to *stop* garbage-collecting
-  lastUsed: number      // epoch ms of last subscribe — for LRU eviction
+  error: string | null    // set if the history fetch or subscription failed
+  subscribers: number   // ref-count
+  lastUsed: number      // epoch ms of last subscribe, for LRU eviction
 }
 
 interface RealtimeContextValue {
@@ -65,20 +51,14 @@ interface RealtimeContextValue {
   getEvents:   (agentId: string) => AgentEvent[]
   isConnected: (agentId: string) => boolean
   getError:    (agentId: string) => string | null
-  // notifies components when events for a specific agent change
+  // bumps when events for a given agent change
   version:     Record<string, number>
 }
 
 const MAX_EVENTS_PER_AGENT = 300
 
-// Max number of agent channels to keep cached at 0 subscribers. Without
-// this cap, every agent the user ever views stays in memory forever (the
-// original code never GC'd channels). With LRU eviction, the oldest
-// 0-subscriber channels are removed when the cache exceeds this size.
-// Active channels (subscribers > 0) are never evicted.
+// Max channels cached at 0 subscribers; oldest are evicted past this.
 const MAX_CACHED_CHANNELS = 20
-
-// ── Context ──────────────────────────────────────────────────────────────────
 
 const RealtimeContext = createContext<RealtimeContextValue>({
   subscribe:   () => {},
@@ -89,20 +69,15 @@ const RealtimeContext = createContext<RealtimeContextValue>({
   version:     {},
 })
 
-// ── Provider ─────────────────────────────────────────────────────────────────
-
-// Cached Supabase client TTL. Clerk JWTs expire (~1 h); after expiry the
-// cached client's Authorization header goes stale and Realtime
-// subscriptions silently stop receiving events, so we force a rebuild every
-// 45 minutes — well inside the 1 h window. Module-scope constant (not
-// component state) so it's stable across renders with no deps-array upkeep.
+// Clerk JWTs last about an hour and Realtime silently stops receiving events
+// once the cached client's token goes stale, so rebuild every 45 minutes.
 const SB_TTL_MS = 45 * 60 * 1000
 
 export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   const [version, setVersion] = useState<Record<string, number>>({})
   const channels = useRef<Record<string, AgentChannel>>({})
   const sb        = useRef<SupabaseClient | null>(null)
-  // Track when the cached client was built so we can detect token expiry.
+  // When the cached client was built, to detect token expiry.
   const sbBuiltAt = useRef<number>(0)
   const { getToken } = useAuth()
 
@@ -112,11 +87,11 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
     if (!url || !anon) return null
 
-    // Return the cached client if it was built recently enough.
+    // Reuse the cached client while it's fresh.
     if (sb.current && Date.now() - sbBuiltAt.current < SB_TTL_MS) return sb.current
 
-    // Cache miss or TTL expired — rebuild with a fresh token.
-    // Tear down existing channels first so they re-subscribe with the new JWT.
+    // Token expired or no client yet: rebuild with a fresh token and tear
+    // down existing channels so they re-subscribe with it.
     if (sb.current) {
       Object.values(channels.current).forEach(c => {
         if (c.channel) sb.current!.removeChannel(c.channel)
@@ -125,14 +100,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
 
     try {
-      // Native Clerk+Supabase integration (no JWT template needed):
-      // getToken() with no args returns the standard Clerk session token.
-      // Supabase validates it via Clerk's public JWKS endpoint — no shared
-      // secrets, no security risk, no downtime on secret rotation.
-      //
-      // One-time setup required (see supabase/migrations/0005_production_fixes.sql):
-      //   1. Clerk Dashboard → Integrations → Supabase → copy your Clerk Domain
-      //   2. Supabase Dashboard → Authentication → Providers → Clerk → paste domain + enable
+      // getToken() with no template returns the standard Clerk session
+      // token, which Supabase validates against Clerk's JWKS.
       const token = await getToken().catch(() => null)
       const client = createClient(url, anon, {
         global: token
@@ -148,7 +117,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
   }, [getToken])
 
-  // Tear down all channels on provider unmount (logout / tab close)
+  // Tear down all channels on provider unmount
   useEffect(() => {
     return () => {
       const client = sb.current
@@ -176,10 +145,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       return
     }
 
-    // Load recent history first. Destructure { data, error } — without
-    // surfacing the error, a failed fetch (RLS denial, missing table,
-    // network) leaves events=[] silently and the user sees "Waiting for
-    // agent activity…" forever with no indication the feed is broken.
+    // Load recent history first. Surface the error so a failed fetch doesn't
+    // leave the feed silently empty.
     const { data, error } = await client
       .from('agent_events')
       .select('*')
@@ -198,7 +165,7 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
       bump(agentId)
     }
 
-    // Open realtime channel
+    // Realtime channel
     const channel = client
       .channel(`fov:${agentId}`)
       .on(
@@ -233,13 +200,12 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
 
   const subscribe = useCallback((agentId: string) => {
     if (channels.current[agentId]) {
-      // Channel already open — just increment subscriber count and bump
-      // lastUsed so LRU eviction keeps it around longer.
+      // Already open, just bump the count and lastUsed.
       channels.current[agentId].subscribers += 1
       channels.current[agentId].lastUsed = Date.now()
       return
     }
-    // Create the slot synchronously so concurrent calls don't double-open
+    // Create the slot synchronously so concurrent calls don't double-open.
     channels.current[agentId] = {
       channel: null as unknown as RealtimeChannel,  // filled by openChannel
       events: [],
@@ -250,10 +216,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     }
     openChannel(agentId)
 
-    // LRU eviction: if the cache of 0-subscriber channels has grown beyond
-    // MAX_CACHED_CHANNELS, remove the oldest ones. Active channels
-    // (subscribers > 0) are never evicted. This prevents unbounded memory
-    // growth when the user browses many different agents over time.
+    // Evict the oldest 0-subscriber channels once there are more than
+    // MAX_CACHED_CHANNELS. Active channels are never evicted.
     const cached = Object.entries(channels.current)
       .filter(([, ch]) => ch.subscribers <= 0)
       .sort((a, b) => a[1].lastUsed - b[1].lastUsed)
@@ -270,9 +234,8 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
     const ch = channels.current[agentId]
     if (!ch) return
     ch.subscribers -= 1
-    // Keep the channel alive even at 0 subscribers — the whole point of this
-    // context is persistence across navigation. Only clean up on provider
-    // unmount (handled in the useEffect above).
+    // Channel stays alive at 0 subscribers so it survives navigation; it's
+    // only torn down when the provider unmounts.
   }, [])
 
   const getEvents   = useCallback((agentId: string) => channels.current[agentId]?.events ?? [], [])
@@ -286,15 +249,9 @@ export function RealtimeProvider({ children }: { children: React.ReactNode }) {
   )
 }
 
-// ── Hook ─────────────────────────────────────────────────────────────────────
-
 /**
- * useAgentEvents(agentId)
- *
- * Returns { events, connected, error } for the given agent. Re-renders only
- * when that specific agent receives a new event or error, not on any global
- * event. The underlying Supabase channel is NOT torn down when the component
- * unmounts.
+ * Returns { events, connected, error } for one agent. The underlying channel
+ * stays open after unmount.
  */
 export function useAgentEvents(agentId: string) {
   const ctx = useContext(RealtimeContext)
@@ -304,8 +261,7 @@ export function useAgentEvents(agentId: string) {
     return () => ctx.unsubscribe(agentId)
   }, [agentId, ctx])
 
-  // Derive stable values. ctx.version[agentId] bumps when events change,
-  // triggering a re-render here but nowhere else.
+  // version[agentId] bumps when events change
   const _tick = ctx.version[agentId]
 
   return {
@@ -316,21 +272,12 @@ export function useAgentEvents(agentId: string) {
 }
 
 /**
- * useAgentPresence(agentIds)
+ * Like useAgentEvents but for many agents at once (e.g. the network map).
+ * Returns the latest status per agent: 'RUNNING' while the newest event is
+ * started/streaming, 'ERROR' on error, null once done.
  *
- * Multi-agent variant of useAgentEvents, for screens that show many agents
- * at once (e.g. the Node Network Map) and need instant per-node status
- * updates without re-fetching the whole graph. Subscribes/unsubscribes to
- * every id in the list as it changes, and returns the latest known status
- * for each — 'RUNNING' while an agent's most recent event is
- * started/streaming, 'ERROR' if it's error, or null once it's done (the
- * node falls back to whatever status the last full fetch had, e.g. IDLE).
- *
- * This does NOT tell you about agents that haven't been seen yet — Realtime
- * channels here are scoped per agent_id, so a brand-new agent_id needs a
- * fresh fetch of the graph before it can be subscribed to. Pair this with a
- * periodic topology re-fetch (see lib/use-agent-graph.ts) rather than
- * relying on this alone.
+ * Only covers agent ids you pass in, so pair it with a periodic topology
+ * re-fetch (see lib/use-agent-graph.ts) to pick up new agents.
  */
 export function useAgentPresence(agentIds: string[]): Record<string, { status: 'RUNNING' | 'ERROR' | null; lastEventAt: string | null }> {
   const ctx = useContext(RealtimeContext)
@@ -340,14 +287,12 @@ export function useAgentPresence(agentIds: string[]): Record<string, { status: '
     const ids = idsKey ? idsKey.split(',') : []
     ids.forEach((id) => ctx.subscribe(id))
     return () => { ids.forEach((id) => ctx.unsubscribe(id)) }
-    // idsKey is the intentional dep — it's a stable string derived from the id list
+    // idsKey is a stable string derived from the id list
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [idsKey])
 
   const ids = idsKey ? idsKey.split(',') : []
-  // Reading ctx.version[id] for every subscribed id (even though the value
-  // itself isn't used below) is what subscribes this render to updates for
-  // each one — same trick useAgentEvents uses above.
+  // Reading version[id] for each id is what re-renders us on updates, same as useAgentEvents.
   const _tick = ids.map((id) => ctx.version[id]).join(',')
 
   const presence: Record<string, { status: 'RUNNING' | 'ERROR' | null; lastEventAt: string | null }> = {}

@@ -6,18 +6,8 @@ import { rootTraces } from './SimpleStatCards'
 import { Activity } from 'lucide-react'
 
 /**
- * PlainActivityFeed — "Recent activity" for the Home page. Each row is one
- * whole request described in a single plain-English sentence: when it
- * happened, what ran, and how it went ("answered in 1.3s" / "ran into an
- * issue"). No trace IDs, no JSON, no monospace, no span/tree terminology.
- *
- * Rows link to /traces so a curious (or more technical) user can drill
- * into the full developer view from any row.
- *
- * Times are shown in the viewer's local timezone (unlike the developer
- * tables, which standardize on UTC): this feed is conversational context,
- * not a cross-referencing tool, and "14:32" matching the user's own clock
- * is less confusing here.
+ * "Recent activity" on the Home page: one plain sentence per request, each
+ * linking to /traces. Times are local (the developer tables use UTC).
  */
 function formatLocalTime(iso: string): string {
   const d = new Date(iso)

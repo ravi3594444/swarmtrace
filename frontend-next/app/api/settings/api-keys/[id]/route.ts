@@ -19,9 +19,8 @@ export async function DELETE(
   }
 
   try {
-    // Verify ownership before revoking — prevent one user revoking another's key.
-    // supaUserRequest enforces Postgres RLS at the DB level (per-user Clerk
-    // JWT). The user_id filter in the URL is defence-in-depth.
+    // Verify ownership before revoking. RLS is enforced via the Clerk JWT;
+    // the user_id filter is a second guard.
     const existing = await supaUserRequest(
       `api_keys?id=eq.${encodeURIComponent(id)}&user_id=eq.${encodeURIComponent(userId)}&select=id&limit=1`,
       userId
@@ -35,11 +34,8 @@ export async function DELETE(
       body: JSON.stringify({ revoked: true }),
     })
 
-    // No cache invalidation needed — /api/ingest, /api/events, and /api/mcp
-    // all hit Supabase fresh on every request now (no in-process key cache).
-    // Revocation takes effect on the very next request to any of those routes,
-    // 0 seconds, across all serverless function instances. See lib/api-auth.ts
-    // for the history of why the per-isolate cache approach was removed.
+    // No cache to invalidate: ingest, events and mcp look keys up fresh, so
+    // revocation applies on the next request (see lib/api-auth.ts).
 
     return new NextResponse(null, { status: 204 })
   } catch (error) {

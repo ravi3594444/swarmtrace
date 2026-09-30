@@ -15,7 +15,7 @@ Usage::
     asyncio.run(gateway.run_stdio())
 
 The gateway is intentionally minimal in its first release: it proxies tool
-calls, not prompts or resources. It is also a local sidecar only — it does not
+calls, not prompts or resources. It is also a local sidecar only, it does not
 upload upstream tool credentials to the SwarmTrace dashboard.
 """
 
@@ -266,7 +266,7 @@ class SwarmTraceMcpGateway:
 
         # mcp 1.x exposes `request_handlers` (a dict keyed by request type).
         # mcp 2.x made it private (`_request_handlers`) and switched to a
-        # method-string keyed registry with params-type validation — a
+        # method-string keyed registry with params-type validation, a
         # breaking, incompatible dispatch protocol. pyproject pins
         # `mcp>=1,<2`; this guard turns an mcp 2.x accidental install into a
         # clear error instead of an obscure AttributeError.

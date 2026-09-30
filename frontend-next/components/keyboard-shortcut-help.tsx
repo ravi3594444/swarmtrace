@@ -4,14 +4,8 @@ import { useEffect, useState, useId } from 'react'
 import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 
-/**
- * KeyboardShortcutHelp — a modal cheatsheet that opens when the user
- * presses `?` (Shift+/). Shows all global keyboard shortcuts in one place
- * so they're discoverable without reading docs.
- *
- * The modal traps focus and closes on Escape or backdrop click. It's
- * rendered via a portal to escape any overflow-hidden ancestors.
- */
+// Cheatsheet modal opened with `?`. Rendered via a portal to escape
+// overflow-hidden ancestors.
 
 const SHORTCUTS: { keys: string; desc: string }[] = [
   { keys: 'Ctrl K', desc: 'Open command palette' },
@@ -36,9 +30,8 @@ export function KeyboardShortcutHelp() {
   const [open, setOpen] = useState(false)
   const dialogRef = useId()
 
-  // Global `?` handler. We use capture phase so it fires before any
-  // input-field handlers — but we bail if the user is typing in an
-  // input/textarea so `?` still types into search fields etc.
+  // Global `?` handler (capture phase). Skips inputs/textareas so `?` can
+  // still be typed into search fields.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== '?') return

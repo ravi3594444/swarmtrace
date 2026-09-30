@@ -1,26 +1,14 @@
 /**
- * Test: CSV export helper with formula-injection neutralization.
- *
- * Audit finding (medium): the dashboard's exportCSV() in app/overview/page.tsx
- * and app/traces/page.tsx wrote trace-controlled values directly to CSV with
- * no leading =/+/-/@ neutralization. Trace args/output/error/function are
- * LLM-controlled or tool-controlled strings — a malicious prompt or tool
- * response can produce a value starting with =, +, -, or @, which
- * Excel/LibreOffice/Google Sheets will parse as a formula on open.
- *
- * The fix (lib/csv-export.ts) prefixes a single quote to such values — the
- * spreadsheet-standard "this cell is text, not a formula" escape.
- * OWASP-recommended mitigation.
- *
- * These tests lock the sanitization in place for both the unit helper
- * (sanitizeCsvCell) and the end-to-end builder (tracesToCsv).
+ * Tests for lib/csv-export.ts: sanitizeCsvCell and tracesToCsv must
+ * neutralize values starting with =, +, -, @, tab or CR so spreadsheets
+ * don't run them as formulas.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
 
 import { sanitizeCsvCell, tracesToCsv } from '../lib/csv-export.ts'
 
-describe('sanitizeCsvCell — formula-injection neutralization', () => {
+describe('sanitizeCsvCell: formula-injection neutralization', () => {
   test('neutralizes = prefix (DDE command injection)', () => {
     assert.equal(sanitizeCsvCell("=cmd|'/c calc'!A1"), "'=cmd|'/c calc'!A1")
   })
@@ -75,9 +63,8 @@ describe('sanitizeCsvCell — formula-injection neutralization', () => {
   })
 })
 
-describe('tracesToCsv — end-to-end formula-injection guard', () => {
-  // Minimal fake trace type — Trace has many optional fields, but tracesToCsv
-  // only reads a known column list.
+describe('tracesToCsv: end-to-end formula-injection guard', () => {
+  // minimal fake trace; tracesToCsv only reads a known column list
   function mkTrace(overrides = {}) {
     return {
       id: 't1',
@@ -102,9 +89,7 @@ describe('tracesToCsv — end-to-end formula-injection guard', () => {
   test('header row is the standard column set', () => {
     const csv = tracesToCsv([mkTrace()])
     const lines = csv.split('\n')
-    // Phase 5 added trace_id, session_id, and attributes to SpanRecord;
-    // csv-export.ts surfaces all three, so the header grew from 11 to 14
-    // columns.
+    // header includes trace_id, session_id and attributes
     assert.equal(
       lines[0],
       'id,parent_id,trace_id,function,kind,agent_name,session_id,timestamp,latency_sec,input_tokens,output_tokens,cost_usd,error,attributes'
@@ -116,9 +101,7 @@ describe('tracesToCsv — end-to-end formula-injection guard', () => {
     // in the CSV at all. Test via the function column instead.
     const csv = tracesToCsv([mkTrace({ id: 'evil', function: "=cmd|'/c calc'!A1" })])
     const line = csv.split('\n')[1]
-    // Phase 5 inserted trace_id before function, so function is now the
-    // 4th field (index 3), not the 3rd. It should start with the escape
-    // quote.
+    // function is the 4th field (index 3) and should start with the escape quote
     const funcField = line.split(',')[3]
     assert.equal(funcField, "'=cmd|'/c calc'!A1", `got: ${funcField}`)
   })
@@ -126,12 +109,9 @@ describe('tracesToCsv — end-to-end formula-injection guard', () => {
   test('trace with +-prefixed error gets sanitized', () => {
     const csv = tracesToCsv([mkTrace({ id: 'e', error: '+HYPERLINK("http://evil")' })])
     const line = csv.split('\n')[1]
-    // error used to be the last field; Phase 5 appended attributes after
-    // it, so check the escaped/sanitized error segment appears in the
-    // line rather than asserting it's the suffix. CSV escaping wraps it
-    // in quotes (because it contains quotes) and doubles the inner quotes
-    // per CSV standard. The leading ' (sanitization escape) must be the
-    // first content char.
+    // error isn't the last column, so look for the escaped segment in the
+    // line. It's CSV-quoted with inner quotes doubled, and the leading '
+    // must come first.
     assert.ok(
       line.includes(`"'+HYPERLINK(""http://evil"")"`),
       `got: ${line}`
@@ -147,16 +127,14 @@ describe('tracesToCsv — end-to-end formula-injection guard', () => {
   })
 
   test('CSV-escaping (commas, quotes, newlines) still works alongside sanitization', () => {
-    // A value with both a comma AND a = prefix should get BOTH the escape
-    // quote (for sanitization) and double-quote wrapping (for CSV escaping).
+    // comma plus a = prefix gets both the escape quote and CSV quoting
     const csv = tracesToCsv([mkTrace({ id: 'x', function: '=evil,formula' })])
     const line = csv.split('\n')[1]
-    // The function field should be quoted: "'=evil,formula"
+    // expected field: "'=evil,formula"
     assert.ok(line.includes('"\'=evil,formula"'), `got: ${line}`)
   })
 
-  test('regression: id field is never sanitized (IDs never start with =)', () => {
-    // Sanity: a normal hex trace id should pass through untouched.
+  test('id field is never sanitized (IDs never start with =)', () => {
     const csv = tracesToCsv([mkTrace({ id: 'abc123def456' })])
     const line = csv.split('\n')[1]
     assert.equal(line.split(',')[0], 'abc123def456')

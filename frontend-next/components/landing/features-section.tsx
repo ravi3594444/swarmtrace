@@ -3,12 +3,7 @@
 import { Card } from "@/components/ui/card"
 import { Activity, DollarSign, AlertTriangle, Zap } from "lucide-react"
 
-// Landing page now uses the same monochrome palette as the dashboard —
-// no indigo/amber/red/emerald. Feature identity comes from the Lucide icon
-// (Lucide is already bundled; the old Tabler CDN <link> is removed from
-// layout.tsx), with a tonal background tint that follows the app's
-// surface tokens. The dashboard is strictly achromatic per DESIGN.md, so
-// the landing page no longer feels like a different product.
+// Monochrome like the dashboard; each feature is told apart by its icon.
 const features = [
   {
     title: "Real-time Tracing",

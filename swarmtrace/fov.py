@@ -1,5 +1,5 @@
 """
-Field-of-View (FOV) — live activity monitor for AI agents.
+Field-of-View (FOV), live activity monitor for AI agents.
 
 Patches Playwright, OpenAI/Anthropic streams, requests/httpx,
 and the filesystem so every agent action is surfaced in real time
@@ -16,11 +16,11 @@ Usage::
 
 What each patch captures
 ------------------------
-* playwright   — every page action (goto/click/fill/…) + continuous background
+* playwright  , every page action (goto/click/fill/…) + continuous background
                  screen stream that never blocks browser actions
-* streams      — OpenAI/Anthropic stream progress (character counts; content is not persisted)
-* network      — requests / httpx HTTP calls (sync + async) with method, url, status, latency
-* filesystem   — file reads/writes in the watched directory (watchdog)
+* streams     , OpenAI/Anthropic stream progress (character counts; content is not persisted)
+* network     , requests / httpx HTTP calls (sync + async) with method, url, status, latency
+* filesystem  , file reads/writes in the watched directory (watchdog)
 
 Screen streaming
 ----------------
@@ -47,7 +47,7 @@ from datetime import datetime, timezone
 
 from swarmtrace import storage as _storage
 
-# ── shared config + context ─────────────────────────────────────────────────
+# shared config + context
 from swarmtrace.config import (
     normalize_base_url as _normalize_base_url,
 )
@@ -61,33 +61,18 @@ from swarmtrace.trace_context import current_agent
 
 # Compatibility alias used by older tests that monkeypatch fov._current_agent.
 _current_agent = current_agent
-# Redactor — used by tracer.py for span args/output, and now by FOV's
-# browser-event path too. See _redact_browser_args below for why FOV
-# needs field-aware redaction ON TOP of the pattern-based redact() (a
-# raw password like "CorrectHorseBatteryStaple!" matches none of the
-# pattern shapes, so pattern-only redaction would let it straight
-# through into local SQLite, the remote /api/events endpoint, and
-# Supabase).
+# browser args get field-aware redaction on top of redact(), see
+# _redact_browser_args
 _log = logging.getLogger("swarmtrace.fov")
 
-# ── local event storage ──────────────────────────────────────────────────────
+# local event storage (bounded size)
 
-# ---------------------------------------------------------------------------
-# Local SQLite event table — with bounded size (no disk-fill risk)
-# ---------------------------------------------------------------------------
-
-# Which DB file we have already created agent_events in — NOT a bool.
-# A boolean latched True forever, so after storage.close() and a DB_PATH
-# rotation (which storage.close() documents as supported) the table was
-# never created in the new file and every event insert failed with
-# "no such table: agent_events", swallowed as a warning. Keying on the path
-# makes the cache self-heal on any rotation while still doing the DDL once
-# per database.
+# keyed on the DB path, not a bool, so a DB_PATH rotation after
+# storage.close() recreates the table in the new file
 _events_table_ready_for: str | None = None
 _events_table_lock = threading.Lock()
 
-# FIX #1: cap agent_events table size — was unbounded (would fill disk
-# with screenshots in days of browser automation)
+# cap the agent_events table so screenshots can't fill the disk
 EVENT_MAX_ROWS: int  = 5_000
 EVENT_PURGE_EVERY: int = 50
 _event_write_count: int = 0
@@ -96,39 +81,8 @@ _event_write_count: int = 0
 def _ensure_events_table() -> None:
     """Create the agent_events table + index on first use (once per process).
 
-    FIX (audit finding #11 — TOCTOU race): this used to be a naive
-    check-then-act with no recheck inside the lock and the ready flag set
-    AFTER releasing the lock:
-
-        if _events_table_ready: return
-        with _storage_lock:
-            conn.execute("CREATE TABLE IF NOT EXISTS ...")
-            ...
-        _events_table_ready = True   # set OUTSIDE the lock
-
-    Every concurrent first caller (a realistic case: several traced
-    browser pages registering near-simultaneously at startup) would pass
-    the unlocked check before any of them set the flag, then each
-    redundantly re-run the CREATE TABLE/INDEX statements once it got the
-    lock. The DDL itself is idempotent (IF NOT EXISTS) so this specific
-    instance didn't corrupt data, but it's the exact TOCTOU shape that
-    HAS caused real bugs elsewhere in this file (see _ensure_fov_worker's
-    fork-survival fix) and every other one-time-init flag in this module
-    (_fov_worker_started, _screen_streamer_started) already uses a
-    dedicated lock with a proper recheck-inside-the-lock — this one was
-    the odd one out. Now matches that pattern: dedicated
-    _events_table_lock, recheck after acquiring it, flag set while still
-    holding it (not after release).
-
-    (Not a fork-survival case like the worker-thread flags — the table's
-    existence is a fact about the DB file, which survives fork() fine
-    regardless of what this in-memory flag says. No register_at_fork
-    hook needed here.)
-
-    The cache records WHICH database the table was created in rather than a
-    plain "done" bit, because the table's existence is a fact about a
-    particular file: swapping ``storage.DB_PATH`` makes the previous answer
-    wrong, not stale.
+    The ready flag is checked again under ``_events_table_lock`` and keyed on
+    the DB path, so concurrent first callers only run the DDL once.
     """
     global _events_table_ready_for
     db_path = _storage.DB_PATH
@@ -191,7 +145,7 @@ def _save_event_local(event: dict) -> None:
                 ),
             )
             _event_write_count += 1
-            # FIX #1 continued: purge on every EVENT_PURGE_EVERY writes
+            # purge every EVENT_PURGE_EVERY writes
             if _event_write_count % EVENT_PURGE_EVERY == 0:
                 _purge_old_events(conn)
             conn.commit()
@@ -199,9 +153,7 @@ def _save_event_local(event: dict) -> None:
         _log.warning("event save warning: %s", exc)
 
 
-# ---------------------------------------------------------------------------
 # Remote event sender  (separate queue → /api/events)
-# ---------------------------------------------------------------------------
 
 _FOV_QUEUE_MAX = 500
 _FOV_QUEUE: queue.Queue[dict] = queue.Queue(maxsize=_FOV_QUEUE_MAX)
@@ -225,7 +177,7 @@ def _send_event_remote(payload: dict, key: str, base_url: str) -> None:
 
 
 def _fov_worker() -> None:
-    # FIX #5 (FOV): retry up to 3 times with backoff on remote send failure
+    # retries up to 3 times with backoff on remote send failure
     while True:
         payload = _FOV_QUEUE.get()
         key, url = _remote_config()
@@ -258,24 +210,10 @@ def _ensure_fov_worker() -> None:
 
 
 def _reset_fov_worker_state_after_fork() -> None:
-    """Runs in the CHILD immediately after os.fork(). Same bug as audit
-    finding #4 (tracer.py's _worker_started), applied to the FOV sender.
+    """Runs in the child right after os.fork().
 
-    fork() clones process memory -- including `_fov_worker_started = True`
-    -- but not other threads; only the calling thread survives into the
-    child. Without this hook, a forked child inherits
-    `_fov_worker_started = True` from a parent with a live FOV sender
-    thread that does not exist in the child, so `_ensure_fov_worker()`'s
-    fast-path check short-circuits forever there -- no sender thread ever
-    starts, and every FOV event enqueued via `_enqueue_fov_event()` in
-    that process sits in `_FOV_QUEUE` for the process's whole life with
-    nothing draining it. Lower severity than #4 (screen-stream / live
-    activity events, not trace data -- nothing durable is lost), but the
-    same silent-failure shape.
-
-    Fix: reset the flag and swap in a fresh queue so the child spawns its
-    own real sender thread on the next enqueue. See
-    tracer.py::_reset_worker_state_after_fork for the full writeup.
+    fork() copies the started flag but not the sender thread, so without
+    this the child never spawns one. Reset the flag and swap in a fresh queue.
     """
     global _fov_worker_started, _FOV_QUEUE
     _fov_worker_started = False
@@ -294,7 +232,7 @@ def _enqueue_fov_event(event: dict) -> None:
     try:
         _FOV_QUEUE.put_nowait(event)
     except queue.Full:
-        # FIX #6 (FOV queue): don't do racy get+put — just log and skip
+        # just drop it, no racy get+put
         _log.error("event queue full — event dropped")
 
 
@@ -321,9 +259,7 @@ def _mk_event(event_type: str, status: str, data: dict) -> dict:
     }
 
 
-# ---------------------------------------------------------------------------
 # Screenshot helpers
-# ---------------------------------------------------------------------------
 
 def _resize_jpeg(raw: bytes, max_width: int = 800) -> bytes:
     try:
@@ -351,7 +287,7 @@ def _screenshot_sync(page) -> str:
 
     Handles BOTH sync and async Playwright pages. Sync pages can be called
     from any thread. Async pages (created via async_playwright()) are
-    thread-bound — calling page.screenshot() from a different thread
+    thread-bound, calling page.screenshot() from a different thread
     raises a greenlet/context error. For async pages we extract the
     page's event loop (page._impl_obj._loop) and submit the screenshot
     coroutine back to it via asyncio.run_coroutine_threadsafe().
@@ -377,7 +313,7 @@ def _screenshot_sync(page) -> str:
         return _to_data_uri(raw)
     except Exception as exc:
         msg = str(exc).lower()
-        # Permanent errors — page/browser is gone. Re-raise so the streamer
+        # Permanent errors, page/browser is gone. Re-raise so the streamer
         # deregisters this page and stops retrying. Without this, a closed
         # browser would spam this error every SCREEN_INTERVAL forever.
         if any(s in msg for s in (
@@ -389,7 +325,7 @@ def _screenshot_sync(page) -> str:
             "connection closed",
         )):
             raise
-        # Transient error (timeout, etc.) — log and return "" so the
+        # Transient error (timeout, etc.), log and return "" so the
         # streamer retries next tick without deregistering.
         _log.warning("screenshot failed: %s", str(exc)[:120])
         return ""
@@ -404,7 +340,6 @@ async def _screenshot_async(page) -> str:
         return ""
 
 
-# ---------------------------------------------------------------------------
 # Background screen streamer
 #
 # Instead of taking screenshots inline (which blocked every browser action
@@ -413,7 +348,6 @@ async def _screenshot_async(page) -> str:
 #
 # Pages register themselves on first use and are auto-removed when closed.
 # Interval is configurable via SWARMTRACE_SCREEN_INTERVAL (default 1.0 s).
-# ---------------------------------------------------------------------------
 
 SCREEN_INTERVAL: float = float(os.environ.get("SWARMTRACE_SCREEN_INTERVAL", "1.0"))
 
@@ -493,9 +427,7 @@ def _ensure_screen_streamer() -> None:
             _screen_streamer_started = True
 
 
-# ---------------------------------------------------------------------------
 # 1. Playwright patch
-# ---------------------------------------------------------------------------
 
 _PLAYWRIGHT_PATCHED = False
 
@@ -508,11 +440,9 @@ _PAGE_METHODS = [
 
 # Methods whose second positional arg is the VALUE being entered/selected
 # (the first arg is the selector). For these, we ALWAYS redact the value
-# and record only metadata (length) — not just when the selector matches
-# a keyword. Reviewer P1 fix: generic selectors like 'input:nth-of-type(2)'
-# or '#field-2' don't contain password/token/secret keywords, so keyword-
-# based detection leaks the value. The only safe default is to redact
-# every fill/type value.
+# and record only metadata (length), not just when the selector matches
+# a keyword. Selectors like 'input:nth-of-type(2)' don't match any keyword,
+# so these values are always redacted.
 _VALUE_METHODS = {"fill", "type", "press", "select_option"}
 
 # Methods whose first positional arg is a URL. We apply _redact_url() to
@@ -534,7 +464,7 @@ def _redact_url(url: str) -> str:
     """
     if not url or not isinstance(url, str):
         return url or ""
-    # Cut at the first '?' or '#' — whichever comes first.
+    # Cut at the first '?' or '#', whichever comes first.
     cut = len(url)
     for ch in ("?", "#"):
         idx = url.find(ch)
@@ -546,39 +476,25 @@ def _redact_url(url: str) -> str:
 def _redact_browser_args(method: str, args: tuple) -> list:
     """Redact positional args captured for a Playwright method call.
 
-    Three layers:
+    - fill/type/press/select_option: the value arg (position 1) is always
+      replaced with [REDACTED(len=N)], whatever the selector looks like
+    - goto: the URL goes through _redact_url (no query/fragment)
+    - everything else: pattern-based redact() on string args
 
-    1. **Value-method redaction** (the high-value layer): for fill/type/
-       press/select_option, the VALUE arg (position 1) is ALWAYS replaced
-       with [REDACTED(len=N)] — regardless of the selector. Reviewer P1
-       fix: generic selectors like 'input:nth-of-type(2)' or '#field-2'
-       don't contain password/token/secret keywords, so keyword-based
-       detection leaked the value. The only safe default is to redact
-       every fill/type value and record only the length for debugging.
-
-    2. **URL redaction**: for goto, the URL arg (position 0) is passed
-       through _redact_url() to strip query strings and fragments that
-       carry session tokens, OAuth codes, API keys, and reset tokens.
-
-    3. **Pattern-based** (defense-in-depth): run every remaining string
-       arg through redact() to catch API keys / JWTs / emails / card
-       numbers in any position.
-
-    Args are truncated to 200 chars after redaction, matching the
-    pre-existing behavior.
+    Args are cut to 200 chars after redaction.
     """
     out = []
     for i, a in enumerate(args):
-        # Layer 1: always redact the VALUE arg of fill/type/press/select_option.
+        # value arg of fill/type/etc
         if method in _VALUE_METHODS and i == 1:
             val_len = len(str(a))
             out.append(f"[REDACTED(len={val_len})]")
             continue
-        # Layer 2: redact URLs in goto's first arg.
+        # goto url
         if method in _URL_METHODS and i == 0 and isinstance(a, str):
             out.append(_redact_url(a)[:200])
             continue
-        # Layer 3: pattern-based defense-in-depth on every remaining arg.
+        # pattern-based on the rest
         s = str(a)
         s = _redact_text(s) or s
         out.append(s[:200])
@@ -652,7 +568,7 @@ def _wrap_sync_method(name: str, original):
             _save_event(ev)
         try:
             result = original(self, *args, **kwargs)
-            # No inline screenshot — background streamer handles it every SCREEN_INTERVAL s
+            # No inline screenshot, background streamer handles it every SCREEN_INTERVAL s
             ev2 = _mk_event("browser", "done", {
                 "method": name,
                 "args": redacted_args,
@@ -680,7 +596,7 @@ def _wrap_async_method(name: str, original):
         if agent is None:
             return await original(self, *args, **kwargs)
         aid, aname = agent
-        # Register page for background streaming (sync registry — safe from async)
+        # Register page for background streaming (sync registry, safe from async)
         _register_page(self, aid, aname)
         redacted_args = _redact_browser_args(name, args)
         ev = _mk_event("browser", "started", {"method": name, "args": redacted_args})
@@ -735,15 +651,11 @@ def patch_playwright() -> bool:
     return patched
 
 
-# ---------------------------------------------------------------------------
 # 2. LLM stream patch  (OpenAI + Anthropic)
-# ---------------------------------------------------------------------------
 
 _STREAMS_PATCHED = False
 
-# FIX #11: use a rolling accumulator instead of a growing list
-# was: self._buf: list[str] = [] + "".join(self._buf)[-500:] on every token
-# O(n²) for long responses — now O(1) per token
+# rolling accumulator so per-token cost stays constant
 _MAX_ACCUM = 500
 
 
@@ -753,7 +665,7 @@ class _StreamWrapper:
         self._stream = stream
         self._agent_id = agent_id
         self._agent_name = agent_name
-        self._accum: str = ""   # FIX #11: rolling window, not growing list
+        self._accum: str = ""
 
     def __iter__(self):
         for chunk in self._stream:
@@ -787,7 +699,7 @@ class _StreamWrapper:
     def __exit__(self, *a):
         if hasattr(self._stream, "__exit__"):
             return self._stream.__exit__(*a)
-        # No wrapped __exit__ to delegate to — don't suppress the exception.
+        # No wrapped __exit__ to delegate to, don't suppress the exception.
         return False
 
     def __getattr__(self, name):
@@ -800,7 +712,7 @@ class _AsyncStreamWrapper:
         self._stream = stream
         self._agent_id = agent_id
         self._agent_name = agent_name
-        self._accum: str = ""   # FIX #11: rolling window
+        self._accum: str = ""
 
     def __aiter__(self):
         return self._aiter()
@@ -837,7 +749,7 @@ class _AsyncStreamWrapper:
     async def __aexit__(self, *a):
         if hasattr(self._stream, "__aexit__"):
             return await self._stream.__aexit__(*a)
-        # No wrapped __aexit__ to delegate to — don't suppress the exception.
+        # No wrapped __aexit__ to delegate to, don't suppress the exception.
         return False
 
     def __getattr__(self, name):
@@ -895,9 +807,7 @@ def patch_streams() -> bool:
     return patched
 
 
-# ---------------------------------------------------------------------------
 # 3. Network patch  (requests + httpx sync + httpx async)
-# ---------------------------------------------------------------------------
 
 _NETWORK_PATCHED = False
 
@@ -1013,7 +923,7 @@ def patch_network() -> bool:
     except ImportError:
         pass
 
-    # FIX #12: httpx AsyncClient was NOT patched — async HTTP calls invisible
+    # httpx async client
     try:
         import httpx
         _orig_async_send = httpx.AsyncClient.send
@@ -1064,9 +974,7 @@ def patch_network() -> bool:
     return patched
 
 
-# ---------------------------------------------------------------------------
 # 4. Filesystem watcher (watchdog)
-# ---------------------------------------------------------------------------
 
 _FS_PATCHED = False
 
@@ -1113,9 +1021,7 @@ def patch_filesystem(watch_dir: str = ".") -> bool:
         return False
 
 
-# ---------------------------------------------------------------------------
-# patch_all — one call to activate everything
-# ---------------------------------------------------------------------------
+# patch_all, one call to activate everything
 
 def patch_all(watch_dir: str = ".") -> dict:
     """
@@ -1125,7 +1031,7 @@ def patch_all(watch_dir: str = ".") -> dict:
 
         {"playwright": True, "streams": True, "network": True, "filesystem": False}
 
-    ``filesystem=False`` means watchdog is not installed — all other patches
+    ``filesystem=False`` means watchdog is not installed, all other patches
     work without it.  Install with ``pip install watchdog``.
     """
     results = {
@@ -1143,9 +1049,8 @@ def get_events(agent_id: str, limit: int = 100) -> list:
     """Return recent FOV events for a given agent_id."""
     _ensure_events_table()
     try:
-        # FIX #10: don't mutate conn.row_factory — use cursor description instead
-        # was: conn.row_factory = sqlite3.Row ... conn.row_factory = None
-        # that races with any concurrent reader on the shared connection
+        # read column names from cursor.description, don't touch conn.row_factory
+        # (shared connection)
         with _storage_lock:
             conn = _get_conn()
             cur = conn.execute(

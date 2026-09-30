@@ -39,7 +39,7 @@ function IdCell({ id }: { id: string }) {
               setCopied(true);
               setTimeout(() => setCopied(false), 1200);
             } catch {
-              // clipboard may be blocked — non-fatal, the title attr has the full id
+              // clipboard may be blocked - non-fatal, the title attr has the full id
             }
           }}
           title={copied ? "Copied!" : `Copy ${id}`}
@@ -63,7 +63,7 @@ function SortableHeader({ k, sortKey, asc, onToggle, children }: {
   const active = sortKey === k;
   // The <th> keeps its implicit columnheader role (so aria-sort is valid)
   // and carries the sort state. The actual interactive element is a nested
-  // <button> — this is the WAI-ARIA recommended pattern for sortable
+  // <button> - this is the WAI-ARIA recommended pattern for sortable
   // column headers, and it's keyboard-accessible by default (no need for
   // tabIndex/role hacks on the <th> itself).
   return (

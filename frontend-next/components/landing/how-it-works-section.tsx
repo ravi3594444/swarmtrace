@@ -3,8 +3,6 @@
 import { Card } from "@/components/ui/card"
 import { Code, Rocket, Activity, TrendingUp } from "lucide-react"
 
-// Same monochrome treatment as FeaturesSection — Lucide icons (no Tabler
-// CDN), tonal background, no colored icon tints.
 const steps = [
   {
     title: "Instrument Your Agents",

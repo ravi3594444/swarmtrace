@@ -1,9 +1,4 @@
-"""Tests for the shared configuration layer.
-
-The remote endpoint validation used to live in tracer.py. The architecture now
-keeps it in swarmtrace.config so runtime, FOV, alerts, and other adapters do not
-need to import tracer internals.
-"""
+"""Tests for the shared configuration layer."""
 
 import pytest
 
@@ -25,8 +20,7 @@ def clean_config_state():
         tracer._endpoint = old_endpoint
 
 
-# Keep a local compatibility copy so old imports from tracer stay locked to the
-# same behavior while new code imports from config directly.
+# old tracer imports must keep the same behaviour
 
 def test_config_normalizes_endpoint_from_environment(monkeypatch):
     config.clear_remote_config()

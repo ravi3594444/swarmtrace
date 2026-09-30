@@ -1,24 +1,7 @@
 /**
- * Test: RLS enforcement decision logic (lib/supabase.ts → decideRlsMode).
- *
- * Tests the pure decision function extracted from supaUserRequest. This is
- * the core of the fail-closed fix: in production, if RLS cannot be enforced
- * (no Clerk token, or anon key missing), the function returns 'fail-closed'
- * instead of silently falling back to the service-role key.
- *
- * The OLD behavior (silent fallback in all environments) was flagged as HIGH
- * severity in the production-readiness audit: an operator could misconfigure
- * the Clerk↔Supabase integration and never realize RLS was being bypassed,
- * because the only signal was a console.warn in the Vercel logs.
- *
- * The NEW behavior:
- *   - Production (NODE_ENV=production, SUPABASE_RLS_FALLBACK unset): FAIL CLOSED.
- *     supaUserRequest throws RlsEnforcementError, route returns 401.
- *   - Development (NODE_ENV !== production): FALLBACK (keep local dev working).
- *   - SUPABASE_RLS_FALLBACK=1 in any env: FALLBACK (explicit escape hatch).
- *
- * Also tests the health-check module (lib/health-check.ts) that surfaces
- * misconfigured env vars at startup.
+ * Tests for decideRlsMode (lib/supabase.ts) and runHealthCheck
+ * (lib/health-check.ts). In production, missing Clerk token or anon key must
+ * fail closed; dev and SUPABASE_RLS_FALLBACK=1 fall back to the service-role key.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -26,10 +9,8 @@ import assert from 'node:assert/strict'
 import { decideRlsMode, RlsEnforcementError } from '../lib/supabase.ts'
 import { runHealthCheck } from '../lib/health-check.ts'
 
-// ── decideRlsMode ───────────────────────────────────────────────────────────
-
 describe('decideRlsMode', () => {
-  // Happy path: token + anon key → RLS enforced, in any environment.
+  // Token + anon key means RLS is enforced in any environment.
   test('returns rls mode when token + anonKey present (production)', () => {
     const decision = decideRlsMode({
       token: 'fake-jwt',
@@ -49,7 +30,7 @@ describe('decideRlsMode', () => {
     assert.equal(decision.mode, 'rls')
   })
 
-  // Production fail-closed: no token → throw, not fallback.
+  // Production: no token fails closed.
   test('returns fail-closed in production when token missing', () => {
     const decision = decideRlsMode({
       token: null,
@@ -78,11 +59,11 @@ describe('decideRlsMode', () => {
       fallbackEnabled: false,
     })
     assert.equal(decision.mode, 'fail-closed')
-    // Reports the token reason first (checked before anonKey).
+    // token reason is reported first
     assert.match(decision.reason, /Clerk token unavailable/)
   })
 
-  // Development fallback: no token → fallback (local dev ergonomics).
+  // Development: no token falls back.
   test('returns fallback in development when token missing', () => {
     const decision = decideRlsMode({
       token: null,
@@ -104,17 +85,17 @@ describe('decideRlsMode', () => {
     assert.match(decision.reason, /NEXT_PUBLIC_SUPABASE_ANON_KEY missing/)
   })
 
-  // Escape hatch: SUPABASE_RLS_FALLBACK=1 in production → fallback.
+  // Escape hatch: SUPABASE_RLS_FALLBACK=1 in production falls back.
   test('returns fallback in production when SUPABASE_RLS_FALLBACK=1 (escape hatch)', () => {
     const decision = decideRlsMode({
       token: null,
       anonKey: 'fake-anon-key',
-      fallbackEnabled: true,  // SUPABASE_RLS_FALLBACK=1 forces this
+      fallbackEnabled: true,  // what SUPABASE_RLS_FALLBACK=1 sets
     })
     assert.equal(decision.mode, 'fallback')
   })
 
-  // Token failure reason defaults to a generic message if not provided.
+  // Missing tokenFailureReason gets a generic message.
   test('uses generic reason when tokenFailureReason not provided', () => {
     const decision = decideRlsMode({
       token: null,
@@ -125,7 +106,7 @@ describe('decideRlsMode', () => {
     assert.match(decision.reason, /Clerk token unavailable/)
   })
 
-  // Auth() threw: the reason should propagate.
+  // auth() threw: the reason propagates.
   test('propagates auth() threw reason', () => {
     const decision = decideRlsMode({
       token: null,
@@ -137,8 +118,6 @@ describe('decideRlsMode', () => {
     assert.match(decision.reason, /auth\(\) threw: Clerk context not hydrated/)
   })
 })
-
-// ── RlsEnforcementError ─────────────────────────────────────────────────────
 
 describe('RlsEnforcementError', () => {
   test('is an Error subclass with the right name', () => {
@@ -152,18 +131,15 @@ describe('RlsEnforcementError', () => {
   test('routes can instanceof-check it', () => {
     const err = new RlsEnforcementError('test')
     assert.ok(err instanceof RlsEnforcementError)
-    // A generic Error should NOT match — routes rely on this distinction
-    // to return 401 (RLS failure) vs 500 (other errors).
+    // a generic Error must not match; routes use this to pick 401 vs 500
     const generic = new Error('other')
     assert.ok(!(generic instanceof RlsEnforcementError))
   })
 })
 
-// ── runHealthCheck ──────────────────────────────────────────────────────────
-
 describe('runHealthCheck', () => {
   test('returns ok when all required env vars present', () => {
-    // health-check reads process.env at call time — save/restore.
+    // health-check reads process.env at call time, so save/restore
     const saved = { ...process.env }
     try {
       process.env.SUPABASE_URL = 'https://x.supabase.co'

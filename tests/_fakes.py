@@ -1,10 +1,4 @@
-"""Fakes for unit tests that drive the Phase 1 runtime seam.
-
-These replace the old pattern of monkeypatching ``swarmtrace.tracer``
-module internals (``save_trace``, ``_enqueue_remote``, ``_send_queue``,
-worker flags). Tests now patch ``swarmtrace.runtime.get_runtime`` to return
-a ``Runtime`` built from these fakes.
-"""
+"""In-memory fakes for the repository and transport seams."""
 
 from __future__ import annotations
 
@@ -54,7 +48,6 @@ class FakeTransport:
         self.raise_on_single = raise_on_single
 
     def send(self, spans: list[SpanRecord], key: str, url: str) -> None:
-        """Implement ``SpanTransport.send`` by delegating to ``send_batch``."""
         payloads = []
         for s in spans:
             payload = {

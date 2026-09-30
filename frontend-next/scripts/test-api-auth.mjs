@@ -1,18 +1,6 @@
 /**
- * Test: shared API auth primitives (lib/api-auth.ts).
- *
- * Covers sha256Hex and createRateLimiter (per-isolate fallback path).
- *
- * History: this file previously also tested createKeyCache +
- * invalidateAllKeyCaches (the per-isolate key cache that was supposed to
- * fix audit finding #1 — revoked keys still working for up to 5 min).
- * Those tests passed in node:test but the fix was a no-op in production:
- * Vercel compiles each /api route as a separate serverless function with
- * its own memory, so invalidateAllKeyCaches() in the DELETE function
- * couldn't reach the ingest/events function's cache. The cache was
- * removed entirely (see lib/api-auth.ts history note), and the cache
- * tests went with it. The sha256 + rate-limiter tests below cover what
- * remains in the module.
+ * Tests for lib/api-auth.ts: sha256Hex, createRateLimiter (per-isolate
+ * fallback), getClientIp and the per-IP limiter.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -23,8 +11,6 @@ import {
   createIpRateLimiter,
   resolveClientIp,
 } from '../lib/api-auth.ts'
-
-// ── sha256Hex ──────────────────────────────────────────────────────────────
 
 describe('sha256Hex', () => {
   test('matches known SHA-256 of empty string', async () => {
@@ -58,8 +44,6 @@ describe('sha256Hex', () => {
   })
 })
 
-// ── createRateLimiter ──────────────────────────────────────────────────────
-
 describe('createRateLimiter (per-isolate fallback path)', () => {
   test('allows first request under the limit', async () => {
     const rl = createRateLimiter({ limit: 5, prefix: 'test-1' })
@@ -72,7 +56,7 @@ describe('createRateLimiter (per-isolate fallback path)', () => {
     assert.equal(await rl.check('hash-y'), true)
     assert.equal(await rl.check('hash-y'), true)
     assert.equal(await rl.check('hash-y'), true)
-    // 4th request in the same window → blocked
+    // 4th request in the same window is blocked
     assert.equal(await rl.check('hash-y'), false)
   })
 
@@ -88,9 +72,7 @@ describe('createRateLimiter (per-isolate fallback path)', () => {
   })
 
   test('different prefixes get independent buckets (collision check)', async () => {
-    // Two limiters with the same key but different prefixes should NOT
-    // share state. This is what keeps /api/ingest (st_rl), /api/events
-    // (st_fov_rl), and /api/mcp (st_mcp_rl) from starving each other.
+    // same key, different prefixes: no shared state
     const rlA = createRateLimiter({ limit: 1, prefix: 'prefix-A' })
     const rlB = createRateLimiter({ limit: 1, prefix: 'prefix-B' })
     assert.equal(await rlA.check('shared-key'), true)
@@ -99,12 +81,9 @@ describe('createRateLimiter (per-isolate fallback path)', () => {
   })
 })
 
-// ── bounded memory (audit finding #7) ───────────────────────────────────────
-
-describe('createRateLimiter fallback map memory bound (finding #7)', () => {
+describe('createRateLimiter fallback map memory bound', () => {
   test('expired entries are swept, not kept forever', async () => {
-    // Tiny window + tiny sweepEvery so a sweep is forced almost
-    // immediately instead of needing 500 real calls.
+    // tiny window and sweepEvery so a sweep happens quickly
     const rl = createRateLimiter({
       limit: 100,
       prefix: 'test-leak-1',
@@ -112,23 +91,19 @@ describe('createRateLimiter fallback map memory bound (finding #7)', () => {
       sweepEvery: 3,
     })
 
-    // Hit 3 distinct keys — their windows expire almost immediately.
+    // 3 distinct keys, windows expire almost immediately
     await rl.check('leak-a')
     await rl.check('leak-b')
     await rl.check('leak-c')
     assert.equal(rl._debugMapSize(), 3, 'all 3 keys tracked before expiry')
 
-    // Wait past the 10ms window, then make ONE more call. That call both
-    // crosses the sweepEvery=3 threshold and finds all prior entries
-    // expired — they should be swept away, not accumulate forever.
+    // wait past the 10ms window; the next call crosses sweepEvery and sweeps
     await new Promise(r => setTimeout(r, 20))
     await rl.check('leak-d') // triggers the sweep (4th call, sweepEvery=3)
     await rl.check('leak-e')
     await rl.check('leak-f') // triggers another sweep
 
-    // Bounded: only the keys still inside their (already-expired-by-now)
-    // window survive a sweep, so the map never grows past what's
-    // "currently live" — it must NOT be 6 (one entry per key ever seen).
+    // survivors must be fewer than 6 (one per key ever seen)
     assert.ok(
       rl._debugMapSize() < 6,
       `map grew unboundedly: size=${rl._debugMapSize()}, expected old ` +
@@ -144,9 +119,7 @@ describe('createRateLimiter fallback map memory bound (finding #7)', () => {
       sweepEvery: 10,
     })
 
-    // Simulate 50 distinct API keys checking in, in bursts, with the
-    // window expiring between bursts — the historical bug pattern for a
-    // long-lived isolate serving many different callers over time.
+    // 50 distinct keys in bursts, with the window expiring between bursts
     for (let batch = 0; batch < 5; batch++) {
       for (let i = 0; i < 10; i++) {
         await rl.check(`burst-${batch}-${i}`)
@@ -154,9 +127,7 @@ describe('createRateLimiter fallback map memory bound (finding #7)', () => {
       await new Promise(r => setTimeout(r, 10)) // let the window expire
     }
 
-    // 50 distinct keys were checked total, but thanks to periodic
-    // sweeping the map should never have been allowed to hold anywhere
-    // near all 50 stale entries at once by the end.
+    // 50 keys were checked in total, the map should never hold most of them
     assert.ok(
       rl._debugMapSize() <= 10,
       `map size=${rl._debugMapSize()} — expired entries from earlier ` +
@@ -166,14 +137,8 @@ describe('createRateLimiter fallback map memory bound (finding #7)', () => {
 })
 
 
-// ── getClientIp (audit fix: rate-limit bypass + reviewer P2 fix) ──────────
-//
-// Reviewer P2 fix: the first implementation trusted x-forwarded-for
-// unconditionally. On Vercel that's safe (platform overwrites it), but
-// on self-hosted deployments an attacker can rotate X-Forwarded-For
-// values to get a fresh rate-limit bucket per request. Now forwarded-for is
-// trusted only on Vercel; self-hosted trusted-proxy mode accepts only the
-// documented, proxy-overwritten x-real-ip header. All values are validated.
+// getClientIp: forwarded-for headers are trusted only on Vercel. Self-hosted
+// with a trusted proxy only x-real-ip is used, and all values are validated.
 
 describe('getClientIp', () => {
   function headers(values = {}) {
@@ -237,17 +202,12 @@ describe('getClientIp', () => {
 })
 
 
-// ── createIpRateLimiter (audit fix: rate-limit bypass) ───────────────────
-//
-// The whole point of the per-IP limiter: cap an attacker who rotates fake
-// API keys. Each fake key would get its own per-key bucket (defeating the
-// per-key limiter), but they all share one per-IP bucket.
+// createIpRateLimiter: caps an attacker rotating fake API keys, who would
+// otherwise get a fresh per-key bucket each time.
 
 describe('createIpRateLimiter', () => {
-  test('default limit is 600/60s (10x the per-key ingest limit)', async () => {
-    // We can't read the limit back directly, but we can verify that 600
-    // checks pass and the 601st fails. Use a fresh limiter with a unique
-    // prefix so no other test's state interferes.
+  test('default limit is 600/60s', async () => {
+    // 600 checks pass and the 601st fails; unique prefix avoids state from other tests
     const rl = createIpRateLimiter({ prefix: 'test-ip-default-limit' })
     const ip = '203.0.113.100'
 
@@ -263,11 +223,8 @@ describe('createIpRateLimiter', () => {
     assert.equal(over, false, '601st check from same IP must be rate-limited')
   })
 
-  test('caps attacker rotating 1000 fake keys from one IP', async () => {
-    // The exact attack pattern from the audit finding: 1000 distinct fake
-    // API keys, all from one IP. Each key gets its own per-key bucket
-    // (so per-key limiting is useless), but they all share one per-IP
-    // bucket.
+  test('caps an attacker rotating 1000 fake keys from one IP', async () => {
+    // 1000 distinct fake keys get a bucket each, but share one per-IP bucket
     const rl = createIpRateLimiter({
       limit: 50,         // small for test speed
       prefix: 'test-ip-rotation-attack',
@@ -277,8 +234,7 @@ describe('createIpRateLimiter', () => {
 
     let allowed = 0
     for (let i = 0; i < 1000; i++) {
-      // 1000 distinct fake keys — per-key limiter would let all 1000
-      // through (one per bucket). Per-IP limiter must cap at 50.
+      // per-key limiting would let all 1000 through, per-IP caps at 50
       const ok = await rl.check(attackerIp)
       if (ok) allowed++
     }
@@ -304,7 +260,7 @@ describe('createIpRateLimiter', () => {
     // IP A's 6th request must be rejected.
     assert.equal(await rl.check('203.0.113.1'), false)
 
-    // IP B has its own fresh bucket — first request must pass.
+    // IP B has its own fresh bucket
     assert.equal(
       await rl.check('198.51.100.2'), true,
       'distinct IP must have its own bucket — per-IP limit must NOT ' +
@@ -312,11 +268,9 @@ describe('createIpRateLimiter', () => {
     )
   })
 
-  test('"unknown" IP (no headers) shares one bucket — safe default', async () => {
-    // When the IP can't be determined, all such requests share one
-    // 'unknown' bucket. This is the safe default: if each unknown-origin
-    // request got a fresh bucket, the limiter would be a no-op for any
-    // request that omits IP headers (which an attacker can do).
+  test('"unknown" IP (no headers) shares one bucket', async () => {
+    // unknown-origin requests share one bucket; a fresh bucket each would
+    // make the limiter a no-op for requests that omit IP headers
     const rl = createIpRateLimiter({
       limit: 3,
       prefix: 'test-ip-unknown-shared',
@@ -334,17 +288,9 @@ describe('createIpRateLimiter', () => {
   })
 
   test('per-IP and per-key buckets do not collide (distinct prefixes)', async () => {
-    // Both limiters use the per-isolate fallback Map (Upstash env absent
-    // in tests). The map is keyed by the bucket key (IP or keyHash) with
-    // the prefix baked into the limiter's internal state — wait, the
-    // createRateLimiter map is keyed by just the keyHash arg, NOT by
-    // prefix. So per-IP and per-key buckets with overlapping key strings
-    // COULD collide.
-    //
-    // In practice this is fine: per-key keys are 64-char sha256 hex
-    // digests, per-IP keys are IP addresses or 'unknown'. They never
-    // overlap. This test locks that assumption: a per-IP check for an
-    // IP-shaped string does NOT consume a per-key bucket.
+    // The fallback map is keyed only by the key string, but per-key keys are
+    // sha256 hex and per-IP keys are IPs or 'unknown', so they don't overlap.
+    // This checks an IP-shaped key doesn't consume a per-key bucket.
     const ipLimiter = createIpRateLimiter({
       limit: 2,
       prefix: 'test-no-collision-ip',
@@ -356,13 +302,12 @@ describe('createIpRateLimiter', () => {
       windowMs: 60_000,
     })
 
-    // Use the IP '2' — same string would be a per-key bucket key.
-    // (In production this can't happen: per-key keys are sha256 hex.)
+    // the IP '2' would also be a valid per-key bucket key
     assert.equal(await ipLimiter.check('2'), true)
     assert.equal(await ipLimiter.check('2'), true)
     assert.equal(await ipLimiter.check('2'), false) // per-IP exhausted
 
-    // Per-key bucket for '2' must be untouched (still has all 2 left).
+    // the per-key bucket for '2' is untouched
     assert.equal(await keyLimiter.check('2'), true)
     assert.equal(await keyLimiter.check('2'), true)
     assert.equal(await keyLimiter.check('2'), false)

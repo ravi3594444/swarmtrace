@@ -14,12 +14,7 @@ import { useOnboardingTour } from './onboarding/OnboardingTour'
 import { useFocusTrap } from '@/lib/use-focus-trap'
 import { requestSetupGuide } from '@/components/first-run-empty-state'
 
-/**
- * Row geometry shared by every sidebar entry — the nav links and the "Take a
- * tour" button alike. It used to be copy-pasted into both, and had drifted
- * (a 17px compass against 18px nav icons), which left the tour icon sitting
- * a hair out of the icon column. One recipe, one column.
- */
+// Row geometry shared by the nav links and the "Take a tour" button.
 function rowClasses(collapsed: boolean): string {
   return `group relative flex items-center gap-3 rounded-xl text-sm font-medium ${
     collapsed ? 'justify-center px-0 py-2.5 w-10 mx-auto' : 'px-3 py-2.5 w-full'
@@ -28,7 +23,7 @@ function rowClasses(collapsed: boolean): string {
 
 const ROW_ICON = 'shrink-0 w-[18px] h-[18px]'
 
-/** "Take a tour" trigger — replays the new-user onboarding tour on demand. */
+// Replays the onboarding tour on demand.
 function TakeTourButton({
   collapsed,
   onStart,
@@ -61,14 +56,8 @@ function TakeTourButton({
   )
 }
 
-/**
- * Collapse state for the desktop rail.
- *
- * The dashboard route group keeps this component mounted across navigations,
- * so the collapse state no longer resets on every click. The module-level
- * cache below still guards the remaining remount paths (and any future
- * layout change), and localStorage carries the choice across reloads.
- */
+// Desktop rail collapse state. The module-level cache survives remounts,
+// localStorage survives reloads.
 const SIDEBAR_OPEN_KEY = 'swarmtrace-sidebar-open'
 let cachedSidebarOpen: boolean | null = null
 
@@ -95,11 +84,8 @@ function persistSidebarOpen(next: boolean): void {
 }
 
 /**
- * "Setup guide" trigger — reopens the first-run install walkthrough.
- *
- * The guide otherwise only appears for an account that has never had a
- * trace, so once traces arrive (or on any other browser) there was no way
- * back to the install steps. This puts them one click away, permanently.
+ * "Setup guide" trigger. The guide only auto-shows for accounts with no
+ * traces yet, so this keeps the install steps reachable afterwards.
  */
 function SetupGuideButton({
   collapsed,
@@ -174,13 +160,8 @@ function NavItem({
   onNavigate?: () => void
 }) {
   const pathname = usePathname()
-  // Use startsWith so sub-routes keep the parent nav item highlighted.
-  // Previously this was strict equality (pathname === href), which meant
-  // /traces/abc123 wouldn't highlight the Traces nav item. The Settings
-  // item also benefits: /settings?tab=api now highlights Settings.
-  // We guard against false positives (e.g. /over matching /overview) by
-  // requiring either an exact match or the next char after the prefix to
-  // be a path separator (/) or the end of the string.
+  // Sub-routes keep the parent highlighted. Require a separator after the
+  // prefix so /over doesn't match /overview.
   const isActive = pathname === href
     || pathname.startsWith(href + '/')
     || pathname.startsWith(href + '?')
@@ -213,31 +194,12 @@ function NavItem({
   )
 }
 
-/** Logout button with a confirm modal — "Are you sure you want to log out?"
- *
- * Why a confirm: logout is a session-ending action. A misclick on a direct
- * button would force the user back through the sign-in flow. The modal
- * gates the action behind an explicit "Log out" confirmation.
- *
- * Styling: the trigger button is neutral at rest, matching the rest of
- * the sidebar's icon buttons — a permanently red icon sitting in an
- * otherwise neutral UI for a routine, frequent action read as an alarm
- * that was always going off. It shifts to red on hover as a light hint
- * of intent, and the confirm button in the modal below is fully
- * destructive (red) styling, since that's the actual point of no return.
- *
- * Positioning: rendered as a `fixed` overlay centered in the viewport,
- * rather than an `absolute` popover anchored to the button. The button lives
- * inside the sidebar's `<aside>`, which has `overflow-hidden` — an anchored
- * popover got clipped by that boundary any time it extended past the
- * sidebar's edge. A fixed, centered modal escapes that clipping entirely
- * and gives the confirmation the visual weight a session-ending action
- * deserves, with a backdrop so it reads clearly as a modal rather than a
- * dropdown.
- *
- * Backdrop click and Escape close the modal without signing out.
- * The actual signout is performed by Clerk's <SignOutButton> wrapping the
- * confirm button, so it integrates with the existing Clerk auth flow. */
+/**
+ * Logout button with a confirm modal. The modal is a fixed overlay rather
+ * than a popover because the sidebar's <aside> is overflow-hidden and would
+ * clip it. Backdrop click or Escape cancels; Clerk's <SignOutButton> wraps
+ * the confirm button.
+ */
 function LogoutButton() {
   const [confirmOpen, setConfirmOpen] = useState(false)
   const modalRef = useRef<HTMLDivElement>(null)
@@ -268,8 +230,7 @@ function LogoutButton() {
       </button>
 
       {confirmOpen && (
-        // Fixed overlay, centered in the viewport. Clicking the backdrop
-        // (but not the card itself) closes without signing out.
+        // Backdrop click (not the card) closes without signing out.
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-[1px] p-4"
           onClick={() => setConfirmOpen(false)}
@@ -313,10 +274,8 @@ function LogoutButton() {
 }
 
 export function Sidebar() {
-  // `true` on the very first render so server and client markup agree; the
-  // stored value is applied right after hydration by the effect below. On
-  // every later mount the module cache is already warm, so the rail renders
-  // at its remembered width with no flash.
+  // Starts open so SSR and client markup match; the stored value is applied
+  // after hydration, and the module cache covers later remounts.
   const [open, setOpen] = useState(() => cachedSidebarOpen ?? true)
   const [mobileOpen, setMobileOpen] = useState(false) // mobile drawer state
   // Width animation stays off until the stored state has been applied, so a
@@ -324,11 +283,8 @@ export function Sidebar() {
   const [animateWidth, setAnimateWidth] = useState(cachedSidebarOpen !== null)
   const drawerRef = useRef<HTMLElement>(null)
   const navRef = useRef<HTMLElement>(null)
-  // The nav reserves a scrollbar gutter (scrollbar-gutter: stable in
-  // globals.css), so its rows are narrower than anything rendered outside
-  // it — which is why the "Take a tour" row sat wider than the nav rows
-  // instead of sharing their right edge. Measure what the gutter actually
-  // costs and mirror it on the footer below.
+  // The nav reserves a scrollbar gutter (see globals.css), so rows outside
+  // it are wider. Measure the gutter and mirror it on the footer.
   const [navGutter, setNavGutter] = useState(0)
   // Keep Tab inside the drawer while it covers the page on mobile, and give
   // focus back to the hamburger when it closes.
@@ -372,9 +328,8 @@ export function Sidebar() {
     return () => document.removeEventListener('keydown', onKey)
   }, [mobileOpen])
 
-  // Lock body scroll while the drawer is open, and close it if the viewport
-  // grows to desktop — otherwise the backdrop could be left stranded over a
-  // sidebar that is already permanently visible.
+  // Lock body scroll while the drawer is open; close it if the viewport
+  // grows to desktop so the backdrop isn't left behind.
   useEffect(() => {
     if (!mobileOpen) return
     const previousOverflow = document.body.style.overflow
@@ -397,9 +352,7 @@ export function Sidebar() {
   // and the collapse toggle (open state) controls its width.
   return (
     <>
-      {/* ── Mobile top bar (lg:hidden) ────────────────────────────────────
-          A thin fixed bar with a hamburger to open the sidebar drawer.
-          Only visible on screens below the lg: breakpoint. */}
+      {/* Mobile top bar with the hamburger */}
       <div className="lg:hidden fixed top-0 left-0 right-0 z-30 h-12 flex items-center justify-between px-4 bg-sidebar border-b border-sidebar-border">
         <button
           onClick={() => setMobileOpen(true)}
@@ -419,8 +372,7 @@ export function Sidebar() {
         <div className="w-8" /> {/* spacer to center the logo */}
       </div>
 
-      {/* ── Mobile backdrop ───────────────────────────────────────────────
-          Click anywhere outside the sidebar to close. */}
+      {/* Mobile backdrop */}
       {mobileOpen && (
         <div
           className="lg:hidden fixed inset-0 z-40 bg-black/40 backdrop-blur-[1px]"
@@ -429,9 +381,7 @@ export function Sidebar() {
         />
       )}
 
-      {/* ── Sidebar (desktop persistent + mobile drawer) ──────────────────
-          On mobile: fixed, translated -100% when closed, 0 when open.
-          On desktop: sticky, width controlled by `open` state. */}
+      {/* Desktop rail / mobile drawer */}
       <aside
         ref={drawerRef}
         className={`
@@ -440,9 +390,8 @@ export function Sidebar() {
             ? 'transition-[width,background-color,border-color,color,transform]'
             : 'transition-[background-color,border-color,color,transform]'}
           duration-200 ease-in-out overflow-hidden
-          /* Mobile: fixed drawer, slides in from the left, flush to the edge.
-             Desktop: sticky, inset from the top by the shell's lg:p-3 gutter
-             so it reads as a floating rounded card next to the content. */
+          /* Mobile: fixed drawer from the left. Desktop: sticky, inset by the
+             shell's lg:p-3 gutter. */
           fixed lg:sticky top-0 lg:top-3 z-50 lg:z-auto
           ${mobileOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
         `}
@@ -462,7 +411,7 @@ export function Sidebar() {
             </div>
           </div>
         )}
-        {/* Desktop collapse toggle (hidden on mobile — the drawer has its own close button) */}
+        {/* Desktop collapse toggle; mobile drawer has its own close button */}
         <button
           onClick={toggleOpen}
           className={`hidden lg:flex w-7 h-7 rounded-lg items-center justify-center text-sidebar-foreground/60 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground transition-colors shrink-0 ${!open ? 'mx-auto' : ''}`}
@@ -514,10 +463,8 @@ export function Sidebar() {
         ))}
       </nav>
 
-      {/* Kept outside the scrollable navigation so the scrollbar never sits
-          over these buttons. The extra right padding is the nav's reserved
-          gutter, mirrored here so these rows share the nav rows' exact box
-          — same left edge, same right edge, same icon column. */}
+      {/* Outside the scrollable nav so the scrollbar stays off these buttons.
+          Right padding mirrors the nav's scrollbar gutter. */}
       <div
         className={`shrink-0 border-t border-sidebar-border py-2 space-y-0.5 ${open ? 'px-3' : 'px-0'}`}
         style={open ? { paddingRight: `calc(0.75rem + ${navGutter}px)` } : undefined}

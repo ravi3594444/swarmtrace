@@ -1,24 +1,11 @@
 /**
- * Time formatting helpers for the SwarmTrace dashboard.
- *
- * Why UTC: trace timestamps are stored as ISO 8601 UTC strings and the
- * canonical trace views (TraceTable, Failures) render them in UTC so the
- * same trace shows the same time regardless of the viewer's timezone.
- * This was previously a bug — /traces showed UTC while /failures showed
- * local time, making the same trace look like it happened at different
- * times. The fix was to use UTC everywhere trace times appear in a table
- * or list. See the comment in app/failures/page.tsx (pre-extraction).
- *
- * Use `formatTraceTime` for table/list views (HH:MM:SS UTC).
- * Use `formatFullTime` for detail views where the full date matters.
- * Use `formatRelativeTime` (from lib/api.ts) for "2 minutes ago" style.
+ * Time formatting helpers. Trace times in tables and lists are shown in UTC
+ * so the same trace reads the same on every page and for every viewer.
+ * formatTraceTime is for tables, formatFullTime for detail views, and
+ * formatRelativeTime (lib/api.ts) for "2 minutes ago".
  */
 
-/**
- * Format an ISO timestamp as HH:MM:SS in UTC.
- * Used by TraceTable, Failures, and any table that shows trace times.
- * Returns the original string if parsing fails.
- */
+/** Format an ISO timestamp as HH:MM:SS in UTC; returns the original string if it can't be parsed. */
 export function formatTraceTime(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
@@ -27,10 +14,8 @@ export function formatTraceTime(iso: string): string {
 }
 
 /**
- * Format an ISO timestamp as a full localized date+time string.
- * Used by Threads (where the full date helps distinguish old conversations)
- * and detail drawers. This one intentionally uses local time + toLocaleString
- * because it's for human-readable context, not for cross-page consistency.
+ * Format an ISO timestamp as a full localized date+time string (local time)
+ * for Threads and detail drawers.
  */
 export function formatFullTime(iso: string): string {
   const d = new Date(iso)

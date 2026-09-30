@@ -3,9 +3,8 @@ import * as React from 'react'
 const MOBILE_BREAKPOINT = 768
 
 export function useIsMobile() {
-  // Start as undefined (NOT a lazy initializer that reads window) to avoid
-  // SSR hydration mismatches — server renders false, client might render
-  // true on a mobile device. The actual value is set after mount.
+  // Start undefined (not window-derived) to avoid an SSR hydration mismatch;
+  // the real value is set after mount.
   const [isMobile, setIsMobile] = React.useState<boolean | undefined>(undefined)
 
   React.useEffect(() => {
@@ -14,9 +13,7 @@ export function useIsMobile() {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     }
     mql.addEventListener('change', onChange)
-    // Defer the initial setState via requestAnimationFrame so it's not
-    // synchronous in the effect body (avoids cascading-render lint
-    // violation). The RAF callback runs after the effect's body.
+    // set the initial value in a rAF so setState isn't synchronous in the effect body
     const raf = requestAnimationFrame(() => {
       setIsMobile(window.innerWidth < MOBILE_BREAKPOINT)
     })

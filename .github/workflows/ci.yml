@@ -13,11 +13,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # pyproject.toml declares requires-python = ">=3.10", so the floor has
-        # to be tested. It wasn't: CI ran 3.12 only, and on 3.10 the suite
-        # didn't merely fail — `import tomllib` in test_architecture_boundaries
-        # aborted collection, so ALL 421 tests were unrunnable on the version
-        # the package advertises. Both ends of the supported range now run.
+        # requires-python is >=3.10, so test the floor as well as the newest.
         python-version: ['3.10', '3.12']
     steps:
       - uses: actions/checkout@v4
@@ -28,17 +24,12 @@ jobs:
       - name: Install dependencies
         run: pip install -e ".[all]" pytest ruff openai anthropic
       - name: Lint
-        # Rule set is configured in pyproject.toml ([tool.ruff.lint]). This
-        # used to be `--select E9,F63,F7,F82` ("critical errors only"), which
-        # let bugbear, blind-except, naive-datetime and import-order findings
-        # through unnoticed. Ruff's verdict doesn't vary by interpreter, so
-        # run it once rather than once per matrix entry.
+        # Rules live in pyproject.toml. Same result on every interpreter, so
+        # only run it once.
         if: matrix.python-version == '3.12'
         run: ruff check swarmtrace tests
       - name: Tests
-        # Exclude tests/integration/ — those need a real Postgres and run in
-        # the dedicated "integration" job below. Collecting them here either
-        # skips/errors on missing POSTGRES_TEST_URL or doubles runtime.
+        # tests/integration needs a real Postgres, see the integration job.
         run: pytest -q --ignore=tests/integration
 
   frontend:
@@ -59,23 +50,15 @@ jobs:
       - name: TypeScript check
         run: npx tsc --noEmit
       - name: Agent-derivation contract tests
-        # Regression guard for the SDK<->API agent_id contract.
-        # See scripts/test-derive-agent-cards.mjs for what this protects.
+        # Guards the SDK<->API agent_id contract, see scripts/test-derive-agent-cards.mjs
         run: npm test
 
   integration:
     name: Postgres integration tests
     runs-on: ubuntu-latest
-    # Phase 4 of the audit fix plan. Spins up a real Postgres service
-    # container, applies all supabase/migrations/*.sql in order, and runs
-    # the SDK↔DB contract tests. This catches migration drift, RPC
-    # signature changes, and the atomic-ingest idempotency trick (xmax=0)
-    # — all things the mocked unit tests can't catch.
-    #
-    # Why this exists: 3 of this session's bugs (CLI crash, tree-view
-    # wrap, grandchild flattening) shipped with 196+ tests passing because
-    # nothing exercised the real DB. This job turns "found by hand" into
-    # "caught in CI".
+    # Runs the SDK<->DB contract tests against a real Postgres container.
+    # Catches migration drift and RPC signature changes that the mocked unit
+    # tests can't.
     services:
       postgres:
         image: postgres:15
@@ -85,9 +68,7 @@ jobs:
           POSTGRES_DB: test
         ports:
           - 5432:5432
-        # Wait until Postgres is accepting connections before starting
-        # the test job. Without this, the test runner might hit the DB
-        # before it's ready and fail with a connection error.
+        # don't start the steps until postgres accepts connections
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 10s
@@ -101,14 +82,12 @@ jobs:
           python-version: '3.12'
           cache: 'pip'
       - name: Install dependencies
-        # psycopg2-binary is the Postgres driver — only needed for these
-        # integration tests, not for the SDK itself.
+        # psycopg2 is only needed by the integration tests
         run: pip install -e . pytest psycopg2-binary
       - name: Run integration tests
         env:
-          # Matches the service container credentials above.
-          # Uses POSTGRES_TEST_URL (not DATABASE_URL) to avoid collision
-          # with the SDK's own DB path env var.
+          # matches the service credentials above; not DATABASE_URL so it
+          # doesn't clash with the SDK's own env var
           POSTGRES_TEST_URL: postgresql://postgres:postgres@localhost:5432/test
         # Override pyproject addopts --ignore=tests/integration
         run: pytest tests/integration/ -v -o addopts=

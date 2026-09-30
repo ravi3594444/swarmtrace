@@ -1,15 +1,7 @@
 -- 0009_trace_metadata.sql
--- Feature: generic trace metadata and distributed trace context.
---
--- Adds trace_id (the distributed root run id) and attributes (generic JSON
--- metadata) to the traces table. Existing rows are backfilled so that each
--- becomes its own trace until cross-span context is available, matching the
--- Python SDK behavior.
---
--- Backwards-compatible:
---   * Both columns are nullable.
---   * The upsert RPC gains p_trace_id and p_attributes with DEFAULTs so
---     existing callers (MCP route, older SDK) are unaffected.
+-- Adds trace_id (distributed root run id) and attributes (generic JSON metadata).
+-- Both are nullable and the upsert RPC takes them with DEFAULTs. Existing rows
+-- are backfilled so each is its own trace.
 
 ALTER TABLE public.traces ADD COLUMN IF NOT EXISTS trace_id TEXT;
 ALTER TABLE public.traces ADD COLUMN IF NOT EXISTS attributes JSONB;

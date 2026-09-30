@@ -26,9 +26,8 @@ import {
 } from 'lucide-react'
 import { useIntegrations } from '@/contexts/IntegrationsContext'
 
-// recharts is ~492 KB across 3 chunks (bundle audit) — split out of the
-// page's initial JS and only fetched when this chart actually renders.
-// ssr: false because recharts' ResponsiveContainer measures the DOM.
+// recharts is heavy, so load it lazily. ssr: false because
+// ResponsiveContainer measures the DOM.
 const RequestActivityChart = dynamic(
   () => import('@/components/swarm/RequestActivityChart').then((m) => m.RequestActivityChart),
   { ssr: false, loading: () => <div className="h-full w-full animate-pulse rounded-lg bg-muted/30" /> },
@@ -106,17 +105,14 @@ function AgentPicker({ agents, selected, onSelect }: {
   )
 }
 
-// ── (export helpers + ExportMenu moved to components/swarm/ExportMenu.tsx) ──
+// (export helpers + ExportMenu moved to components/swarm/ExportMenu.tsx)
 
-// ── Cost Projection Widget ─────────────────────────────────────────────────────
+// Cost Projection Widget
 
 function CostProjectionWidget({ traces }: { traces: Trace[] }) {
   const { hourly, daily, monthly, windowHours } = useMemo(() => {
     if (traces.length === 0) return { hourly: 0, daily: 0, monthly: 0, windowHours: 0 }
-    // Derive the time window from the traces themselves (newest - oldest),
-    // NOT from Date.now(). Date.now() is impure — calling it inside useMemo
-    // violates React's purity rules and would produce unstable results.
-    // Using the trace timestamps makes this a pure function of `traces`.
+    // Window comes from the trace timestamps, not Date.now(), to keep this pure.
     const timestamps = traces.map(t => new Date(t.timestamp).getTime())
     const newest = Math.max(...timestamps)
     const oldest = Math.min(...timestamps)
@@ -168,8 +164,6 @@ function CostProjectionWidget({ traces }: { traces: Trace[] }) {
     </div>
   )
 }
-
-// ── Trace Diff / Regression Compare View ──────────────────────────────────────
 
 function TraceDiffPanel({ traces }: { traces: Trace[] }) {
   const [fnFilter, setFnFilter] = useState('')
@@ -335,7 +329,7 @@ function TraceDiffPanel({ traces }: { traces: Trace[] }) {
   )
 }
 
-// ── Integration Panels ────────────────────────────────────────────────────────
+// Integration Panels
 
 function TokenBudgetPanel({ traces }: { traces: Trace[] }) {
   const agentTokens = useMemo(() => {
@@ -466,10 +460,7 @@ export default function OverviewPage() {
   const [truncated, setTruncated] = useState(false)
   const [nowMs, setNowMs] = useState(() => Date.now())
 
-  // Single source of truth for the time-windowed view: filter the polled
-  // traces once by the selected range, then hand the filtered array to every
-  // downstream widget. Defaults to "Today" so the dashboard no longer shows
-  // all-time data on load. Recomputes only when `traces` or `range` change.
+  // Filter once by the selected range and pass the result to every widget.
   const filteredTraces = useMemo(
     () => filterTracesByRange(traces, range),
     [traces, range],
@@ -498,21 +489,16 @@ export default function OverviewPage() {
   useEffect(() => {
     loadOverview()
   }, [])
-  // Audit finding: this poller never paused on hidden tabs.
   useVisibleInterval(loadOverview, 30_000)
 
-  // Keep relative "live"/"idle" status current even if no new trace
-  // arrives. This mirrors the polling cadence and avoids leaving an old
-  // activity badge marked LIVE forever.
+  // Re-tick so the LIVE/idle badge goes stale even if no new trace arrives.
   useEffect(() => {
     const id = setInterval(() => setNowMs(Date.now()), 30_000)
     return () => clearInterval(id)
   }, [])
 
-  // Derive unique agents from the currently selected time range. Stats and
-  // charts already use filteredTraces; using all traces here made an old
-  // agent appear in the "Today" Live Activity card even when Today had
-  // zero traces.
+  // Unique agents in the selected range (not all traces, so "Today" doesn't
+  // list agents that had no traces today).
   const activeAgents = useMemo(() => {
     const seen = new Map<string, string>()
     filteredTraces.forEach((t) => {
@@ -525,10 +511,7 @@ export default function OverviewPage() {
 
   const [pickedAgent, setPickedAgent] = useState<string>('')
 
-  // Derive the effective agent WITHOUT a set-state-in-effect. If the user
-  // has picked one and it's still active, use it; otherwise default to the
-  // most recently active agent. This replaces the old useEffect that called
-  // setPickedAgent synchronously (cascading-render lint violation).
+  // Use the picked agent if still active, else the most recently active one.
   const effectiveAgent =
     pickedAgent && activeAgents.find((a) => a.id === pickedAgent)
       ? pickedAgent
@@ -561,11 +544,8 @@ export default function OverviewPage() {
   // Once traces appear, markHasTraces() sets the localStorage flag so this
   // empty state never shows again (even if they later clear their DB).
   //
-  // Derivation pattern (no setState-in-effect): `firstRunChecked` is set once
-  // on mount to signal "localStorage is safe to read" (it's unavailable during
-  // SSR). `showFirstRun` is then derived from the current trace count + the
-  // localStorage check — no cascading renders. The markHasTraces() side effect
-  // runs when traces arrive but doesn't call setState.
+  // `firstRunChecked` flips once on mount (localStorage isn't available in
+  // SSR); `showFirstRun` is derived from it plus the trace count.
   const [firstRunChecked, setFirstRunChecked] = useState(false)
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- post-hydration localStorage read; runs once.
@@ -617,7 +597,7 @@ export default function OverviewPage() {
             <TimeRangeDropdown value={range} onChange={setRange} />
             {/* Only shown when there's real data to summarize. With zero
                 traces, the liveStatus badge above (OFFLINE) is the single
-                source of truth for "is anything happening" — pairing it with
+                source of truth for "is anything happening" - pairing it with
                 "0 ok" here made it look like a second, contradictory signal
                 that things were fine. */}
             {filteredTraces.length > 0 && (
@@ -637,7 +617,7 @@ export default function OverviewPage() {
         <StatBar traces={filteredTraces} />
 
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-6">
-          {/* Activity chart — 2/3 width */}
+          {/* Activity chart - 2/3 width */}
           <div className="xl:col-span-2 rounded-xl border border-border bg-card shadow-sm overflow-hidden transition-[background-color,border-color,color] duration-200">
             <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3">
               <div className="flex items-center gap-2">
@@ -661,7 +641,7 @@ export default function OverviewPage() {
             </div>
           </div>
 
-          {/* Live Activity — 1/3 width. Shows FOV realtime events if agent_id is available,
+          {/* Live Activity - 1/3 width. Shows FOV realtime events if agent_id is available,
               falls back to the polled event feed for older SDK traces. */}
           <div className="rounded-xl border border-border bg-card shadow-sm overflow-hidden flex flex-col transition-[background-color,border-color,color] duration-200">
             <div className="flex items-center justify-between border-b border-border bg-muted/30 px-4 py-3 shrink-0">
@@ -712,13 +692,13 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Cost Projection Widget — always visible */}
+        {/* Cost Projection Widget - always visible */}
         <CostProjectionWidget traces={filteredTraces} />
 
         {/* Trace Diff / Regression Compare */}
         <TraceDiffPanel traces={filteredTraces} />
 
-        {/* Integration Panels — only rendered when integrations are enabled */}
+        {/* Integration Panels - only rendered when integrations are enabled */}
         {(isEnabled('token-budget') || isEnabled('regression-detector')) && (
           <div className={`grid grid-cols-1 gap-6 ${isEnabled('token-budget') && isEnabled('regression-detector') ? 'xl:grid-cols-2' : ''}`}>
             {isEnabled('token-budget')        && <TokenBudgetPanel traces={filteredTraces} />}

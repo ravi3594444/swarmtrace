@@ -1,10 +1,4 @@
-"""Tests for swarmtrace/budget.py.
-
-Audit finding #8: budget.py had zero test coverage despite non-trivial
-logic: cumulative token tracking across calls, warn/hard-stop thresholds,
-time-window auto-reset, async + sync decorator paths, and the "don't let
-a budget error swallow the real exception" fix (#9 in the changelog).
-"""
+"""Tests for swarmtrace/budget.py."""
 
 from __future__ import annotations
 
@@ -16,15 +10,10 @@ import pytest
 
 @pytest.fixture()
 def budget_mod():
-    """Reload budget.py fresh per test so module-level counters
-    (_session_tokens / _session_start) never leak between tests.
+    """Reload budget.py per test so the module-level counters don't leak.
 
-    Note: `import swarmtrace.budget as b` would NOT give us the module
-    here -- swarmtrace/__init__.py does `from swarmtrace.budget import
-    budget`, which reassigns the `swarmtrace.budget` package attribute
-    to point at the *function*, shadowing the submodule reference that
-    `import ... as` resolves through. importlib.import_module() reads
-    sys.modules directly instead, sidestepping the shadowing.
+    `import swarmtrace.budget as b` gives the decorator, not the module (the
+    package __init__ shadows it), hence import_module.
     """
     b = importlib.import_module("swarmtrace.budget")
     importlib.reload(b)
@@ -107,8 +96,7 @@ def test_reset_all_functions(budget_mod):
 
 
 def test_budget_preserves_original_exception_over_budget_error(budget_mod):
-    """FIX #9 regression guard: if the wrapped function itself raises, a
-    simultaneous budget-exceeded RuntimeError must NOT swallow it."""
+    """A budget-exceeded RuntimeError must not swallow the wrapped function's own exception."""
 
     @budget_mod.budget(max_tokens=1, warn_at=0.1, hard_stop=True)
     def failing_fn(x):
@@ -155,8 +143,7 @@ def test_budget_async_preserves_original_exception(budget_mod):
 
 
 def test_reset_every_hours_zero_disables_auto_reset(budget_mod, monkeypatch):
-    """reset_every_hours=0 means only a manual reset() call clears
-    counters -- time alone must never reset them."""
+    """reset_every_hours=0 means only a manual reset() clears the counters."""
     calls = {"n": 0}
     real_time = budget_mod.time.time
 
@@ -179,10 +166,6 @@ def test_reset_every_hours_zero_disables_auto_reset(budget_mod, monkeypatch):
 
 
 def test_count_tokens_falls_back_when_tiktoken_unavailable(budget_mod):
-    """_count_tokens must degrade to len//4 rather than raising when
-    tiktoken is missing or errors out -- budget tracking is best-effort
-    and must never break the wrapped function. (tiktoken is an optional
-    dependency and is not installed in this test environment, so this
-    exercises the real fallback path, not a mock.)"""
+    """_count_tokens falls back to len//4 when tiktoken is missing or errors."""
     count = budget_mod._count_tokens("a" * 400)
     assert count > 0

@@ -2,8 +2,7 @@ import { auth, clerkClient } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 import { createUserRateLimiter, rateLimitResponse } from '../../../../lib/api-auth'
 
-// Tighter than the 120/min read default — this is a write endpoint with no
-// legitimate reason to be called more than a handful of times per minute.
+// Tighter than the 120/min default since this is a write endpoint.
 const rateLimiter = createUserRateLimiter({ limit: 20, prefix: 'st_user_rl_profile' })
 
 export async function PATCH(req: Request) {
@@ -19,7 +18,7 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ error: 'fullName is required' }, { status: 400 })
     }
 
-    // Split on the last space so "Ravi Kumar Das" → firstName="Ravi Kumar" lastName="Das"
+    // split on the last space: "Ravi Kumar Das" gives first="Ravi Kumar", last="Das"
     const parts = fullName.trim().split(' ')
     const lastName  = parts.length > 1 ? parts.pop()! : ''
     const firstName = parts.join(' ')

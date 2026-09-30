@@ -1,5 +1,5 @@
 """
-@observe decorator — records every sync/async call to the traces DB.
+@observe decorator, records every sync/async call to the traces DB.
 
 Usage::
 
@@ -21,15 +21,15 @@ Span kinds
 ----------
 Every traced call has a ``kind``:
 
-- ``"agent"``    (default) — the call itself IS an agent / autonomous run.
+- ``"agent"``    (default), the call itself IS an agent / autonomous run.
   Shows up as its own entry on the dashboard's Agents page.
-- ``"tool"``     — a tool invocation made *by* an agent.
-- ``"llm"``      — a raw LLM call made *by* an agent.
-- ``"function"`` — any other traced helper that isn't its own agent.
+- ``"tool"``    , a tool invocation made *by* an agent.
+- ``"llm"``     , a raw LLM call made *by* an agent.
+- ``"function"``, any other traced helper that isn't its own agent.
 
 Only ``kind="agent"`` spans are surfaced as agents. Everything else is
 attributed (via ``agent_id`` / ``agent_name``) to the nearest enclosing
-``kind="agent"`` span — or to itself if there isn't one, which keeps it out
+``kind="agent"`` span, or to itself if there isn't one, which keeps it out
 of the Agents page entirely rather than appearing as a phantom agent.
 """
 
@@ -80,9 +80,7 @@ from swarmtrace.trace_context import (
 
 _log = logging.getLogger("swarmtrace")
 
-# ---------------------------------------------------------------------------
-# Remote ingest configuration (lazy — env vars are read at call time)
-# ---------------------------------------------------------------------------
+# Remote ingest configuration (lazy, env vars are read at call time)
 # ``swarmtrace.config`` owns the actual config/validation rules. These private
 # aliases stay in tracer.py for backwards compatibility with older tests and
 # integrations that monkeypatch ``swarmtrace.tracer._api_key`` / ``_endpoint``.
@@ -113,7 +111,7 @@ def init(
         from swarmtrace.fov import patch_all as fov_patch_all
         fov_patch_all(watch_dir=fov_watch_dir)
     else:
-        # fov=False is the default, and on its own emits nothing — a user on
+        # fov=False is the default, and on its own emits nothing, a user on
         # Kaggle/Colab/serverless/MCP has no way to tell "not traced" apart
         # from "quietly working". One info-level log makes the default
         # explicit and points at the upgrade path without requiring it.
@@ -153,19 +151,10 @@ def _normalize_base_url(url: str) -> str:
     return normalize_base_url(url)
 
 
-# ---------------------------------------------------------------------------
-# Background sender — daemon worker draining a bounded queue.
-# FIX #5: added retry with exponential backoff (3 attempts) so brief
-# endpoint hiccups don't silently drop traces.
-#
-# Task 4 (batching + gzip): the worker no longer sends one POST per trace.
-# It drains the queue into a batch of up to _BATCH_MAX_ITEMS traces, OR
-# flushes after _BATCH_FLUSH_TIMEOUT seconds since the first item landed
-# (whichever comes first). The batch is serialized as {"traces": [...]},
-# gzip-compressed, and sent in a single POST. This cuts HTTP overhead by
-# ~20x for bursty workloads and shrinks wire bytes ~5-10x for compressible
-# trace payloads (args/output are often repetitive text).
-# ---------------------------------------------------------------------------
+# Background sender: daemon worker draining a bounded queue. It batches up to
+# _BATCH_MAX_ITEMS traces (or flushes after _BATCH_FLUSH_TIMEOUT seconds),
+# gzips the {"traces": [...]} body and sends it in one POST, retrying with
+# backoff.
 
 # HTTP transport adapter. tracer.py keeps thin shims (_send_remote /
 # _send_batch_remote) so existing internal callers and tests that patch
@@ -195,7 +184,7 @@ def _send_batch_remote(payloads: list[dict], key: str, url: str) -> None:
     """Send a BATCH of traces as one gzip'd POST.
 
     Body shape: ``{"traces": [...]}`` (the new batch shape accepted by
-    /api/ingest since swarmtrace 0.6.0). gzip-compressed — trace payloads
+    /api/ingest since swarmtrace 0.6.0). gzip-compressed, trace payloads
     are highly compressible (args/output are repetitive text), so this
     typically shrinks wire bytes 5-10x.
     """
@@ -207,13 +196,11 @@ def _enqueue_remote(payload: dict) -> None:
     _sender.enqueue(payload)
 
 
-# ---------------------------------------------------------------------------
-# Resync — replay unsynced traces to the remote endpoint.
+# Resync, replay unsynced traces to the remote endpoint.
 # Used by the ``swarmtrace resync`` CLI. Reads rows where synced=0 from the
 # local SQLite DB and POSTs each one to /api/ingest, marking synced=1 on
 # success. Synchronous (no background queue) so the CLI can report progress
 # and exit code. Returns (attempted, succeeded, failed) counts.
-# ---------------------------------------------------------------------------
 
 def resync(batch_size: int = 100, retries: int = 3) -> tuple[int, int, int]:
     """Re-send unsynced traces to the remote endpoint.
@@ -226,10 +213,8 @@ def resync(batch_size: int = 100, retries: int = 3) -> tuple[int, int, int]:
 
 
 # Thread-safe & async-safe parent tracking.
-# Context variables are owned by trace_context.py; tracer.py re-exports them
-# under the old private names for backwards compatibility.
-# _parent_ctx, _agent_ctx, _session_ctx, _current_parent, _current_agent,
-# _current_session are imported from swarmtrace.trace_context.
+# context vars live in trace_context.py and are re-exported here under the
+# old private names.
 
 
 @contextmanager
@@ -242,7 +227,7 @@ def session(session_id: str | None = None) -> Iterator[str]:
 
         with swarmtrace.session("conversation-42") as sid:
             chat_agent("hi")          # turn 1
-            chat_agent("and then?")   # turn 2 — same thread
+            chat_agent("and then?")   # turn 2, same thread
 
     If ``session_id`` is omitted a random one is generated and yielded, so you
     can capture it (e.g. to correlate with your own chat/thread id). Nesting is
@@ -257,22 +242,18 @@ def session(session_id: str | None = None) -> Iterator[str]:
         _session_ctx.reset(token)
 
 
-# ---------------------------------------------------------------------------
 # Shared record-and-save logic
-# ---------------------------------------------------------------------------
 
-# 'retrieval' was added in the Phase 3 RAG effort — the MCP route's Zod enum
+# 'retrieval' was added in the Phase 3 RAG effort, the MCP route's Zod enum
 # (frontend-next/app/api/mcp/route.ts), resolve-trace-identity.ts's TraceKind,
 # scraper.scrape(kind=...), and the integration test
 # test_phase3_retrieval_kind_round_trips all already accept it. The Python
-# SDK's primary entry point (@observe) was the only hold-out — see
+# SDK's primary entry point (@observe) was the only hold-out, see
 # docs/SDK_DASHBOARD_CONTRACT.md for the cross-component contract.
 _VALID_KINDS  = {"agent", "tool", "llm", "function", "retrieval"}
 _KIND_CHOICES = _VALID_KINDS | {"auto"}
 
-# FIX #3: use a ThreadPoolExecutor for _safe_str instead of spawning a new
-# thread on every single call.  At 100+ traced calls/sec, per-call thread
-# creation was creating thousands of OS threads per second.
+# shared pool for _safe_str so we don't spawn a thread per call
 _str_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="st-str")
 
 
@@ -302,50 +283,21 @@ def _build_trace_id() -> str:
 def _stable_agent_id(func, name: str | None) -> str:
     """Deterministic agent_id for a bare ``@observe`` entrypoint.
 
-    See docs/SDK_DASHBOARD_CONTRACT.md for the full SDK<->dashboard
-    agent_id/kind contract this is one half of.
+    See docs/SDK_DASHBOARD_CONTRACT.md for the agent_id/kind contract.
 
-    Repeated invocations of the same top-level ``@observe`` function (the
-    auto-resolved "agent" case) used to get a fresh random ``agent_id`` per
-    call, which made the dashboard's Agents page show one card per run
-    instead of one persistent agent whose task count climbs over time.
+    The id is a SHA-256 of ``"{module}.{qualname}"`` (or an explicit
+    ``name``), so repeat runs of the same function show up as one agent.
+    Only used for bare ``@observe``; explicit ``kind="agent"`` gets a fresh id.
 
-    Deriving the id from a SHA-256 of ``"{module}.{qualname}"`` (or an
-    explicit ``name``) makes repeat runs collapse into a single agent
-    identity. The digest is 64 hex chars (SHA-256 is 256 bits = 32 bytes
-    = 64 hex chars — longer than ``uuid4().hex``'s 32, but it still
-    drops into the existing TEXT column without schema changes).
-
-    Note: this ONLY applies to bare ``@observe`` (auto-resolved). Explicit
-    ``@observe(kind="agent")`` keeps a fresh ``trace_id`` so that swarm
-    sub-agents (orchestrator/researcher/summarizer within one run) stay
-    distinct, per ``test_nested_agents_each_get_their_own_agent_id``.
-
-    Lambda disambiguation: all lambdas share the qualname ``<lambda>``
-    (or ``outer.<locals>.<lambda>`` when nested), so two distinct lambdas
-    in the same scope would hash to the SAME agent_id and silently
-    collapse into one dashboard card — exactly the bug the stable-id
-    fix was meant to prevent. We disambiguate by appending the source
-    line number (``co_firstlineno``) to the hash source ONLY when the
-    qualname contains ``<lambda>``. The line number is stable across
-    calls of the same lambda (so repeat runs still aggregate) but
-    differs between distinct lambdas (so they don't collide).
-
-    Named functions are NOT affected — refactoring (moving a function
-    to a different line) must not break aggregation. Two lambdas
-    defined on the same source line still collide; that's a rare
-    pathological case and the user can disambiguate with ``name=``.
-
-    Closures from the same factory (``make_bot.<locals>.bot``) are also
-    NOT affected — they share the same source line by definition, so
-    line-number disambiguation can't help. They keep the documented
-    limitation (collision unless ``name=`` is used).
+    Lambdas all share the qualname ``<lambda>``, so their first line number
+    is mixed into the hash. Two lambdas on the same line, or closures from
+    one factory, still collide unless you pass ``name=``.
     """
     if name:
         src = name
     else:
         src = f"{func.__module__}.{func.__qualname__}"
-        # Lambda disambiguation — see docstring above.
+        # lambdas: see docstring
         qualname = getattr(func, "__qualname__", "") or ""
         if "<lambda>" in qualname:
             code = getattr(func, "__code__", None)
@@ -394,20 +346,12 @@ def _flush(
     session_id: str | None = None,
     distributed_trace_id: str | None = None,
 ) -> None:
-    # Cap args_repr at the same 32000-char limit _safe_str applies to output.
-    # Without this, a single large argument (big string, dataframe repr, etc.)
-    # produces an unbounded args field that:
-    #   1. Bloats the local SQLite DB (the row never syncs — the server's
-    #      MAX_BODY_BYTES = 64KB rejects the whole batch of up to 20 traces
-    #      it gets bundled into, and resync() retries the oversized row
-    #      forever, never marking it synced=1 — silent permanent leak).
-    #   2. Asymmetry with output: output is capped via _safe_str, args wasn't,
-    #      so the dashboard showed truncated returns but full argument dumps.
-    # Audit finding #3.
+    # cap args like output (_safe_str); a huge arg would get the row rejected
+    # by the server's 64KB body limit and resync would retry it forever
     args_repr = _safe_str(args[:2])
     if kwargs:
         args_repr = f"{args_repr} kwargs={list(kwargs.keys())}"
-    # PII redaction — single call site, applied once to args/output/error
+    # PII redaction, single call site, applied once to args/output/error
     # so the local SQLite DB and the remote ingest endpoint see the SAME
     # scrubbed payload.  Redacting here (not in save_trace / _enqueue_remote)
     # means the two never disagree about what was stored.  See redact.py
@@ -445,9 +389,7 @@ def _safe_flush(*flush_args) -> None:
         _log.warning("trace flush warning: %s", exc)
 
 
-# ---------------------------------------------------------------------------
 # Decorator
-# ---------------------------------------------------------------------------
 
 def observe(func=None, *, kind: str = "auto", name: str | None = None,
             session_id: str | None = None):

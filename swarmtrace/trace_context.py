@@ -41,9 +41,7 @@ class TraceContext:
         return (self.agent_id, self.agent_name or self.agent_id)
 
 
-# ---------------------------------------------------------------------------
 # Context variables
-# ---------------------------------------------------------------------------
 # Each var holds the context for the *current* span. Nested spans replace
 # the value while the body runs and restore it on exit.
 
@@ -61,9 +59,7 @@ _trace_ctx: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 )
 
 
-# ---------------------------------------------------------------------------
 # Public helpers
-# ---------------------------------------------------------------------------
 
 def current_parent() -> str | None:
     """Return the parent_span_id of the current span, if any."""

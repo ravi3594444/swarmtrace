@@ -1,18 +1,7 @@
 /**
- * Shared Clerk `appearance` config for /sign-in and /sign-up.
- *
- * Why this exists: Clerk's default card ships its own white background,
- * border and drop shadow. Dropping that straight onto the sky photograph
- * gives you a card inside a card — the glass frame in <AuthShell /> already
- * provides the surface. So here we strip Clerk's own box chrome and let the
- * shell own the elevation, then re-skin the controls with the app's tokens
- * (charcoal primary, 1rem radius, Geist type stack) so the auth screen reads
- * as part of the product rather than a third-party embed.
- *
- * Deliberately NOT typed as `Appearance` from '@clerk/types': that package is
- * a transitive dependency, not a direct one, and importing it directly would
- * break if @clerk/nextjs ever hoists a different version. Structural typing
- * covers us at the call site.
+ * Clerk `appearance` for /sign-in and /sign-up. Strips Clerk's own card
+ * chrome (AuthShell provides the surface) and applies the app's tokens.
+ * Not typed as `Appearance` since @clerk/types is only a transitive dep.
  */
 export const clerkAuthAppearance = {
   layout: {
@@ -24,10 +13,8 @@ export const clerkAuthAppearance = {
     termsPageUrl: '/terms',
   },
   variables: {
-    // Card is always forced light (see AuthShell), so pin Clerk's own
-    // colorScheme too. Without this, Clerk auto-adapts to the OS/browser
-    // dark-mode preference and silently overrides our text colors below
-    // with its dark-theme whites — invisible on this light card.
+    // The card is always light (see AuthShell); pin Clerk's scheme so OS
+    // dark mode doesn't turn its text white.
     colorScheme: 'light',
     colorPrimary: '#1a1a1a',
     colorText: '#1a1a1a',
@@ -42,7 +29,7 @@ export const clerkAuthAppearance = {
     spacingUnit: '1rem',
   },
   elements: {
-    // Kill Clerk's own card chrome — AuthShell's glass panel is the surface.
+    // Kill Clerk's own card chrome, AuthShell's panel is the surface.
     rootBox: 'w-full',
     cardBox: 'w-full shadow-none border-none rounded-[1.25rem] bg-transparent',
     card: 'w-full shadow-none border-none bg-transparent px-6 py-7',

@@ -1,23 +1,6 @@
-"""Regression tests for the os.fork() background-worker survival bug.
+"""os.fork() must not leave the child thinking the sender thread is alive.
 
-Audit finding #4: the sender's ``_started`` flag is plain process memory.
-``os.fork()`` clones it (including ``_started = True``) but not other
-threads — only the calling thread survives into the child. Without an
-at-fork reset hook, a forked child inherits ``_started = True`` from a
-parent that already has a live sender thread, even though that thread does
-not exist in the child. ``start()``'s fast-path then short-circuits forever
-in that child: no sender thread is ever started, so every trace enqueued
-there sits in the queue for the process's lifetime with nothing draining
-it. No exception is raised; it just silently never syncs.
-
-These tests use a REAL os.fork() rather than mocking it — the whole bug is
-specifically about what fork() does to process/thread state, which a mock
-can't exercise.
-
-Phase 1.B: the worker moved to ``swarmtrace.delivery.sender.Sender``; these
-tests now drive the module-level ``tracer._sender`` instead of removed
-``tracer._worker_started`` / ``tracer._send_queue`` / ``tracer._ensure_worker``
-globals.
+Uses a real os.fork(); a mock can't show what fork does to thread state.
 """
 
 from __future__ import annotations
@@ -36,15 +19,10 @@ pytestmark = pytest.mark.skipif(
 
 
 def _run_in_child(fn) -> str:
-    """Fork, run ``fn()`` in the child, report PASS/FAIL back via a pipe.
-
-    Uses os._exit() in the child (never sys.exit / a bare return) so the
-    forked copy never runs pytest's normal teardown machinery.
-    """
+    """Fork, run ``fn()`` in the child, report PASS/FAIL back via a pipe."""
     read_fd, write_fd = os.pipe()
     pid = os.fork()
     if pid == 0:
-        # ---- child ----
         os.close(read_fd)
         try:
             fn()
@@ -54,7 +32,6 @@ def _run_in_child(fn) -> str:
         os.write(write_fd, result)
         os.close(write_fd)
         os._exit(0)
-    # ---- parent ----
     os.close(write_fd)
     chunks = []
     while True:
@@ -73,8 +50,7 @@ def _run_in_child(fn) -> str:
 
 @pytest.fixture(autouse=True)
 def _restore_sender_state():
-    """``_sender._started`` / ``_sender._queue`` are process-global state —
-    save and restore around each test so tests don't leak into each other."""
+    """Save and restore the process-global sender state around each test."""
     sender = tracer._sender
     original_started = sender._started
     original_queue = sender._queue
@@ -92,13 +68,12 @@ def test_at_fork_hook_is_registered():
 
 
 def test_worker_started_flag_resets_in_child():
-    """Core regression guard. Without the at-fork hook, this is exactly the
-    stuck state a forked child inherits — permanently."""
+    """A child must not inherit `_started = True` from a parent with a live worker."""
     tracer._sender._started = True  # simulate: parent already has a live worker
 
     def _child_check():
         assert tracer._sender._started is False, (
-            "audit finding #4 regression: _started is still True in the "
+            "_started is still True in the "
             "child — start() will never spawn a real sender thread here, "
             "and every trace enqueued in this process will silently never sync"
         )
@@ -107,8 +82,7 @@ def test_worker_started_flag_resets_in_child():
 
 
 def test_ensure_worker_spawns_a_real_thread_in_child():
-    """End-to-end: after fork, start() must actually start a live
-    'swarmtrace-sender' thread in the child — not just flip a flag."""
+    """After fork, start() launches a live 'swarmtrace-sender' thread in the child."""
     tracer._sender._started = True  # simulate a parent with a live worker
 
     def _child_check():
@@ -125,10 +99,7 @@ def test_ensure_worker_spawns_a_real_thread_in_child():
 
 
 def test_inherited_queue_is_replaced_not_reused():
-    """The child gets a fresh queue, not the parent's inherited one —
-    replaying into a Queue whose internal locks may be in an inconsistent
-    post-fork state is riskier than starting clean, and anything already
-    queued is already durable in SQLite via save_trace() regardless."""
+    """The child gets a fresh queue; queued items are already durable in SQLite."""
     tracer._sender._started = True
     parent_queue_id = id(tracer._sender._queue)
 

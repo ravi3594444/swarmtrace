@@ -1,19 +1,7 @@
 /**
- * Test: Supabase traces-query builder (lib/trace-query.ts).
- *
- * Covers the bug fixed in this commit (audit finding #4):
- * /api/agents used to apply the `since` (date-range) filter CLIENT-SIDE
- * in JS, AFTER fetching the 500 most-recent traces from Supabase. So if
- * a user had >500 traces total, anything older than the 500th-most-recent
- * was never fetched from the DB at all — regardless of which time range
- * they selected. The fix pushes `since` into the Supabase query as
- * `&timestamp=gte.<iso>` so the DB applies the filter BEFORE the limit.
- *
- * These tests verify the query-construction contract directly. The
- * integration (route-level) test would require standing up Next.js +
- * Supabase — out of scope for the node:test runner. The behavior under
- * test is the unit that the bug lived in: the URL string handed to
- * supaUserRequest.
+ * Tests for lib/trace-query.ts: the query string handed to supaUserRequest.
+ * `since` must go into the DB query (timestamp=gte.) so the filter applies
+ * before the 500-row limit rather than in JS afterwards.
  */
 import { test, describe } from 'node:test'
 import assert from 'node:assert/strict'
@@ -26,15 +14,13 @@ import {
   DEFAULT_TRACE_LIMIT,
 } from '../lib/trace-query.ts'
 
-// ── buildTracesQuery ───────────────────────────────────────────────────────
-
 describe('buildTracesQuery', () => {
   test('base query: user_id + order + default limit', () => {
     const q = buildTracesQuery('user-123')
     assert.match(q, /^traces\?user_id=eq\.user-123&order=timestamp\.desc&limit=500$/)
   })
 
-  test('user_id is URL-encoded (defence-in-depth — RLS is the real guard)', () => {
+  test('user_id is URL-encoded (RLS is the real guard)', () => {
     const q = buildTracesQuery('user|with|pipes')
     assert.match(q, /user_id=eq\.user%7Cwith%7Cpipes/)
   })
@@ -50,20 +36,17 @@ describe('buildTracesQuery', () => {
   })
 
   test('since is pushed into the DB query as &timestamp=gte.<iso> (THE fix for #4)', () => {
-    // The bug: this filter used to be applied in JS AFTER the 500-row fetch.
-    // The fix: it goes into the URL so Supabase filters BEFORE the limit.
+    // goes into the URL so Supabase filters before applying the limit
     const since = Date.parse('2025-01-15T00:00:00.000Z')
     const q = buildTracesQuery('u', { since })
-    // ISO 8601, URL-encoded (colons become %3A).
+    // ISO 8601, URL-encoded (colons become %3A)
     assert.match(q, /&timestamp=gte\.\d{4}-\d{2}-\d{2}T\d{2}%3A\d{2}%3A\d{2}\.\d{3}Z/)
-    // Specifically: the date portion must be the one we passed.
+    // the date portion must be the one we passed
     assert.match(q, /timestamp=gte\.2025-01-15T00%3A00%3A00\.000Z/)
   })
 
   test('since = 0 is treated as "valid, filter from epoch" (not skipped as falsy)', () => {
-    // Important: Number.isFinite(0) is true, so this should produce a filter.
-    // A naive `if (since)` check would skip it — that's the kind of bug
-    // these tests guard against.
+    // 0 is a valid epoch; a naive `if (since)` would skip it
     const q = buildTracesQuery('u', { since: 0 })
     assert.match(q, /timestamp=gte\./)
   })
@@ -74,8 +57,7 @@ describe('buildTracesQuery', () => {
   })
 
   test('since = NaN does NOT add a filter (graceful fallback)', () => {
-    // parseSinceParam already rejects NaN, but buildTracesQuery should
-    // also be defensive — never produce a malformed query string.
+    // parseSinceParam already rejects NaN, but never build a malformed query
     assert.doesNotMatch(buildTracesQuery('u', { since: NaN }), /timestamp=gte/)
   })
 
@@ -99,7 +81,7 @@ describe('buildTracesQuery', () => {
   })
 
   test('order of clauses is stable (user_id, order, limit, since, before)', () => {
-    // Stable order = easier to assert against in integration tests + logs.
+    // stable order makes logs and assertions easier to read
     const q = buildTracesQuery('user-1', {
       since: 1000,
       before: '2025-01-01T00:00:00.000Z',
@@ -116,8 +98,6 @@ describe('buildTracesQuery', () => {
   })
 })
 
-// ── parseSinceParam ────────────────────────────────────────────────────────
-
 describe('parseSinceParam', () => {
   test('parses epoch ms from ?since=<num>', () => {
     const ms = Date.parse('2025-01-15T00:00:00.000Z')
@@ -133,21 +113,16 @@ describe('parseSinceParam', () => {
     assert.equal(parseSinceParam('https://x/api/agents?since=abc'), null)
   })
 
-  test('returns null for empty-string since (Number("") === 0 — must NOT be treated as filter)', () => {
-    // Edge case caught by this test in the first iteration: a naive
-    // `Number(sinceParam)` would convert "" to 0, which is a valid epoch,
-    // and the route would silently filter to "since 1970". Treat empty
-    // string as "no filter" — same as missing.
+  test('returns null for empty-string since', () => {
+    // Number("") is 0, which would filter to "since 1970"; treat '' as no filter
     assert.equal(parseSinceParam('https://x/api/agents?since='), null)
   })
 
-  test('parses since=0 as 0 (not null — All Time would be wrong)', () => {
-    // Same falsy-guard as buildTracesQuery — 0 is a valid epoch.
+  test('parses since=0 as 0 (not null)', () => {
+    // same falsy guard as buildTracesQuery: 0 is a valid epoch
     assert.equal(parseSinceParam('https://x/api/agents?since=0'), 0)
   })
 })
-
-// ── parseBeforeParam ───────────────────────────────────────────────────────
 
 describe('parseBeforeParam', () => {
   test('parses ISO 8601 timestamp from ?before=<iso>', () => {
@@ -164,8 +139,6 @@ describe('parseBeforeParam', () => {
     assert.equal(parseBeforeParam('https://x/api/traces?before='), null)
   })
 })
-
-// ── isTruncated ────────────────────────────────────────────────────────────
 
 describe('isTruncated', () => {
   test('returns true when rows.length equals the limit (cap hit)', () => {
@@ -188,8 +161,7 @@ describe('isTruncated', () => {
   })
 
   test('returns false for non-array input (defensive)', () => {
-    // Cast through unknown — the route guards against this never happening,
-    // but isTruncated should not throw if it ever does.
+    // cast through unknown; it shouldn't throw if a non-array ever arrives
     assert.equal(isTruncated(/** @type {unknown[]} */ (null)), false)
     assert.equal(isTruncated(/** @type {unknown[]} */ (undefined)), false)
   })
@@ -200,7 +172,7 @@ describe('isTruncated', () => {
     assert.equal(isTruncated(rows, 100), false)
   })
 
-  test('DEFAULT_TRACE_LIMIT is 500 (sanity check — matches prior hard-coded value)', () => {
+  test('DEFAULT_TRACE_LIMIT is 500', () => {
     assert.equal(DEFAULT_TRACE_LIMIT, 500)
   })
 })
