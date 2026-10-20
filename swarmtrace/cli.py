@@ -355,9 +355,9 @@ def main_replay():
 
 # alerts
 
-def _alerts_list(limit: int = 20) -> None:
+def _alerts_list(limit: int = 20, *, severity: str | None = None, unacked: bool = False) -> None:
     from swarmtrace.alerts import list_alerts
-    rows = list_alerts(limit=limit)
+    rows = list_alerts(limit=limit, severity=severity, include_acked=not unacked)
     rich = _load_rich()
     if rich is None:
         if not rows:
@@ -431,14 +431,39 @@ def _alerts_ack(alert_id: str) -> None:
         sys.exit(1)
 
 
+def _split_alerts_list_args(args: list[str]) -> tuple[list[str], str | None, bool]:
+    """Pull ``--severity`` and ``--unacked`` out of *args*, leaving the rest for parse_limit."""
+    rest: list[str] = []
+    severity = None
+    unacked = False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == "--severity":
+            if i + 1 >= len(args):
+                raise UsageError("--severity requires a value")
+            severity = args[i + 1]
+            i += 2
+        elif arg.startswith("--severity="):
+            severity = arg.split("=", 1)[1]
+            i += 1
+        elif arg == "--unacked":
+            unacked = True
+            i += 1
+        else:
+            rest.append(arg)
+            i += 1
+    return rest, severity, unacked
+
+
 def main_alerts():
     """
     swarmtrace alerts <subcommand> [...]
 
     Subcommands:
-      list [--limit N]  Show recent alerts (default 20)
-      test              Run the rule engine once over the current traces
-      ack <alert_id>    Mark an alert as acknowledged
+      list [--limit N] [--severity S] [--unacked]  Show recent alerts (default 20)
+      test                                         Run the rule engine once over the current traces
+      ack <alert_id>                                Mark an alert as acknowledged
     """
     args = sys.argv[1:]
     # check all of argv so `list --help` prints help too
@@ -449,11 +474,12 @@ def main_alerts():
     rest = args[1:]
     if sub == "list":
         try:
+            rest, severity, unacked = _split_alerts_list_args(rest)
             limit = parse_limit(rest, 20)
         except UsageError as exc:
             print(f"swarmtrace-alerts: {exc}", file=sys.stderr)
             sys.exit(2)
-        _alerts_list(limit=limit)
+        _alerts_list(limit=limit, severity=severity, unacked=unacked)
     elif sub == "test":
         _alerts_test()
     elif sub == "ack":

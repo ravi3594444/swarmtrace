@@ -254,3 +254,28 @@ def test_view_survives_a_null_latency_row(cli, storage, capsys):
     out = capsys.readouterr().out
     assert "rag_agent" in out
     assert "mistral_answer" in out, "the sibling row was lost with the NULL one"
+
+
+# alerts list arg parsing
+
+def test_split_alerts_list_args_separates_severity_and_unacked(cli):
+    rest, severity, unacked = cli._split_alerts_list_args(
+        ["--severity", "critical", "--unacked", "--limit", "5"]
+    )
+    assert rest == ["--limit", "5"]
+    assert severity == "critical"
+    assert unacked is True
+
+
+def test_split_alerts_list_args_defaults(cli):
+    rest, severity, unacked = cli._split_alerts_list_args(["--limit", "5"])
+    assert rest == ["--limit", "5"]
+    assert severity is None
+    assert unacked is False
+
+
+def test_split_alerts_list_args_equals_form(cli):
+    rest, severity, unacked = cli._split_alerts_list_args(["--severity=warning"])
+    assert rest == []
+    assert severity == "warning"
+    assert unacked is False
