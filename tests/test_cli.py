@@ -53,6 +53,21 @@ def test_view_does_not_crash_with_full_schema(cli, storage, capsys):
     assert "mistral_answer" in out
 
 
+def test_view_errors_only_filters_down_to_failed_traces(cli, storage, capsys):
+    _seed_tree(storage)
+    storage.save_trace(
+        id_="child-2", parent_id="root-1", function="flaky_tool", args="()",
+        output=None, latency_sec=0.05, error="boom",
+        timestamp="2026-07-12T10:00:01+00:00", kind="tool",
+        agent_id="agent-1", agent_name="RAG Agent",
+    )
+    cli.view(limit=10, errors_only=True)
+    out = capsys.readouterr().out
+    assert "flaky_tool" in out
+    assert "rag_agent" not in out
+    assert "mistral_answer" not in out
+
+
 def test_view_handles_empty_db(cli, storage, capsys):
     """view() on an empty DB should print a friendly message, not raise."""
     cli.view(limit=10)

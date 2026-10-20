@@ -45,6 +45,13 @@ def test_get_traces_newest_first(storage):
     assert [r["id"] for r in rows] == ["b", "a"]
 
 
+def test_get_traces_errors_only(storage):
+    _save(storage, trace_id="ok", error=None)
+    _save(storage, trace_id="bad", error="boom")
+    rows = storage.get_traces(limit=10, errors_only=True)
+    assert [r["id"] for r in rows] == ["bad"]
+
+
 def test_purge_all(storage):
     _save(storage)
     storage.purge_all()
