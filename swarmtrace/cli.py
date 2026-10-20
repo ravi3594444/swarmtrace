@@ -11,6 +11,7 @@ Usage:
 
 Options:
   --limit N   Show the N most recent traces (default: 100).
+  --errors    Only show traces that errored.
   -h, --help  Show this message and exit.
 """
 
@@ -57,9 +58,10 @@ def parse_limit(args: list[str], default: int) -> int:
     return limit if seen else default
 
 
-def _parse_limit(default: int = DEFAULT_VIEW_LIMIT) -> int:
-    """Parse ``--limit`` from ``sys.argv`` (the `swarmtrace` view entry point)."""
-    return parse_limit(sys.argv[1:], default)
+def _split_errors_flag(args: list[str]) -> tuple[list[str], bool]:
+    """Pull ``--errors`` out of *args*, leaving the rest for parse_limit."""
+    rest = [a for a in args if a != "--errors"]
+    return rest, len(rest) != len(args)
 
 
 # helpers
@@ -256,25 +258,27 @@ def _view_plain(traces, total_cost) -> None:
     print(f"Total: {len(traces)} traces | ${round(total_cost, 6)}")
 
 
-def view(limit=None):
-    """Show recent traces. Usage: swarmtrace [--limit N] (default 100)."""
+def view(limit=None, errors_only=False):
+    """Show recent traces. Usage: swarmtrace [--limit N] [--errors] (default 100)."""
     if limit is None:
         if _wants_help(sys.argv[1:]):
             print(VIEW_USAGE, end="")
             return 0
         try:
-            limit = _parse_limit()
+            rest, errors_only = _split_errors_flag(sys.argv[1:])
+            limit = parse_limit(rest, DEFAULT_VIEW_LIMIT)
         except UsageError as exc:
             print(f"swarmtrace: {exc}", file=sys.stderr)
             print(VIEW_USAGE, end="", file=sys.stderr)
             return 2
     try:
-        traces = get_traces(limit=limit)
+        traces = get_traces(limit=limit, errors_only=errors_only)
     except Exception:  # noqa: BLE001 -- CLI entry point, defensive outer boundary
         traces = []
 
     if not traces:
-        print("No traces found. Run your agent with @observe first.")
+        msg = "No errored traces found." if errors_only else "No traces found. Run your agent with @observe first."
+        print(msg)
         return 0
 
     total_cost   = sum(t["cost_usd"] for t in traces if t["cost_usd"])

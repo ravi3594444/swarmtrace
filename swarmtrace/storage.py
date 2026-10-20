@@ -300,13 +300,15 @@ def save_trace(
     except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
         _log.warning("storage warning: %s", exc)
 
-def get_traces(limit: int = 20) -> list[TraceRow]:
+def get_traces(limit: int = 20, *, errors_only: bool = False) -> list[TraceRow]:
     try:
         with _lock:
             conn = _get_conn()
-            rows = conn.execute(
-                "SELECT * FROM traces ORDER BY timestamp DESC LIMIT ?", (limit,)
-            ).fetchall()
+            query = "SELECT * FROM traces"
+            if errors_only:
+                query += " WHERE error IS NOT NULL"
+            query += " ORDER BY timestamp DESC LIMIT ?"
+            rows = conn.execute(query, (limit,)).fetchall()
             return [dict(r) for r in rows]
     except Exception as exc:  # noqa: BLE001 -- module contract: never crash the host on a storage hiccup
         _log.debug("get_traces failed, returning empty: %s", exc)
